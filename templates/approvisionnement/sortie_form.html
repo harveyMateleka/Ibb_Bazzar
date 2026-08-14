@@ -1,0 +1,36 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}Sortie stock{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">APP-03</p>
+    <h1>Sortie stock</h1>
+  </div>
+</div>
+
+<section class="panel form-panel">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="form-grid">
+      {% for field in form %}
+      <div class="field {% if field.name == 'autorisation_depassement' %}field-check{% endif %}">
+        {% if field.name == 'autorisation_depassement' %}
+          <label class="check-label">{{ field }} {{ field.label }}</label>
+        {% else %}
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        {% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="help">Le stock ne peut pas être dépassé, sauf autorisation.</p>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Valider la sortie</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

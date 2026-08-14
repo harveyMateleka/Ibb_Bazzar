@@ -1,0 +1,80 @@
+:root,
+html[data-theme="light"] {
+  --primary: #8a0b27;
+  --secondary: #6b081e;
+  --accent: #8a0b27;
+  --primary-fg: #ffffff;
+  --body-fg: #111111;
+  --body-bg: #ffffff;
+  --darkened-bg: #ffffff;
+  --body-quiet-color: #5c5c5c;
+  --header-color: #8a0b27;
+  --header-branding-color: #ffffff;
+  --header-bg: #8a0b27;
+  --header-link-color: #ffffff;
+  --breadcrumbs-fg: #f5f5f7;
+  --breadcrumbs-link-fg: #ffffff;
+  --breadcrumbs-bg: #6b081e;
+  --link-fg: #8a0b27;
+  --link-hover-color: #6b081e;
+  --link-selected-fg: #6b081e;
+  --button-bg: #8a0b27;
+  --button-hover-bg: #6b081e;
+  --button-fg: #ffffff;
+  --default-button-bg: #111111;
+  --default-button-hover-bg: #8a0b27;
+  --hairline-color: #e6e6ea;
+  --selected-row: #f6e8eb;
+}
+
+html,
+body,
+#container,
+#content {
+  background: #ffffff;
+}
+
+#header {
+  background: #8a0b27;
+  color: #ffffff;
+}
+
+#branding h1,
+#branding h1 a:link,
+#branding h1 a:visited,
+#site-name a,
+#branding a {
+  color: #ffffff;
+}
+
+.module h2,
+.module caption,
+.inline-group h2 {
+  background: #8a0b27;
+}
+
+div.breadcrumbs {
+  background: #6b081e;
+}
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+a.button {
+  background: #8a0b27;
+}
+
+.button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover,
+.submit-row input:hover,
+a.button:hover {
+  background: #6b081e;
+}
+
+.button.default,
+input[type="submit"].default,
+.submit-row input.default {
+  background: #111111;
+}

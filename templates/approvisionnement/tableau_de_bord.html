@@ -1,0 +1,125 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}Tableau de bord{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Gestion</p>
+    <h1>Approvisionnement</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{% url 'approvisionnement:entree' %}">Nouvelle entrée</a>
+    <a class="btn btn-ghost" href="{% url 'approvisionnement:sortie' %}">Nouvelle sortie</a>
+  </div>
+</div>
+
+<div class="stats">
+  <article class="stat">
+    <span>Articles</span>
+    <strong>{{ nb_articles }}</strong>
+  </article>
+  <article class="stat {% if nb_alertes %}stat-alert{% endif %}">
+    <span>Alertes stock</span>
+    <strong>{{ nb_alertes }}</strong>
+  </article>
+  <article class="stat">
+    <span>Mouvements</span>
+    <strong>{{ nb_mouvements }}</strong>
+  </article>
+</div>
+
+{% if alertes %}
+<section class="panel">
+  <h2>Alertes stock</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alerte in alertes %}
+        <tr>
+          <td>{{ alerte.article }}</td>
+          <td>{{ alerte.stock }}</td>
+          <td>{{ alerte.seuil }}</td>
+          <td>{{ alerte.date_alerte|date:"d/m/Y H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>État des stocks</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Catégorie</th>
+          <th>Unité</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for article in articles %}
+        <tr {% if article.en_alerte %}class="row-alert"{% endif %}>
+          <td>{{ article.code }}</td>
+          <td>{{ article.designation }}</td>
+          <td>{{ article.categorie }}</td>
+          <td>{{ article.unite }}</td>
+          <td>{{ article.stock }}</td>
+          <td>{{ article.seuil_minimum }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6">Aucun article. Créez-les dans l’administration (paramètres).</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Derniers mouvements</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Article</th>
+          <th>Quantité</th>
+          <th>Utilisateur</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mouvement in derniers_mouvements %}
+        <tr>
+          <td>{{ mouvement.date_mouvement|date:"d/m/Y H:i" }}</td>
+          <td>{{ mouvement.get_type_mouvement_display }}</td>
+          <td>{{ mouvement.article }}</td>
+          <td>{{ mouvement.quantite }}</td>
+          <td>{{ mouvement.utilisateur }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">Aucun mouvement pour le moment.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

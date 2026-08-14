@@ -1,0 +1,56 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}IBBS BAZAR{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <link rel="icon" href="{% static 'img/logo.png' %}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand-lockup" href="{% url 'home' %}">
+        <img src="{% static 'img/logo.png' %}" alt="Logo IBBS BAZAR">
+      </a>
+      <nav class="site-nav" aria-label="Navigation principale">
+        <a href="{% url 'home' %}" class="{% if request.resolver_match.url_name == 'home' %}is-active{% endif %}">Accueil</a>
+        <a href="{% url 'approvisionnement:dashboard' %}" class="{% if request.resolver_match.namespace == 'approvisionnement' %}is-active{% endif %}">Approvisionnement</a>
+        {% if user.is_staff %}
+        <a href="{% url 'admin:index' %}">Paramètres</a>
+        {% endif %}
+        {% if user.is_authenticated %}
+        <form action="{% url 'logout' %}" method="post">
+          {% csrf_token %}
+          <button type="submit" class="nav-button">Déconnexion</button>
+        </form>
+        {% else %}
+        <a href="{% url 'login' %}">Connexion</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    {% if messages %}
+    <div class="flash-wrap">
+      {% for message in messages %}
+      <p class="flash flash-{{ message.tags }}">{{ message }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <strong>IBBS BAZAR</strong>
+      <span>Gestion d'approvisionnement</span>
+    </div>
+  </footer>
+</body>
+</html>

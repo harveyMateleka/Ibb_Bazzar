@@ -1,0 +1,42 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}Inventaires{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">APP-06</p>
+    <h1>Inventaires</h1>
+  </div>
+  <a class="btn btn-primary" href="{% url 'approvisionnement:inventaire_nouveau' %}">Nouvel inventaire</a>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Responsable</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inventaire in inventaires %}
+        <tr>
+          <td>{{ inventaire.date_inventaire|date:"d/m/Y" }}</td>
+          <td>{{ inventaire.responsable }}</td>
+          <td>{{ inventaire.get_statut_display }}</td>
+          <td><a class="btn btn-ghost" href="{% url 'approvisionnement:inventaire_detail' inventaire.pk %}">Ouvrir</a></td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="4">Aucun inventaire.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

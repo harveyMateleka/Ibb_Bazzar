@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% load static %}
+
+{% block title %}IBBS BAZAR · Restaurant & Boutique{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <p class="eyebrow">Restaurant</p>
+      <h1>IBBS BAZAR</h1>
+      <p class="lead">
+        L'univers IBBS BAZAR réunit table et style : un restaurant chaleureux
+        et une boutique d'habillement, dans une identité bordeaux, noire et blanche.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" href="{% url 'approvisionnement:dashboard' %}">Ouvrir l'approvisionnement</a>
+        <a class="btn btn-ghost" href="#restaurant">Découvrir le restaurant</a>
+      </div>
+    </div>
+    <img class="hero-mark" src="{% static 'img/logo.png' %}" alt="IBBS BAZAR">
+  </div>
+</section>
+
+<section class="section" id="approvisionnement">
+  <div class="section-inner">
+    <p class="eyebrow">Module</p>
+    <h2>Approvisionnement</h2>
+    <p class="help">Les articles, catégories, unités et fournisseurs se paramètrent dans l’administration.</p>
+    {% if alertes %}
+    <div class="cards" style="margin-bottom: 1.25rem;">
+      {% for alerte in alertes %}
+      <article class="card">
+        <h3>Alerte stock</h3>
+        <p>{{ alerte.article }} — stock {{ alerte.stock }} (seuil {{ alerte.seuil }}).</p>
+      </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="cards">
+      {% for item in fonctionnalites %}
+      <article class="card">
+        <p class="eyebrow">{{ item.code }}</p>
+        <h3>{{ item.libelle }}</h3>
+        <p>{{ item.comportement_attendu }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section" id="restaurant">
+  <div class="section-inner">
+    <h2>Restaurant</h2>
+    <div class="cards">
+      <article class="card">
+        <h3>Cuisine</h3>
+        <p>Une table pensée pour recevoir, avec la chaleur du bordeaux de la marque.</p>
+      </article>
+      <article class="card">
+        <h3>Ambiance</h3>
+        <p>Contraste noir et blanc, détails bordeaux : la même charte que le logo.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="boutique">
+  <div class="section-inner">
+    <h2>Boutique d'habillement</h2>
+    <div class="cards">
+      <article class="card">
+        <h3>Collections</h3>
+        <p>Pièces sélectionnées pour un style net, aligné sur l'identité IBBS BAZAR.</p>
+      </article>
+      <article class="card">
+        <h3>Essentiels</h3>
+        <p>Noir, blanc et touches bordeaux : les couleurs du logo, portées au quotidien.</p>
+      </article>
+    </div>
+  </div>
+</section>
+{% endblock %}

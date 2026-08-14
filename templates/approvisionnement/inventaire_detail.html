@@ -1,0 +1,88 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}Inventaire {{ inventaire.date_inventaire }}{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ inventaire.get_statut_display }}</p>
+    <h1>Inventaire du {{ inventaire.date_inventaire|date:"d/m/Y" }}</h1>
+    <p class="lead">Responsable : {{ inventaire.responsable }}</p>
+  </div>
+</div>
+
+{% if formset %}
+<form method="post">
+  {% csrf_token %}
+  {{ formset.management_form }}
+  <section class="panel">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Article</th>
+            <th>Stock système</th>
+            <th>Stock physique</th>
+            <th>Écart</th>
+            <th>Motif</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for form in formset %}
+          <tr>
+            <td>
+              {{ form.id }}
+              {{ form.instance.article }}
+            </td>
+            <td>{{ form.instance.stock_systeme }}</td>
+            <td>{{ form.stock_physique }}</td>
+            <td>{{ form.instance.ecart }}</td>
+            <td>{{ form.motif }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <button type="submit" class="btn btn-ghost">Enregistrer les saisies</button>
+    </div>
+  </section>
+</form>
+
+<form method="post" action="{% url 'approvisionnement:inventaire_valider' inventaire.pk %}">
+  {% csrf_token %}
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Valider l’inventaire</button>
+  </div>
+</form>
+{% else %}
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Stock système</th>
+          <th>Stock physique</th>
+          <th>Écart</th>
+          <th>Motif</th>
+          <th>Ajustement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.stock_systeme }}</td>
+          <td>{{ ligne.stock_physique }}</td>
+          <td>{{ ligne.ecart }}</td>
+          <td>{{ ligne.motif|default:"—" }}</td>
+          <td>{{ ligne.mouvement|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -15,8 +15,21 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.contrib.auth import views as auth_views
+from django.urls import include, path
+
+from approvisionnement.forms import ConnexionForm
+
+from .views import home
+
+admin.site.site_header = 'IBBS BAZAR — Paramètres'
+admin.site.site_title = 'IBBS BAZAR'
+admin.site.index_title = 'Tables de paramètre'
 
 urlpatterns = [
+    path('', home, name='home'),
+    path('connexion/', auth_views.LoginView.as_view(authentication_form=ConnexionForm), name='login'),
+    path('deconnexion/', auth_views.LogoutView.as_view(), name='logout'),
+    path('approvisionnement/', include('approvisionnement.urls')),
     path('admin/', admin.site.urls),
 ]
