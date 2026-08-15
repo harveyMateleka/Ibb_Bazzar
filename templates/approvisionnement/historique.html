@@ -1,6 +1,6 @@
 {% extends "approvisionnement/base.html" %}
 
-{% block app_title %}Historique des mouvements{% endblock %}
+{% block app_title %}Historique d'approvisionnement{% endblock %}
 
 {% block app_content %}
 <div class="page-head">
@@ -11,9 +11,9 @@
 </div>
 
 <form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ recherche }}" placeholder="Article, référence, motif">
+  <input class="input" type="search" name="q" value="{{ recherche }}" placeholder="N°, article, fournisseur, motif">
   <select class="input" name="type">
-    <option value="">Tous les types</option>
+    <option value="">Entrées et sorties</option>
     {% for value, label in types %}
     <option value="{{ value }}" {% if type_filtre == value %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
@@ -27,36 +27,41 @@
       <thead>
         <tr>
           <th>Date</th>
+          <th>N°</th>
           <th>Type</th>
-          <th>Article</th>
-          <th>Quantité</th>
           <th>Fournisseur</th>
-          <th>Référence / Motif</th>
+          <th>Motif / Destination</th>
           <th>Utilisateur</th>
-          <th>Stock avant → après</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for mouvement in page %}
+        {% for journal in page %}
         <tr>
-          <td>{{ mouvement.date_mouvement|date:"d/m/Y H:i" }}</td>
-          <td>{{ mouvement.get_type_mouvement_display }}</td>
-          <td>{{ mouvement.article }}</td>
-          <td>{{ mouvement.quantite }}</td>
-          <td>{{ mouvement.fournisseur|default:"—" }}</td>
-          <td>{{ mouvement.reference|default:mouvement.motif|default:"—" }}</td>
-          <td>{{ mouvement.utilisateur }}</td>
+          <td>{{ journal.date_operation|date:"d/m/Y H:i" }}</td>
+          <td>{{ journal.numero }}</td>
+          <td>{{ journal.get_type_operation_display }}</td>
+          <td>{{ journal.fournisseur|default:"—" }}</td>
           <td>
-            {% if mouvement.valide %}
-              {{ mouvement.stock_avant }} → {{ mouvement.stock_apres }}
+            {% if journal.type_operation == 'SORTIE' %}
+              {{ journal.motif }}{% if journal.destination %} · {{ journal.destination }}{% endif %}
             {% else %}
-              En attente
+              {{ journal.reference|default:"—" }}
+            {% endif %}
+          </td>
+          <td>{{ journal.utilisateur }}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'approvisionnement:historique_detail' journal.pk %}">Détail</a>
+            {% if journal.bon_entree_id %}
+            <a class="btn btn-primary" href="{% url 'approvisionnement:entree_imprimer' journal.bon_entree_id %}">Imprimer</a>
+            {% elif journal.bon_sortie_id %}
+            <a class="btn btn-primary" href="{% url 'approvisionnement:sortie_imprimer' journal.bon_sortie_id %}">Imprimer</a>
             {% endif %}
           </td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="8">Aucun mouvement.</td>
+          <td colspan="7">Aucun historique d'approvisionnement.</td>
         </tr>
         {% endfor %}
       </tbody>

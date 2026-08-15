@@ -58,6 +58,14 @@ class Fonctionnalite(models.Model):
 
 class Categorie(models.Model):
     nom = models.CharField('nom', max_length=100, unique=True)
+    nombre_portions = models.PositiveIntegerField(
+        'nombre de portions',
+        default=0,
+        help_text=(
+            'Mettre une valeur supérieure à 0 pour les vivres frais '
+            '(poisson, poulet, etc.). Un champ portions sera alors demandé à la sortie.'
+        ),
+    )
 
     class Meta:
         verbose_name = 'catégorie'
@@ -66,6 +74,10 @@ class Categorie(models.Model):
 
     def __str__(self):
         return self.nom
+
+    @property
+    def exige_portions(self):
+        return self.nombre_portions > 0
 
 
 class Unite(models.Model):
@@ -96,6 +108,241 @@ class Fournisseur(models.Model):
         return self.nom
 
 
+class Service(models.Model):
+    nom = models.CharField('nom', max_length=150, unique=True)
+
+    class Meta:
+        verbose_name = 'service'
+        verbose_name_plural = 'services'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
+class BonApprovisionnement(models.Model):
+    class Statut(models.TextChoices):
+        BROUILLON = 'BROUILLON', 'Brouillon'
+        VALIDE = 'VALIDE', 'Validé'
+
+    numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
+    date_approvisionnement = models.DateTimeField('date', default=timezone.now)
+    fournisseur = models.ForeignKey(
+        Fournisseur,
+        on_delete=models.PROTECT,
+        related_name='bons_approvisionnement',
+        verbose_name='fournisseur',
+    )
+    reference = models.CharField('référence', max_length=100, blank=True)
+    commentaire = models.TextField('commentaire', blank=True)
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='bons_approvisionnement',
+        verbose_name='utilisateur',
+    )
+    statut = models.CharField(
+        'statut',
+        max_length=12,
+        choices=Statut.choices,
+        default=Statut.BROUILLON,
+    )
+    date_validation = models.DateTimeField('date de validation', null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'bon d’approvisionnement'
+        verbose_name_plural = 'bons d’approvisionnement'
+        ordering = ['-date_approvisionnement']
+
+    def __str__(self):
+        return self.numero
+
+    @classmethod
+    def prochain_numero(cls):
+        annee = timezone.localdate().year
+        prefixe = f'APP-{annee}-'
+        dernier = (
+            cls.objects.select_for_update()
+            .filter(numero__startswith=prefixe)
+            .order_by('-numero')
+            .first()
+        )
+        sequence = int(dernier.numero.rsplit('-', 1)[-1]) + 1 if dernier else 1
+        return f'{prefixe}{sequence:04d}'
+
+    def valider(self):
+        if self.statut == self.Statut.VALIDE:
+            raise ValidationError('Ce bon d’approvisionnement est déjà validé.')
+        lignes = [ligne for ligne in self.lignes.select_related('article') if ligne.quantite > 0]
+        if not lignes:
+            raise ValidationError('Ajoutez au moins une ligne de produit avant de valider.')
+        with transaction.atomic():
+            for ligne in lignes:
+                mouvement = MouvementStock(
+                    article=ligne.article,
+                    type_mouvement=MouvementStock.Type.ENTREE,
+                    quantite=ligne.quantite,
+                    fournisseur=self.fournisseur,
+                    reference=self.reference or self.numero,
+                    date_mouvement=self.date_approvisionnement,
+                    utilisateur=self.utilisateur,
+                    bon=self,
+                )
+                mouvement.valider()
+                ligne.mouvement = mouvement
+                ligne.save(update_fields=['mouvement'])
+            self.statut = self.Statut.VALIDE
+            self.date_validation = timezone.now()
+            self.save(update_fields=['statut', 'date_validation'])
+            Approvisionnement.enregistrer_entree(self)
+
+
+class BonSortie(models.Model):
+    class Statut(models.TextChoices):
+        BROUILLON = 'BROUILLON', 'Brouillon'
+        VALIDE = 'VALIDE', 'Validé'
+
+    numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
+    date_sortie = models.DateTimeField('date', default=timezone.now)
+    motif = models.CharField('motif', max_length=200)
+    destination = models.ForeignKey(
+        'Service',
+        on_delete=models.PROTECT,
+        related_name='bons_sortie',
+        verbose_name='service',
+        null=True,
+        blank=True,
+    )
+    autorisation_depassement = models.BooleanField(
+        'autorisation de dépassement',
+        default=False,
+        help_text='Autorise une sortie au-delà du stock disponible.',
+    )
+    commentaire = models.TextField('commentaire', blank=True)
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='bons_sortie',
+        verbose_name='utilisateur',
+    )
+    statut = models.CharField(
+        'statut',
+        max_length=12,
+        choices=Statut.choices,
+        default=Statut.BROUILLON,
+    )
+    date_validation = models.DateTimeField('date de validation', null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'bon de sortie'
+        verbose_name_plural = 'bons de sortie'
+        ordering = ['-date_sortie']
+
+    def __str__(self):
+        return self.numero
+
+    @classmethod
+    def prochain_numero(cls):
+        annee = timezone.localdate().year
+        prefixe = f'SOR-{annee}-'
+        dernier = (
+            cls.objects.select_for_update()
+            .filter(numero__startswith=prefixe)
+            .order_by('-numero')
+            .first()
+        )
+        sequence = int(dernier.numero.rsplit('-', 1)[-1]) + 1 if dernier else 1
+        return f'{prefixe}{sequence:04d}'
+
+    @property
+    def nom_destination(self):
+        return self.destination.nom if self.destination_id else ''
+
+    def depassements_stock(self):
+        ruptures, _seuils = self.analyser_stock()
+        return ruptures
+
+    def analyser_stock(self):
+        restants = {}
+        ruptures = []
+        seuils = []
+        for ligne in self.lignes.select_related('article', 'article__unite'):
+            if ligne.quantite <= 0:
+                continue
+            article = ligne.article
+            stock = restants.get(article.pk, article.stock)
+            if stock <= 0:
+                ruptures.append(
+                    {
+                        'article': article,
+                        'quantite': ligne.quantite,
+                        'stock': stock,
+                        'motif': 'Stock à 0 : la sortie de cet article est refusée.',
+                    }
+                )
+            elif ligne.quantite > stock:
+                ruptures.append(
+                    {
+                        'article': article,
+                        'quantite': ligne.quantite,
+                        'stock': stock,
+                        'motif': 'Quantité supérieure au stock disponible : sortie refusée.',
+                    }
+                )
+            elif stock <= article.seuil_minimum:
+                seuils.append(
+                    {
+                        'article': article,
+                        'quantite': ligne.quantite,
+                        'stock': stock,
+                        'seuil': article.seuil_minimum,
+                    }
+                )
+            restants[article.pk] = stock - ligne.quantite
+        return ruptures, seuils
+
+    def valider(self, autorisation_depassement=False):
+        if self.statut == self.Statut.VALIDE:
+            raise ValidationError('Ce bon de sortie est déjà validé.')
+        lignes = [
+            ligne
+            for ligne in self.lignes.select_related('article', 'article__categorie')
+            if ligne.quantite > 0
+        ]
+        if not lignes:
+            raise ValidationError('Ajoutez au moins une ligne de produit avant de valider.')
+        if autorisation_depassement:
+            self.autorisation_depassement = True
+        with transaction.atomic():
+            for ligne in lignes:
+                if ligne.article.exige_portions and ligne.nombre_portions <= 0:
+                    raise ValidationError(
+                        f'Indiquez le nombre de portions pour {ligne.article}.'
+                    )
+                mouvement = MouvementStock(
+                    article=ligne.article,
+                    type_mouvement=MouvementStock.Type.SORTIE,
+                    quantite=ligne.quantite,
+                    motif=self.motif,
+                    destination=self.nom_destination,
+                    date_mouvement=self.date_sortie,
+                    utilisateur=self.utilisateur,
+                    autorisation_depassement=self.autorisation_depassement,
+                    nombre_portions=ligne.nombre_portions,
+                    bon_sortie=self,
+                )
+                mouvement.valider()
+                ligne.mouvement = mouvement
+                ligne.save(update_fields=['mouvement'])
+            self.statut = self.Statut.VALIDE
+            self.date_validation = timezone.now()
+            champs = ['statut', 'date_validation']
+            if autorisation_depassement:
+                champs.append('autorisation_depassement')
+            self.save(update_fields=champs)
+            Approvisionnement.enregistrer_sortie(self)
+
+
 class Article(models.Model):
     code = models.CharField('code', max_length=50, unique=True)
     designation = models.CharField('désignation', max_length=200)
@@ -123,8 +370,42 @@ class Article(models.Model):
         return f'{self.code} — {self.designation}'
 
     @property
+    def en_rupture(self):
+        return self.stock <= 0
+
+    @property
     def en_alerte(self):
         return self.stock <= self.seuil_minimum
+
+    @property
+    def en_vigilance(self):
+        return self.seuil_minimum + 1 <= self.stock <= self.seuil_minimum + 10
+
+    @property
+    def a_signaler(self):
+        return self.en_rupture or self.en_alerte or self.en_vigilance
+
+    @property
+    def classe_stock(self):
+        if self.en_rupture or self.en_alerte:
+            return 'row-alert'
+        if self.en_vigilance:
+            return 'row-vigilance'
+        return ''
+
+    @property
+    def niveau_stock(self):
+        if self.en_rupture:
+            return 'Rupture'
+        if self.en_alerte:
+            return 'Seuil atteint'
+        if self.en_vigilance:
+            return 'Vigilance'
+        return ''
+
+    @property
+    def exige_portions(self):
+        return self.categorie.exige_portions
 
 
 class MouvementStock(models.Model):
@@ -169,6 +450,27 @@ class MouvementStock(models.Model):
         default=False,
         help_text='Autorise une sortie au-delà du stock disponible.',
     )
+    nombre_portions = models.PositiveIntegerField(
+        'nombre de portions',
+        default=0,
+        help_text='Renseigné à la sortie pour les vivres frais (poisson, poulet, etc.).',
+    )
+    bon = models.ForeignKey(
+        'BonApprovisionnement',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mouvements',
+        verbose_name='bon d’approvisionnement',
+    )
+    bon_sortie = models.ForeignKey(
+        'BonSortie',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mouvements',
+        verbose_name='bon de sortie',
+    )
     stock_avant = models.IntegerField('stock avant', null=True, blank=True)
     stock_apres = models.IntegerField('stock après', null=True, blank=True)
     date_validation = models.DateTimeField('date de validation', null=True, blank=True)
@@ -190,6 +492,15 @@ class MouvementStock(models.Model):
             raise ValidationError({'fournisseur': 'Le fournisseur est obligatoire pour une entrée.'})
         if self.type_mouvement == self.Type.SORTIE and not self.motif:
             raise ValidationError({'motif': 'Le motif est obligatoire pour une sortie.'})
+        if (
+            self.type_mouvement == self.Type.SORTIE
+            and self.article_id
+            and self.article.exige_portions
+            and self.nombre_portions <= 0
+        ):
+            raise ValidationError({
+                'nombre_portions': 'Indiquez le nombre de portions pour cette catégorie de vivres frais.',
+            })
         if self.type_mouvement == self.Type.AJUSTEMENT and self.quantite == 0:
             raise ValidationError({'quantite': 'Un ajustement ne peut pas être nul.'})
 
@@ -207,11 +518,19 @@ class MouvementStock(models.Model):
             delta = self._delta()
             if (
                 self.type_mouvement == self.Type.SORTIE
-                and self.quantite > article.stock
+                and (article.stock <= 0 or self.quantite > article.stock)
+            ):
+                raise ValidationError(
+                    f'{article} : stock à 0 ou insuffisant. La sortie est refusée.'
+                )
+            if (
+                self.type_mouvement == self.Type.SORTIE
+                and article.stock <= article.seuil_minimum
                 and not self.autorisation_depassement
             ):
                 raise ValidationError(
-                    'Stock insuffisant. Une autorisation est requise pour dépasser le stock.'
+                    f'{article} : le stock a atteint le seuil ({article.seuil_minimum}). '
+                    'Une autorisation du propriétaire est requise.'
                 )
             self.stock_avant = article.stock
             article.stock += delta
@@ -241,11 +560,33 @@ class AlerteStock(models.Model):
         ordering = ['-date_alerte']
 
     def __str__(self):
-        return f'Alerte {self.article.code} (stock {self.stock} ≤ {self.seuil})'
+        return f'Alerte {self.article.code} (stock {self.stock} / seuil {self.seuil})'
+
+    @property
+    def en_rupture(self):
+        return self.stock <= 0
+
+    @property
+    def en_vigilance(self):
+        return self.seuil + 1 <= self.stock <= self.seuil + 10
+
+    @property
+    def classe_stock(self):
+        if self.stock <= self.seuil:
+            return 'row-alert'
+        return 'row-vigilance'
+
+    @property
+    def niveau_stock(self):
+        if self.stock <= 0:
+            return 'Rupture'
+        if self.stock <= self.seuil:
+            return 'Seuil atteint'
+        return 'Vigilance'
 
     @classmethod
     def synchroniser(cls, article):
-        if article.en_alerte:
+        if article.a_signaler:
             cls.objects.update_or_create(
                 article=article,
                 active=True,
@@ -358,3 +699,210 @@ class LigneInventaire(models.Model):
         self.mouvement = mouvement
         self.save(update_fields=['mouvement'])
         return mouvement
+
+
+class LigneApprovisionnement(models.Model):
+    bon = models.ForeignKey(
+        BonApprovisionnement,
+        on_delete=models.CASCADE,
+        related_name='lignes',
+        verbose_name='bon d’approvisionnement',
+    )
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.PROTECT,
+        related_name='lignes_approvisionnement',
+        verbose_name='article',
+    )
+    quantite = models.PositiveIntegerField('quantité')
+    mouvement = models.OneToOneField(
+        MouvementStock,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ligne_approvisionnement',
+        verbose_name='mouvement d’entrée',
+    )
+
+    class Meta:
+        verbose_name = 'ligne d’approvisionnement'
+        verbose_name_plural = 'lignes d’approvisionnement'
+
+    def __str__(self):
+        return f'{self.bon.numero} — {self.article.code} × {self.quantite}'
+
+
+class LigneSortie(models.Model):
+    bon = models.ForeignKey(
+        BonSortie,
+        on_delete=models.CASCADE,
+        related_name='lignes',
+        verbose_name='bon de sortie',
+    )
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.PROTECT,
+        related_name='lignes_sortie',
+        verbose_name='article',
+    )
+    quantite = models.PositiveIntegerField('quantité')
+    nombre_portions = models.PositiveIntegerField('nombre de portions', default=0)
+    mouvement = models.OneToOneField(
+        MouvementStock,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ligne_sortie',
+        verbose_name='mouvement de sortie',
+    )
+
+    class Meta:
+        verbose_name = 'ligne de sortie'
+        verbose_name_plural = 'lignes de sortie'
+
+    def __str__(self):
+        return f'{self.bon.numero} — {self.article.code} × {self.quantite}'
+
+
+class Approvisionnement(models.Model):
+    """Journal unique pour retracer les entrées et les sorties."""
+
+    class Type(models.TextChoices):
+        ENTREE = 'ENTREE', 'Entrée'
+        SORTIE = 'SORTIE', 'Sortie'
+
+    numero = models.CharField('numéro', max_length=20, unique=True)
+    type_operation = models.CharField(
+        'type',
+        max_length=12,
+        choices=Type.choices,
+    )
+    date_operation = models.DateTimeField('date')
+    fournisseur = models.ForeignKey(
+        Fournisseur,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='historiques_approvisionnement',
+        verbose_name='fournisseur',
+    )
+    motif = models.CharField('motif', max_length=200, blank=True)
+    destination = models.CharField('destination', max_length=200, blank=True)
+    reference = models.CharField('référence', max_length=100, blank=True)
+    commentaire = models.TextField('commentaire', blank=True)
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='historiques_approvisionnement',
+        verbose_name='utilisateur',
+    )
+    bon_entree = models.OneToOneField(
+        BonApprovisionnement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='journal',
+        verbose_name='bon d’entrée',
+    )
+    bon_sortie = models.OneToOneField(
+        BonSortie,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='journal',
+        verbose_name='bon de sortie',
+    )
+    date_enregistrement = models.DateTimeField('enregistré le', default=timezone.now)
+
+    class Meta:
+        verbose_name = 'approvisionnement'
+        verbose_name_plural = 'approvisionnements'
+        ordering = ['-date_operation', '-id']
+
+    def __str__(self):
+        return f'{self.numero} ({self.get_type_operation_display()})'
+
+    @classmethod
+    def enregistrer_entree(cls, bon):
+        journal = cls.objects.create(
+            numero=bon.numero,
+            type_operation=cls.Type.ENTREE,
+            date_operation=bon.date_approvisionnement,
+            fournisseur=bon.fournisseur,
+            reference=bon.reference,
+            commentaire=bon.commentaire,
+            utilisateur=bon.utilisateur,
+            bon_entree=bon,
+        )
+        for ligne in bon.lignes.select_related('article', 'mouvement'):
+            if not ligne.mouvement_id:
+                continue
+            ApprovisionnementLigne.objects.create(
+                approvisionnement=journal,
+                article=ligne.article,
+                quantite=ligne.quantite,
+                stock_avant=ligne.mouvement.stock_avant,
+                stock_apres=ligne.mouvement.stock_apres,
+                mouvement=ligne.mouvement,
+            )
+        return journal
+
+    @classmethod
+    def enregistrer_sortie(cls, bon):
+        journal = cls.objects.create(
+            numero=bon.numero,
+            type_operation=cls.Type.SORTIE,
+            date_operation=bon.date_sortie,
+            motif=bon.motif,
+            destination=bon.nom_destination,
+            commentaire=bon.commentaire,
+            utilisateur=bon.utilisateur,
+            bon_sortie=bon,
+        )
+        for ligne in bon.lignes.select_related('article', 'mouvement'):
+            if not ligne.mouvement_id:
+                continue
+            ApprovisionnementLigne.objects.create(
+                approvisionnement=journal,
+                article=ligne.article,
+                quantite=ligne.quantite,
+                nombre_portions=ligne.nombre_portions,
+                stock_avant=ligne.mouvement.stock_avant,
+                stock_apres=ligne.mouvement.stock_apres,
+                mouvement=ligne.mouvement,
+            )
+        return journal
+
+
+class ApprovisionnementLigne(models.Model):
+    approvisionnement = models.ForeignKey(
+        Approvisionnement,
+        on_delete=models.CASCADE,
+        related_name='lignes',
+        verbose_name='approvisionnement',
+    )
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.PROTECT,
+        related_name='lignes_journal_approvisionnement',
+        verbose_name='article',
+    )
+    quantite = models.IntegerField('quantité')
+    nombre_portions = models.PositiveIntegerField('nombre de portions', default=0)
+    stock_avant = models.IntegerField('stock avant', null=True, blank=True)
+    stock_apres = models.IntegerField('stock après', null=True, blank=True)
+    mouvement = models.OneToOneField(
+        MouvementStock,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ligne_journal',
+        verbose_name='mouvement',
+    )
+
+    class Meta:
+        verbose_name = 'ligne d’historique d’approvisionnement'
+        verbose_name_plural = 'lignes d’historique d’approvisionnement'
+
+    def __str__(self):
+        return f'{self.approvisionnement.numero} — {self.article.code}'

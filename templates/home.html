@@ -33,7 +33,7 @@
       {% for alerte in alertes %}
       <article class="card">
         <h3>Alerte stock</h3>
-        <p>{{ alerte.article }} — stock {{ alerte.stock }} (seuil {{ alerte.seuil }}).</p>
+        <p>{{ alerte }} — stock {{ alerte.stock }} (seuil {{ alerte.seuil_minimum }}) · {{ alerte.niveau_stock }}.</p>
       </article>
       {% endfor %}
     </div>

@@ -1,6 +1,7 @@
+from django.db.models import F
 from django.shortcuts import render
 
-from approvisionnement.models import AlerteStock, Fonctionnalite
+from approvisionnement.models import Article, Fonctionnalite
 
 
 def home(request):
@@ -8,7 +9,9 @@ def home(request):
         request,
         'home.html',
         {
-            'alertes': AlerteStock.objects.filter(active=True).select_related('article')[:8],
+            'alertes': Article.objects.filter(
+                stock__lte=F('seuil_minimum') + 10
+            ).select_related('categorie')[:8],
             'fonctionnalites': Fonctionnalite.objects.select_related('module').prefetch_related('acteurs'),
         },
     )

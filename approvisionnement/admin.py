@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Acteur, Article, Categorie, Fonctionnalite, Fournisseur, Module, Unite
+from .models import Acteur, Article, Categorie, Fonctionnalite, Fournisseur, Module, Service, Unite
 
 
 @admin.register(Module)
@@ -23,6 +23,7 @@ class FonctionnaliteAdmin(admin.ModelAdmin):
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'nombre_portions']
     search_fields = ['nom']
 
 
@@ -38,9 +39,14 @@ class FournisseurAdmin(admin.ModelAdmin):
     search_fields = ['nom']
 
 
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    search_fields = ['nom']
+
+
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
-    list_display = ['code', 'designation', 'categorie', 'unite', 'seuil_minimum', 'stock', 'en_alerte']
+    list_display = ['code', 'designation', 'categorie', 'unite', 'seuil_minimum', 'stock', 'en_alerte', 'en_vigilance']
     list_filter = ['categorie', 'unite']
     search_fields = ['code', 'designation']
     readonly_fields = ['stock']
@@ -56,3 +62,7 @@ class ArticleAdmin(admin.ModelAdmin):
     @admin.display(boolean=True, description='alerte')
     def en_alerte(self, obj):
         return obj.en_alerte
+
+    @admin.display(boolean=True, description='vigilance')
+    def en_vigilance(self, obj):
+        return obj.en_vigilance

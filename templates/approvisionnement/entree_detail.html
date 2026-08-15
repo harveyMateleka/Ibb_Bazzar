@@ -1,0 +1,122 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}{{ bon.numero }}{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ bon.get_statut_display }}</p>
+    <h1>{{ bon.numero }}</h1>
+    <p class="lead">
+      {{ bon.fournisseur }} · {{ bon.date_approvisionnement|date:"d/m/Y H:i" }}
+      {% if bon.reference %} · Réf. {{ bon.reference }}{% endif %}
+    </p>
+  </div>
+  {% if bon.statut == 'VALIDE' %}
+  <a class="btn btn-primary" href="{% url 'approvisionnement:entree_imprimer' bon.pk %}">Imprimer le bon</a>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <h2>Produits enregistrés</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.quantite }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="3">Aucun produit enregistré pour le moment.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if bon.statut != 'VALIDE' and lignes %}
+  <p class="help">Ces produits sont en attente de validation. Le responsable pourra modifier la quantité ou supprimer une ligne dans l’onglet Validation.</p>
+  {% endif %}
+</section>
+
+{% if formset %}
+<form method="post" id="form-lignes-entree">
+  {% csrf_token %}
+  {{ formset.management_form }}
+  {{ formset.non_form_errors }}
+  <section class="panel">
+    <h2>Ajouter des produits</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Article</th>
+            <th>Quantité</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for form in formset %}
+          <tr>
+            <td>
+              {{ form.id }}
+              {{ form.article }}
+              {{ form.article.errors }}
+            </td>
+            <td>
+              {{ form.quantite }}
+              {{ form.quantite.errors }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="help">Un produit déjà enregistré ou choisi sur une autre ligne n’apparaît plus dans le sélecteur. Enregistrez les lignes : elles seront transmises au responsable pour validation.</p>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <button type="submit" class="btn btn-primary">Enregistrer les produits</button>
+      <a class="btn btn-ghost" href="{% url 'approvisionnement:entree' %}">Retour à la liste</a>
+    </div>
+  </section>
+</form>
+<script>
+  (function () {
+    const form = document.getElementById("form-lignes-entree");
+    if (!form) return;
+    const selects = function () {
+      return Array.from(form.querySelectorAll("select[data-article-ligne]"));
+    };
+
+    function sync() {
+      const choisis = selects()
+        .map(function (select) { return select.value; })
+        .filter(Boolean);
+      selects().forEach(function (select) {
+        const courant = select.value;
+        Array.from(select.options).forEach(function (option) {
+          if (!option.value) return;
+          const pris = choisis.indexOf(option.value) !== -1 && option.value !== courant;
+          option.hidden = pris;
+          option.disabled = pris;
+        });
+      });
+    }
+
+    form.addEventListener("change", function (event) {
+      if (event.target && event.target.matches("select[data-article-ligne]")) {
+        sync();
+      }
+    });
+    sync();
+  })();
+</script>
+{% endif %}
+{% endblock %}

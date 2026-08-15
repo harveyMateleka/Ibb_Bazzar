@@ -1,0 +1,198 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}{{ bon.numero }}{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ bon.get_statut_display }}</p>
+    <h1>{{ bon.numero }}</h1>
+    <p class="lead">
+      {{ bon.motif }} · {{ bon.date_sortie|date:"d/m/Y H:i" }}
+      {% if bon.destination %} · {{ bon.destination }}{% endif %}
+    </p>
+  </div>
+  {% if bon.statut == 'VALIDE' %}
+  <a class="btn btn-primary" href="{% url 'approvisionnement:sortie_imprimer' bon.pk %}">Imprimer le bon</a>
+  {% endif %}
+</div>
+
+{% if formset %}
+<form method="post" id="form-lignes-sortie">
+  {% csrf_token %}
+  {{ formset.management_form }}
+  {{ formset.non_form_errors }}
+  <section class="panel">
+    <h2>Lignes de produits</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Article</th>
+            <th>Quantité</th>
+            <th>Portions</th>
+            <th>Supprimer</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for form in formset %}
+          <tr data-ligne>
+            <td>
+              {{ form.id }}
+              {{ form.article }}
+              {{ form.article.errors }}
+            </td>
+            <td>
+              {{ form.quantite }}
+              {{ form.quantite.errors }}
+            </td>
+            <td class="cell-portions">
+              {{ form.nombre_portions }}
+              {{ form.nombre_portions.errors }}
+            </td>
+            <td>{{ form.DELETE }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="help">Le champ portions s’affiche pour les vivres frais (poisson, poulet, etc.). Si le stock est au seuil, le propriétaire doit s’authentifier. Un stock à 0 refuse impérativement la sortie.</p>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <button type="submit" class="btn btn-ghost">Enregistrer les lignes</button>
+    </div>
+  </section>
+</form>
+
+{% if ruptures %}
+<section class="panel panel-warning">
+  <h2>Sortie refusée</h2>
+  <p class="help">Le stock est à 0 ou la quantité demandée dépasse le disponible. Ces articles ne peuvent pas sortir, même avec une autorisation.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Demandé</th>
+          <th>Stock</th>
+          <th>Motif</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in ruptures %}
+        <tr class="row-alert">
+          <td>{{ item.article }}</td>
+          <td>{{ item.quantite }} {{ item.article.unite }}</td>
+          <td>{{ item.stock }} {{ item.article.unite }}</td>
+          <td>{{ item.motif }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% elif seuils %}
+<section class="panel panel-warning">
+  <h2>Stock au seuil — autorisation du propriétaire</h2>
+  <p class="help">Le stock de ces articles est égal ou inférieur au seuil. Le propriétaire doit saisir son identifiant et son mot de passe pour autoriser la sortie. Le stock sera ensuite diminué et l’opération enregistrée dans l’historique.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Demandé</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in seuils %}
+        <tr class="row-alert">
+          <td>{{ item.article }}</td>
+          <td>{{ item.quantite }} {{ item.article.unite }}</td>
+          <td>{{ item.stock }} {{ item.article.unite }}</td>
+          <td>{{ item.seuil }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <form method="post" action="{% url 'approvisionnement:sortie_valider' bon.pk %}" class="auth-form">
+    {% csrf_token %}
+    {{ auth_form.non_field_errors }}
+    <div class="form-grid auth-grid">
+      {% for field in auth_form %}
+      <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <button type="submit" class="btn btn-primary">Autoriser et valider le bon de sortie</button>
+    </div>
+  </form>
+</section>
+{% else %}
+<form method="post" action="{% url 'approvisionnement:sortie_valider' bon.pk %}">
+  {% csrf_token %}
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Valider et imprimer le bon de sortie</button>
+  </div>
+</form>
+{% endif %}
+<script>
+  (function () {
+    document.querySelectorAll("[data-ligne]").forEach(function (row) {
+      const article = row.querySelector("select");
+      const cell = row.querySelector(".cell-portions");
+      const input = cell && cell.querySelector("input");
+      if (!article || !cell || !input) return;
+
+      function sync() {
+        const option = article.options[article.selectedIndex];
+        const defaut = Number((option && option.dataset.nombrePortions) || 0);
+        cell.hidden = defaut <= 0;
+        if (defaut > 0 && (!input.value || Number(input.value) === 0)) {
+          input.value = defaut;
+        }
+        if (defaut <= 0) input.value = 0;
+      }
+
+      article.addEventListener("change", sync);
+      sync();
+    });
+  })();
+</script>
+{% else %}
+<section class="panel">
+  <h2>Lignes de produits</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+          <th>Portions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.quantite }}</td>
+          <td>{% if ligne.nombre_portions %}{{ ligne.nombre_portions }}{% else %}—{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="4">Aucune ligne.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

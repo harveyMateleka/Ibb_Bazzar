@@ -1,0 +1,98 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bon d'entrée {{ bon.numero }}</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <link rel="icon" href="{% static 'img/logo.png' %}">
+</head>
+<body class="print-page">
+  <div class="no-print print-toolbar">
+    <a class="btn btn-ghost" href="{% if bon.statut == 'VALIDE' %}{% url 'approvisionnement:entree_detail' bon.pk %}{% else %}{% url 'approvisionnement:entree_validation' %}{% endif %}">Retour</a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+
+  <article class="bon-doc">
+    <header class="bon-head">
+      <img src="{% static 'img/logo.png' %}" alt="IBBS BAZAR" class="bon-logo">
+      <div>
+        <p class="eyebrow">Restaurant · Boutique d'habillement</p>
+        <h1>Bon d'entrée d'approvisionnement</h1>
+      </div>
+      <div class="bon-numero">
+        <span>N°</span>
+        <strong>{{ bon.numero }}</strong>
+      </div>
+    </header>
+
+    <dl class="bon-meta">
+      <div>
+        <dt>Date</dt>
+        <dd>{{ bon.date_approvisionnement|date:"d/m/Y H:i" }}</dd>
+      </div>
+      <div>
+        <dt>Fournisseur</dt>
+        <dd>{{ bon.fournisseur }}</dd>
+      </div>
+      <div>
+        <dt>Référence</dt>
+        <dd>{{ bon.reference|default:"—" }}</dd>
+      </div>
+      <div>
+        <dt>Saisi par</dt>
+        <dd>{{ bon.utilisateur }}</dd>
+      </div>
+      <div>
+        <dt>Statut</dt>
+        <dd>{{ bon.get_statut_display }}</dd>
+      </div>
+    </dl>
+
+    {% if bon.commentaire %}
+    <p class="bon-note">{{ bon.commentaire }}</p>
+    {% endif %}
+
+    <table class="bon-table">
+      <thead>
+        <tr>
+          <th>N°</th>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Catégorie</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ ligne.article.code }}</td>
+          <td>{{ ligne.article.designation }}</td>
+          <td>{{ ligne.article.categorie }}</td>
+          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.quantite }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="bon-sign">
+      <div>
+        <p>Magasinier</p>
+        <span>Nom et signature</span>
+      </div>
+      <div>
+        <p>Responsable</p>
+        <span>Nom et signature</span>
+      </div>
+    </div>
+  </article>
+
+  {% if request.GET.auto %}
+  <script>window.addEventListener("load", function () { window.print(); });</script>
+  {% endif %}
+</body>
+</html>

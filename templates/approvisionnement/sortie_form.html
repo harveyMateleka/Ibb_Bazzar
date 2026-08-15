@@ -1,12 +1,12 @@
 {% extends "approvisionnement/base.html" %}
 
-{% block app_title %}Sortie stock{% endblock %}
+{% block app_title %}Nouvelle sortie{% endblock %}
 
 {% block app_content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">APP-03</p>
-    <h1>Sortie stock</h1>
+    <h1>Nouvelle sortie</h1>
   </div>
 </div>
 
@@ -16,20 +16,17 @@
     {{ form.non_field_errors }}
     <div class="form-grid">
       {% for field in form %}
-      <div class="field {% if field.name == 'autorisation_depassement' %}field-check{% endif %}">
-        {% if field.name == 'autorisation_depassement' %}
-          <label class="check-label">{{ field }} {{ field.label }}</label>
-        {% else %}
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-        {% endif %}
+      <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
         {{ field.errors }}
       </div>
       {% endfor %}
     </div>
-    <p class="help">Le stock ne peut pas être dépassé, sauf autorisation.</p>
+    <p class="help">Choisissez le service destinataire. À la validation, le stock de chaque article est diminué et la sortie est enregistrée dans l’historique. Un stock au seuil exige l’autorisation du propriétaire ; un stock à 0 refuse la sortie.</p>
     <div class="actions">
-      <button type="submit" class="btn btn-primary">Valider la sortie</button>
+      <button type="submit" class="btn btn-primary">Créer le bon</button>
     </div>
   </form>
 </section>

@@ -1,12 +1,12 @@
 {% extends "approvisionnement/base.html" %}
 
-{% block app_title %}Entrée stock{% endblock %}
+{% block app_title %}Nouvel approvisionnement{% endblock %}
 
 {% block app_content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">APP-02</p>
-    <h1>Entrée stock</h1>
+    <h1>Nouvel approvisionnement</h1>
   </div>
 </div>
 
@@ -23,8 +23,9 @@
       </div>
       {% endfor %}
     </div>
+    <p class="help">Un numéro unique sera attribué. Vous pourrez ensuite ajouter plusieurs lignes de produits. La mise à jour du stock se fera après validation par le responsable.</p>
     <div class="actions">
-      <button type="submit" class="btn btn-primary">Valider l’entrée</button>
+      <button type="submit" class="btn btn-primary">Créer le bon</button>
     </div>
   </form>
 </section>

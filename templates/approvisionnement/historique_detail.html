@@ -1,0 +1,58 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}{{ journal.numero }}{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ journal.get_type_operation_display }}</p>
+    <h1>{{ journal.numero }}</h1>
+    <p class="lead">
+      {{ journal.date_operation|date:"d/m/Y H:i" }} · {{ journal.utilisateur }}
+      {% if journal.fournisseur %} · {{ journal.fournisseur }}{% endif %}
+      {% if journal.motif %} · {{ journal.motif }}{% endif %}
+      {% if journal.destination %} · {{ journal.destination }}{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if journal.bon_entree %}
+    <a class="btn btn-primary" href="{% url 'approvisionnement:entree_imprimer' journal.bon_entree.pk %}">Imprimer le bon d'entrée</a>
+    {% elif journal.bon_sortie %}
+    <a class="btn btn-primary" href="{% url 'approvisionnement:sortie_imprimer' journal.bon_sortie.pk %}">Imprimer le bon de sortie</a>
+    {% endif %}
+    <a class="btn btn-ghost" href="{% url 'approvisionnement:historique' %}">Retour</a>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>Lignes retracées</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+          <th>Portions</th>
+          <th>Stock avant → après</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.quantite }}</td>
+          <td>{% if ligne.nombre_portions %}{{ ligne.nombre_portions }}{% else %}—{% endif %}</td>
+          <td>{{ ligne.stock_avant }} → {{ ligne.stock_apres }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">Aucune ligne.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
