@@ -7,6 +7,9 @@
     <h1>Boutique</h1>
   </div>
   <div class="actions">
+    {% if perms.boutique.adjust_stock %}
+    <a class="btn btn-ghost" href="{% url 'boutique:entree' %}">Nouvelle entrée</a>
+    {% endif %}
     {% if perms.boutique.create_vente %}
     <a class="btn btn-primary" href="{% url 'boutique:vente_nouvelle' %}">Nouvelle vente</a>
     {% endif %}
@@ -37,19 +40,49 @@
         </tr>
       </thead>
       <tbody>
-        {% for a in articles %}
-        <tr class="{{ a.classe_stock }}">
-          <td>{{ a.code }}</td>
-          <td>{{ a.designation }}</td>
-          <td>{% with i=a.infos_boutique %}{{ i.taille }}/{{ i.couleur }}{% if i.type_produit %} ({{ i.type_produit }}){% endif %}{% endwith %}</td>
-          <td>{{ a.categorie }}</td>
-          <td>{{ a.infos_boutique.prix_vente|default:"—" }}</td>
-          <td>{{ a.stock }}</td>
-          <td>{{ a.seuil_minimum }}</td>
-          <td>{{ a.niveau_stock }}</td>
+        {% for stock in stocks %}
+        <tr class="{{ stock.classe_stock }}">
+          <td>{{ stock.article.code }}</td>
+          <td>{{ stock.article.designation }}</td>
+          <td>{% with a=stock.article %}{{ a.taille }}/{{ a.couleur }}{% if a.type %} ({{ a.type }}){% endif %}{% endwith %}</td>
+          <td>{{ stock.article.categorie }}</td>
+          <td>{{ stock.article.prix_unitaire }}</td>
+          <td>{{ stock.quantite }}</td>
+          <td>{{ stock.seuil_alerte }}</td>
+          <td>{{ stock.niveau_stock }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="8">Aucun article dans votre périmètre.</td></tr>
+        <tr><td colspan="8">Aucun stock dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Alertes actives</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Type</th>
+          <th>Quantité</th>
+          <th>Seuil</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alerte in alertes %}
+        <tr class="{{ alerte.classe_stock }}">
+          <td>{{ alerte.article.code }}</td>
+          <td>{{ alerte.niveau_stock }}</td>
+          <td>{{ alerte.quantite_actuelle }}</td>
+          <td>{{ alerte.seuil }}</td>
+          <td>{{ alerte.date_creation|date:"d/m/Y H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucune alerte active.</td></tr>
         {% endfor %}
       </tbody>
     </table>

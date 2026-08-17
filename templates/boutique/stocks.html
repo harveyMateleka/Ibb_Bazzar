@@ -1,0 +1,48 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Stock</p>
+    <h1>État des stocks</h1>
+  </div>
+  {% if perms.boutique.adjust_stock %}
+  <a class="btn btn-primary" href="{% url 'boutique:entree' %}">Nouvelle entrée</a>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Variante</th>
+          <th>Catégorie</th>
+          <th>Prix</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Niveau</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock in stocks %}
+        <tr class="{{ stock.classe_stock }}">
+          <td>{{ stock.article.code }}</td>
+          <td>{{ stock.article.designation }}</td>
+          <td>{% with a=stock.article %}{{ a.taille }}/{{ a.couleur }}{% if a.type %} ({{ a.type }}){% endif %}{% endwith %}</td>
+          <td>{{ stock.article.categorie }}</td>
+          <td>{{ stock.article.prix_unitaire }}</td>
+          <td>{{ stock.quantite }}</td>
+          <td>{{ stock.seuil_alerte }}</td>
+          <td>{{ stock.niveau_stock }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8">Aucun stock dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Inventaires</p>
+    <h1>{{ inventaire.numero }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:inventaires' %}">← Retour</a>
+    {% if inventaire.statut == 'BROUILLON' %}
+      {% if perms.boutique.adjust_stock %}
+      <form action="{% url 'boutique:inventaire_valider' inventaire.pk %}" method="post" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">Valider l'inventaire</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Date</dt><dd>{{ inventaire.date_inventaire|date:"d/m/Y" }}</dd>
+    <dt>Succursale</dt><dd>{{ inventaire.succursale }}</dd>
+    <dt>Domaine</dt><dd>{{ inventaire.domaine|default:"—" }}</dd>
+    <dt>Responsable</dt><dd>{{ inventaire.responsable }}</dd>
+    <dt>Périmètre</dt><dd>{{ inventaire.get_portee_display }}</dd>
+    <dt>Statut</dt><dd>{{ inventaire.get_statut_display }}</dd>
+    {% if inventaire.commentaire %}<dt>Commentaire</dt><dd>{{ inventaire.commentaire }}</dd>{% endif %}
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Lignes d'inventaire</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Stock système</th>
+          <th>Stock physique</th>
+          <th>Écart</th>
+          <th>Motif</th>
+          <th>Mouvement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.article.code }} — {{ ligne.article.designation }}</td>
+          <td>{{ ligne.stock_systeme }}</td>
+          <td>{{ ligne.stock_physique }}</td>
+          <td>{{ ligne.ecart }}</td>
+          <td>{{ ligne.motif|default:"—" }}</td>
+          <td>{{ ligne.mouvement.type|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucune ligne.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if formset %}
+<section class="panel">
+  <h2>Saisir les quantités physiques</h2>
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    {% for form in formset %}
+    <div class="field">{{ form.id }}{{ form.as_p }}</div>
+    {% endfor %}
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Enregistrer les quantités</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

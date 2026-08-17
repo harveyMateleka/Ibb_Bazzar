@@ -6,6 +6,9 @@
     <p class="eyebrow">Stock</p>
     <h1>Articles boutique</h1>
   </div>
+  {% if perms.boutique.adjust_stock %}
+  <a class="btn btn-primary" href="{% url 'boutique:article_nouveau' %}">Nouvel article</a>
+  {% endif %}
 </div>
 
 <section class="panel">
@@ -20,25 +23,27 @@
           <th>Stock</th>
           <th>Seuil</th>
           <th>Niveau</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for a in articles %}
-        <tr class="{{ a.classe_stock }}">
+        {% for item in articles %}
+        {% with a=item.article stock=item.stock %}
+        <tr class="{{ stock.classe_stock }}">
           <td>{{ a.code }}</td>
           <td>{{ a.designation }}</td>
-          <td>
-            {% with infos=a.infos_boutique %}
-              {{ infos.taille }}/{{ infos.couleur }}{% if infos.type_produit %} ({{ infos.type_produit }}){% endif %}
-            {% endwith %}
+          <td>{{ a.taille }}/{{ a.couleur }}{% if a.type %} ({{ a.type }}){% endif %}</td>
+          <td>{{ a.prix_unitaire }}</td>
+          <td>{{ stock.quantite|default:"0" }}</td>
+          <td>{{ stock.seuil_alerte|default:"0" }}</td>
+          <td>{{ stock.niveau_stock }}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'boutique:article_detail' a.pk %}">Voir</a>
           </td>
-          <td>{{ a.infos_boutique.prix_vente|default:"—" }}</td>
-          <td>{{ a.stock }}</td>
-          <td>{{ a.seuil_minimum }}</td>
-          <td>{{ a.niveau_stock }}</td>
         </tr>
+        {% endwith %}
         {% empty %}
-        <tr><td colspan="7">Aucun article boutique dans votre périmètre.</td></tr>
+        <tr><td colspan="8">Aucun article boutique dans votre périmètre.</td></tr>
         {% endfor %}
       </tbody>
     </table>

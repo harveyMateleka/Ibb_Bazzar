@@ -7,10 +7,12 @@
   <div class="section-inner">
     <nav class="subnav" aria-label="Boutique">
       <a href="{% url 'boutique:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="is-active"{% endif %}>Tableau de bord</a>
-      <a href="{% url 'boutique:articles' %}" {% if request.resolver_match.url_name == 'articles' %}class="is-active"{% endif %}>Articles</a>
+      <a href="{% url 'boutique:articles' %}" {% if 'article' in request.resolver_match.url_name %}class="is-active"{% endif %}>Articles</a>
+      <a href="{% url 'boutique:stocks' %}" {% if request.resolver_match.url_name == 'stocks' or request.resolver_match.url_name == 'entree' %}class="is-active"{% endif %}>Stock</a>
       <a href="{% url 'boutique:ventes' %}" {% if 'vente' in request.resolver_match.url_name %}class="is-active"{% endif %}>Ventes</a>
-      <a href="{% url 'approvisionnement:inventaires' %}">Inventaire</a>
-      <a href="{% url 'approvisionnement:historique' %}">Historique</a>
+      <a href="{% url 'boutique:inventaires' %}" {% if 'inventaire' in request.resolver_match.url_name %}class="is-active"{% endif %}>Inventaires</a>
+      <a href="{% url 'boutique:mouvements' %}" {% if request.resolver_match.url_name == 'mouvements' %}class="is-active"{% endif %}>Historique</a>
+      <a href="{% url 'boutique:alertes' %}" {% if request.resolver_match.url_name == 'alertes' %}class="is-active"{% endif %}>Alertes</a>
     </nav>
     {% block app_content %}{% endblock %}
   </div>

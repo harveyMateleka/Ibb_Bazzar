@@ -1,0 +1,34 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Articles</p>
+    <h1>{{ article.code }} — {{ article.designation }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:articles' %}">← Retour</a>
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Référence / SKU</dt><dd>{{ article.reference|default:"—" }}</dd>
+    <dt>Catégorie</dt><dd>{{ article.categorie|default:"—" }}</dd>
+    <dt>Sous-catégorie</dt><dd>{{ article.sous_categorie|default:"—" }}</dd>
+    <dt>Unité</dt><dd>{{ article.unite|default:"—" }}</dd>
+    <dt>Genre</dt><dd>{{ article.get_genre_display|default:"—" }}</dd>
+    <dt>Variante</dt><dd>{{ article.taille }}/{{ article.couleur }}{% if article.type %} ({{ article.type }}){% endif %}</dd>
+    <dt>Marque / Matière / Modèle</dt><dd>{{ article.marque }}{% if article.matiere %} · {{ article.matiere }}{% endif %}{% if article.modele %} · {{ article.modele }}{% endif %}</dd>
+    <dt>Localisation</dt><dd>Rayon {{ article.rayon|default:"—" }} · Étagère {{ article.etagere|default:"—" }} · {{ article.emplacement|default:"—" }}</dd>
+    <dt>Succursale</dt><dd>{{ article.succursale }}</dd>
+    <dt>Domaine</dt><dd>{{ article.domaine|default:"—" }}</dd>
+    <dt>Prix d'achat</dt><dd>{{ article.prix_achat }}</dd>
+    <dt>Prix de vente</dt><dd>{{ article.prix_unitaire }}</dd>
+    <dt>Prix minimum</dt><dd>{{ article.prix_minimum }}</dd>
+    <dt>Prix maximum</dt><dd>{{ article.prix_maximum }}</dd>
+    <dt>Statut</dt><dd>{{ article.get_statut_display }}</dd>
+    <dt>Stock actuel</dt><dd>{% if stock %}{{ stock.quantite }} (seuil {{ stock.seuil_alerte }}){% else %}0{% endif %}</dd>
+  </dl>
+</section>
+{% endblock %}
