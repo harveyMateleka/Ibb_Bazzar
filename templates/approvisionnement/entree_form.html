@@ -19,11 +19,46 @@
       <div class="field">
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
+        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
         {{ field.errors }}
       </div>
       {% endfor %}
     </div>
-    <p class="help">Un numéro unique sera attribué. Vous pourrez ensuite ajouter plusieurs lignes de produits. La mise à jour du stock se fera après validation par le responsable.</p>
+
+    <section class="panel" style="margin-top: 1.5rem;">
+      <h2>Produits à approvisionner</h2>
+      <p class="help">Choisissez l'article et indiquez la quantité. Une ligne vide est ignorée ; la mise à jour du stock se fera après validation par le responsable.</p>
+      {{ formset.management_form }}
+      {{ formset.non_form_errors }}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Article</th>
+              <th>Unité</th>
+              <th>Quantité</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ligne_form in formset %}
+            <tr>
+              <td>
+                {{ ligne_form.article }}
+                {{ ligne_form.article.errors }}
+              </td>
+              <td class="unite-col">{{ ligne_form.instance.article.unite|default:"—" }}</td>
+              <td>
+                {{ ligne_form.quantite }}
+                {{ ligne_form.quantite.errors }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="help">Un numéro unique sera attribué au bon.</p>
     <div class="actions">
       <button type="submit" class="btn btn-primary">Créer le bon</button>
     </div>

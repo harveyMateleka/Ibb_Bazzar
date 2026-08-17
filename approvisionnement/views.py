@@ -1,5 +1,4 @@
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
@@ -9,10 +8,12 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from core.permissions import require_permission, succursales_autorisees
+
 from .forms import (
-    AutorisationDepassementForm,
     BonApprovisionnementForm,
     BonSortieForm,
+    BonValidationForm,
     InventaireForm,
     LigneApprovisionnementFormSet,
     LigneInventaireFormSet,
@@ -30,11 +31,39 @@ from .models import (
 )
 
 
-@login_required
+def _perimetre(user):
+    """Périmètre d'accès de l'utilisateur au module Approvisionnement.
+
+    Approvisionnement est un MODULE transversal : son accès est contrôlé par
+    permission. Le périmètre des données est l'intersection de :
+    - succursales auxquelles l'utilisateur est affecté ;
+    - domaines d'activité (BOUTIQUE, RESTAURANT…) auxquels il est affecté.
+    Un bon/article n'est visible que si (succursale, domaine) ∈ périmètre.
+    """
+    succursales = succursales_autorisees(user)
+    domaines = user.domaines_autorisees()
+    return {
+        'succursales': succursales,
+        'succursales_ids': list(succursales.values_list('id', flat=True)),
+        'domaines': domaines,
+        'domaines_ids': list(domaines.values_list('id', flat=True)),
+    }
+
+
+@require_permission('approvisionnement.view_approvisionnement')
 def tableau_de_bord(request):
-    articles = Article.objects.select_related('categorie', 'unite')
+    peri = _perimetre(request.user)
+    articles = Article.objects.select_related('categorie', 'unite').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id__in=peri['domaines_ids'],
+    )
     alertes = articles.filter(stock__lte=F('seuil_minimum') + 10)
-    derniers = Approvisionnement.objects.select_related('utilisateur', 'fournisseur')[:8]
+    derniers = Approvisionnement.objects.select_related(
+        'utilisateur', 'fournisseur'
+    ).filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            )[:8]
     return render(
         request,
         'approvisionnement/tableau_de_bord.html',
@@ -44,16 +73,25 @@ def tableau_de_bord(request):
             'derniers_mouvements': derniers,
             'nb_alertes': alertes.count(),
             'nb_articles': articles.count(),
-            'nb_mouvements': Approvisionnement.objects.count(),
+            'nb_mouvements': Approvisionnement.objects.filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ).count(),
         },
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def entree_liste(request):
-    bons = BonApprovisionnement.objects.select_related(
-        'fournisseur', 'utilisateur'
-    ).annotate(nb_lignes=Count('lignes'))
+    peri = _perimetre(request.user)
+    bons = (
+        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            )
+        .annotate(nb_lignes=Count('lignes'))
+    )
     return render(
         request,
         'approvisionnement/entree_liste.html',
@@ -61,14 +99,44 @@ def entree_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.create_approvisionnement')
 def entree_nouveau(request):
+    peri = _perimetre(request.user)
+    contexte = request.user.contexte_actif()
+    # Succursale/domaine utilisés pour filtrer les articles des lignes.
+    succursale_id = (
+        contexte['succursale'].pk
+        if contexte and contexte['verrouille'] and contexte['succursale']
+        else None
+    )
+    domaine_id = (
+        contexte['domaine'].pk
+        if contexte and contexte['verrouille'] and contexte['domaine']
+        else None
+    )
+    if request.method == 'POST':
+        succursale_id = request.POST.get('succursale') or succursale_id
+        domaine_id = request.POST.get('domaine') or domaine_id
+
     formulaire = BonApprovisionnementForm(
         request.POST if request.method == 'POST' else None,
+        succursales=peri['succursales'],
+        domaines=peri['domaines'],
+        contexte=contexte,
         initial={'date_approvisionnement': timezone.localtime().strftime('%Y-%m-%dT%H:%M')},
     )
-    if request.method == 'POST' and formulaire.is_valid():
-        if not Article.objects.exists():
+    # Articles + quantités directement dans le formulaire de création.
+    formset = LigneApprovisionnementFormSet(
+        request.POST if request.method == 'POST' else None,
+        queryset=LigneApprovisionnement.objects.none(),
+        succursale=succursale_id,
+        domaine=domaine_id,
+    )
+    if request.method == 'POST' and formulaire.is_valid() and formset.is_valid():
+        if not Article.objects.filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ).exists():
             messages.error(
                 request,
                 'Créez d’abord des articles dans l’administration (tables de paramètre).',
@@ -76,22 +144,35 @@ def entree_nouveau(request):
         else:
             with transaction.atomic():
                 bon = formulaire.save(commit=False)
+                # Succursale/domaine imposés depuis le périmètre (champs verrouillés).
+                if contexte and contexte['verrouille']:
+                    bon.succursale = contexte['succursale']
+                    bon.domaine = contexte['domaine']
                 bon.utilisateur = request.user
                 bon.numero = BonApprovisionnement.prochain_numero()
                 bon.save()
-            messages.success(request, f'Bon {bon.numero} créé. Ajoutez les lignes de produits.')
+                formset.instance = bon
+                formset.save()
+            messages.success(
+                request, f'Bon {bon.numero} créé avec ses produits. En attente de validation.'
+            )
             return redirect('approvisionnement:entree_detail', pk=bon.pk)
     return render(
         request,
         'approvisionnement/entree_form.html',
-        {'form': formulaire},
+        {'form': formulaire, 'formset': formset},
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def entree_detail(request, pk):
+    peri = _perimetre(request.user)
     bon = get_object_or_404(
-        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
+        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
     lignes = bon.lignes.select_related('article', 'article__unite', 'mouvement')
@@ -103,6 +184,8 @@ def entree_detail(request, pk):
             instance=bon,
             queryset=LigneApprovisionnement.objects.none(),
             articles_exclus=articles_exclus,
+            succursale=bon.succursale_id,
+            domaine=bon.domaine_id,
         )
         if request.method == 'POST' and formset.is_valid():
             nouvelles = formset.save()
@@ -126,10 +209,15 @@ def entree_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_approvisionnement')
 def entree_validation_liste(request):
+    peri = _perimetre(request.user)
     bons = (
         BonApprovisionnement.objects.filter(statut=BonApprovisionnement.Statut.BROUILLON)
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            )
         .annotate(nb_lignes=Count('lignes'))
         .filter(nb_lignes__gt=0)
         .select_related('fournisseur', 'utilisateur')
@@ -142,19 +230,32 @@ def entree_validation_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_approvisionnement')
 def entree_validation_detail(request, pk):
+    peri = _perimetre(request.user)
     bon = get_object_or_404(
-        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
+        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
+    bon_form = None
     formset = None
     if bon.statut != BonApprovisionnement.Statut.VALIDE:
+        # Le fournisseur (et la référence) restent modifiables à la validation.
+        bon_form = BonValidationForm(
+            request.POST if request.method == 'POST' else None,
+            instance=bon,
+        )
+        # Chaque quantité de ligne reste modifiable / supprimable.
         formset = LigneValidationFormSet(
             request.POST if request.method == 'POST' else None,
             instance=bon,
         )
-        if request.method == 'POST' and formset.is_valid():
+        if request.method == 'POST' and bon_form.is_valid() and formset.is_valid():
+            bon_form.save()
             formset.save()
             if request.POST.get('action') == 'valider':
                 try:
@@ -171,23 +272,31 @@ def entree_validation_detail(request, pk):
                     reverse('approvisionnement:entree_imprimer', kwargs={'pk': bon.pk})
                     + '?auto=1'
                 )
-            messages.success(request, 'Quantités et lignes mises à jour.')
+            messages.success(request, 'Fournisseur, quantités et lignes mises à jour.')
             return redirect('approvisionnement:entree_validation_detail', pk=bon.pk)
     return render(
         request,
         'approvisionnement/entree_validation_detail.html',
         {
             'bon': bon,
+            'bon_form': bon_form,
             'formset': formset,
             'lignes': bon.lignes.select_related('article', 'article__unite', 'mouvement'),
         },
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_approvisionnement')
 @require_POST
 def entree_valider(request, pk):
-    bon = get_object_or_404(BonApprovisionnement, pk=pk)
+    peri = _perimetre(request.user)
+    bon = get_object_or_404(
+        BonApprovisionnement.objects.filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
+        pk=pk,
+    )
     try:
         bon.valider()
     except ValidationError as exc:
@@ -197,10 +306,15 @@ def entree_valider(request, pk):
     return redirect(reverse('approvisionnement:entree_imprimer', kwargs={'pk': bon.pk}) + '?auto=1')
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def entree_imprimer(request, pk):
+    peri = _perimetre(request.user)
     bon = get_object_or_404(
-        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
+        BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
     return render(
@@ -213,9 +327,13 @@ def entree_imprimer(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_sortie')
 def sortie_liste(request):
-    bons = BonSortie.objects.select_related('utilisateur', 'destination')
+    peri = _perimetre(request.user)
+    bons = BonSortie.objects.select_related('utilisateur', 'destination').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id__in=peri['domaines_ids'],
+    )
     return render(
         request,
         'approvisionnement/sortie_liste.html',
@@ -223,14 +341,22 @@ def sortie_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.create_sortie')
 def sortie_nouveau(request):
+    peri = _perimetre(request.user)
+    contexte = request.user.contexte_actif()
     formulaire = BonSortieForm(
         request.POST if request.method == 'POST' else None,
+        succursales=peri['succursales'],
+        domaines=peri['domaines'],
+        contexte=contexte,
         initial={'date_sortie': timezone.localtime().strftime('%Y-%m-%dT%H:%M')},
     )
     if request.method == 'POST' and formulaire.is_valid():
-        if not Article.objects.exists():
+        if not Article.objects.filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ).exists():
             messages.error(
                 request,
                 'Créez d’abord des articles dans l’administration (tables de paramètre).',
@@ -243,6 +369,10 @@ def sortie_nouveau(request):
         else:
             with transaction.atomic():
                 bon = formulaire.save(commit=False)
+                # Succursale/domaine imposés depuis le périmètre (champs verrouillés).
+                if contexte and contexte['verrouille']:
+                    bon.succursale = contexte['succursale']
+                    bon.domaine = contexte['domaine']
                 bon.utilisateur = request.user
                 bon.numero = BonSortie.prochain_numero()
                 bon.save()
@@ -255,20 +385,25 @@ def sortie_nouveau(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_sortie')
 def sortie_detail(request, pk):
+    peri = _perimetre(request.user)
     bon = get_object_or_404(
-        BonSortie.objects.select_related('utilisateur', 'destination'),
+        BonSortie.objects.select_related('utilisateur', 'destination')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
     formset = LigneSortieFormSet(
         request.POST if request.method == 'POST' else None,
         instance=bon,
+        succursale=bon.succursale_id,
+        domaine=bon.domaine_id,
     )
-    depassements = []
     ruptures = []
     seuils = []
-    auth_form = None
     if bon.statut == BonSortie.Statut.VALIDE:
         formset = None
     elif request.method == 'POST' and formset.is_valid():
@@ -277,9 +412,6 @@ def sortie_detail(request, pk):
         return redirect('approvisionnement:sortie_detail', pk=bon.pk)
     else:
         ruptures, seuils = bon.analyser_stock()
-        depassements = ruptures
-        if seuils and not ruptures:
-            auth_form = AutorisationDepassementForm(request=request)
     return render(
         request,
         'approvisionnement/sortie_detail.html',
@@ -289,28 +421,32 @@ def sortie_detail(request, pk):
             'lignes': bon.lignes.select_related('article', 'article__unite', 'mouvement'),
             'ruptures': ruptures,
             'seuils': seuils,
-            'depassements': depassements,
-            'auth_form': auth_form,
         },
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_sortie')
 @require_POST
 def sortie_valider(request, pk):
+    peri = _perimetre(request.user)
     bon = get_object_or_404(
-        BonSortie.objects.select_related('utilisateur', 'destination'),
+        BonSortie.objects.select_related('utilisateur', 'destination')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
     ruptures, seuils = bon.analyser_stock()
-    autorisation = False
-    if ruptures:
+    if ruptures or seuils:
         messages.error(
             request,
-            'Impossible de valider : un article est à 0 ou la quantité dépasse le stock. '
-            'Retirez ou corrigez la ligne concernée.',
+            'Impossible de valider : un article est à 0, dépasse le stock disponible, '
+            'ou est au seuil d’alerte. Approvisionnez d’abord l’article concerné.',
         )
-        formset = LigneSortieFormSet(instance=bon)
+        formset = LigneSortieFormSet(
+            instance=bon, succursale=bon.succursale_id, domaine=bon.domaine_id
+        )
         return render(
             request,
             'approvisionnement/sortie_detail.html',
@@ -320,53 +456,29 @@ def sortie_valider(request, pk):
                 'lignes': bon.lignes.select_related('article', 'article__unite', 'mouvement'),
                 'ruptures': ruptures,
                 'seuils': seuils,
-                'auth_form': None,
             },
         )
-    if seuils:
-        auth_form = AutorisationDepassementForm(request.POST, request=request)
-        if not auth_form.is_valid():
-            messages.error(
-                request,
-                'Le stock a atteint le seuil. Le propriétaire doit s’authentifier pour autoriser la sortie.',
-            )
-            formset = LigneSortieFormSet(instance=bon)
-            return render(
-                request,
-                'approvisionnement/sortie_detail.html',
-                {
-                    'bon': bon,
-                    'formset': formset,
-                    'lignes': bon.lignes.select_related('article', 'article__unite', 'mouvement'),
-                    'ruptures': ruptures,
-                    'seuils': seuils,
-                    'auth_form': auth_form,
-                },
-            )
-        autorisation = True
     try:
-        bon.valider(autorisation_depassement=autorisation)
+        bon.valider()
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
         return redirect('approvisionnement:sortie_detail', pk=bon.pk)
-    if autorisation:
-        messages.success(
-            request,
-            f'Bon {bon.numero} validé avec autorisation du propriétaire. '
-            'Le stock a été diminué et l’historique a été enregistré.',
-        )
-    else:
-        messages.success(
-            request,
-            f'Bon {bon.numero} validé. Le stock a été diminué et l’historique a été enregistré.',
-        )
+    messages.success(
+        request,
+        f'Bon {bon.numero} validé. Le stock a été diminué et l’historique a été enregistré.',
+    )
     return redirect(reverse('approvisionnement:sortie_imprimer', kwargs={'pk': bon.pk}) + '?auto=1')
 
 
-@login_required
+@require_permission('approvisionnement.view_sortie')
 def sortie_imprimer(request, pk):
+    peri = _perimetre(request.user)
     bon = get_object_or_404(
-        BonSortie.objects.select_related('utilisateur', 'destination'),
+        BonSortie.objects.select_related('utilisateur', 'destination')
+        .filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
     return render(
@@ -379,11 +491,15 @@ def sortie_imprimer(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_historique')
 def historique(request):
+    peri = _perimetre(request.user)
     journaux = Approvisionnement.objects.select_related(
         'utilisateur', 'fournisseur', 'bon_entree', 'bon_sortie'
-    ).prefetch_related('lignes__article')
+    ).filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ).prefetch_related('lignes__article')
     type_filtre = request.GET.get('type', '')
     recherche = request.GET.get('q', '').strip()
     if type_filtre in Approvisionnement.Type.values:
@@ -411,12 +527,16 @@ def historique(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_historique')
 def historique_detail(request, pk):
+    peri = _perimetre(request.user)
     journal = get_object_or_404(
         Approvisionnement.objects.select_related(
             'utilisateur', 'fournisseur', 'bon_entree', 'bon_sortie'
-        ),
+        ).filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
         pk=pk,
     )
     return render(
@@ -429,9 +549,13 @@ def historique_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_inventaire')
 def inventaire_liste(request):
-    inventaires = Inventaire.objects.select_related('responsable')
+    peri = _perimetre(request.user)
+    inventaires = Inventaire.objects.select_related('responsable').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id__in=peri['domaines_ids'],
+    )
     return render(
         request,
         'approvisionnement/inventaire_liste.html',
@@ -439,26 +563,77 @@ def inventaire_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.create_inventaire')
 def inventaire_nouveau(request):
-    formulaire = InventaireForm(request.POST if request.method == 'POST' else None)
+    peri = _perimetre(request.user)
+    contexte = request.user.contexte_actif()
+    succursale_id = (
+        contexte['succursale'].pk
+        if contexte and contexte['verrouille'] and contexte['succursale']
+        else None
+    )
+    domaine_id = (
+        contexte['domaine'].pk
+        if contexte and contexte['verrouille'] and contexte['domaine']
+        else None
+    )
+    if request.method == 'POST':
+        succursale_id = request.POST.get('succursale') or succursale_id
+        domaine_id = request.POST.get('domaine') or domaine_id
+
+    # Articles proposables pour la portée « Un article ».
+    articles = Article.objects.select_related('unite')
+    if succursale_id:
+        articles = articles.filter(succursale_id=succursale_id)
+    elif peri['succursales_ids']:
+        articles = articles.filter(succursale_id__in=peri['succursales_ids'])
+    if domaine_id:
+        articles = articles.filter(domaine_id=domaine_id)
+    elif peri['domaines_ids']:
+        articles = articles.filter(domaine_id__in=peri['domaines_ids'])
+
+    formulaire = InventaireForm(
+        request.POST if request.method == 'POST' else None,
+        succursales=peri['succursales'],
+        domaines=peri['domaines'],
+        contexte=contexte,
+        articles=articles,
+    )
     if request.method == 'POST' and formulaire.is_valid():
-        if not Article.objects.exists():
+        if not articles.exists():
             messages.error(
                 request,
-                'Créez d’abord des articles dans l’administration (tables de paramètre).',
+                'Aucun article à inventorier dans ce périmètre (tables de paramètre).',
             )
         else:
             inventaire = formulaire.save(commit=False)
+            # Succursale/domaine imposés depuis le périmètre (champs verrouillés).
+            if contexte and contexte['verrouille']:
+                inventaire.succursale = contexte['succursale']
+                inventaire.domaine = contexte['domaine']
             inventaire.responsable = request.user
             inventaire.save()
-            for article in Article.objects.all():
+            if formulaire.cleaned_data['portee'] == 'ARTICLE':
+                article = formulaire.cleaned_data['article']
                 inventaire.lignes.create(
                     article=article,
                     stock_systeme=article.stock,
                     stock_physique=article.stock,
                 )
-            messages.success(request, 'Inventaire créé. Saisissez les stocks physiques.')
+                libelle = f'Inventaire de {article.code}'
+            else:
+                articles_du_scope = Article.objects.filter(
+                    succursale=inventaire.succursale,
+                    domaine=inventaire.domaine,
+                )
+                for article in articles_du_scope:
+                    inventaire.lignes.create(
+                        article=article,
+                        stock_systeme=article.stock,
+                        stock_physique=article.stock,
+                    )
+                libelle = f'Inventaire complet ({articles_du_scope.count()} article(s))'
+            messages.success(request, f'{libelle} créé. Saisissez les stocks physiques.')
             return redirect('approvisionnement:inventaire_detail', pk=inventaire.pk)
     return render(
         request,
@@ -467,10 +642,14 @@ def inventaire_nouveau(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_inventaire')
 def inventaire_detail(request, pk):
+    peri = _perimetre(request.user)
     inventaire = get_object_or_404(
-        Inventaire.objects.select_related('responsable'),
+        Inventaire.objects.select_related('responsable').filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id__in=peri['domaines_ids'],
+        ),
         pk=pk,
     )
     formset = LigneInventaireFormSet(
@@ -494,10 +673,17 @@ def inventaire_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_inventaire')
 @require_POST
 def inventaire_valider(request, pk):
-    inventaire = get_object_or_404(Inventaire, pk=pk)
+    peri = _perimetre(request.user)
+    inventaire = get_object_or_404(
+        Inventaire.objects.filter(
+                succursale_id__in=peri['succursales_ids'],
+                domaine_id__in=peri['domaines_ids'],
+            ),
+        pk=pk,
+    )
     try:
         inventaire.valider()
     except ValidationError as exc:

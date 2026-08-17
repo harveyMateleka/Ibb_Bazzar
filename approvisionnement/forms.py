@@ -4,6 +4,8 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.forms import inlineformset_factory
 from django.utils import timezone
 
+from core.permissions import appliquer_contexte
+
 from .models import (
     Article,
     BonApprovisionnement,
@@ -53,7 +55,7 @@ class ConnexionForm(StyledFormMixin, AuthenticationForm):
 class BonApprovisionnementForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = BonApprovisionnement
-        fields = ['date_approvisionnement', 'fournisseur', 'reference', 'commentaire']
+        fields = ['date_approvisionnement', 'succursale', 'domaine', 'fournisseur', 'reference', 'commentaire']
         widgets = {
             'date_approvisionnement': forms.DateTimeInput(
                 attrs={'type': 'datetime-local'},
@@ -62,9 +64,14 @@ class BonApprovisionnementForm(StyledFormMixin, forms.ModelForm):
             'commentaire': forms.Textarea(attrs={'rows': 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['date_approvisionnement'].input_formats = ['%Y-%m-%dT%H:%M']
+        if succursales is not None:
+            self.fields['succursale'].queryset = succursales
+        if domaines is not None:
+            self.fields['domaine'].queryset = domaines
+        appliquer_contexte(self, contexte)
 
     def clean_date_approvisionnement(self):
         value = self.cleaned_data.get('date_approvisionnement')
@@ -81,12 +88,16 @@ class LigneApprovisionnementForm(StyledFormMixin, forms.ModelForm):
             'quantite': forms.NumberInput(attrs={'min': 1}),
         }
 
-    def __init__(self, *args, articles_exclus=None, **kwargs):
+    def __init__(self, *args, articles_exclus=None, succursale=None, domaine=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['article'].required = False
         self.fields['quantite'].required = False
         self.fields['article'].widget.attrs['data-article-ligne'] = '1'
         articles = Article.objects.all()
+        if succursale is not None:
+            articles = articles.filter(succursale_id=succursale)
+        if domaine is not None:
+            articles = articles.filter(domaine_id=domaine)
         if articles_exclus:
             articles = articles.exclude(pk__in=articles_exclus)
         self.fields['article'].queryset = articles
@@ -109,12 +120,16 @@ class LigneApprovisionnementForm(StyledFormMixin, forms.ModelForm):
 
 
 class BaseLigneApprovisionnementFormSet(forms.BaseInlineFormSet):
-    def __init__(self, *args, articles_exclus=None, **kwargs):
+    def __init__(self, *args, articles_exclus=None, succursale=None, domaine=None, **kwargs):
         self.articles_exclus = set(articles_exclus or [])
+        self.succursale = succursale
+        self.domaine = domaine
         super().__init__(*args, **kwargs)
 
     def _construct_form(self, i, **kwargs):
         kwargs['articles_exclus'] = self.articles_exclus
+        kwargs['succursale'] = self.succursale
+        kwargs['domaine'] = self.domaine
         return super()._construct_form(i, **kwargs)
 
     def clean(self):
@@ -144,6 +159,17 @@ LigneApprovisionnementFormSet = inlineformset_factory(
     can_delete=False,
     min_num=0,
 )
+
+
+class BonValidationForm(StyledFormMixin, forms.ModelForm):
+    """Validation du bon : le fournisseur (et la référence) restent modifiables."""
+
+    class Meta:
+        model = BonApprovisionnement
+        fields = ['fournisseur', 'reference', 'commentaire']
+        widgets = {
+            'commentaire': forms.Textarea(attrs={'rows': 3}),
+        }
 
 
 class LigneValidationForm(StyledFormMixin, forms.ModelForm):
@@ -176,6 +202,8 @@ class BonSortieForm(StyledFormMixin, forms.ModelForm):
         model = BonSortie
         fields = [
             'date_sortie',
+            'succursale',
+            'domaine',
             'motif',
             'destination',
             'commentaire',
@@ -188,7 +216,7 @@ class BonSortieForm(StyledFormMixin, forms.ModelForm):
             'commentaire': forms.Textarea(attrs={'rows': 3}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['date_sortie'].input_formats = ['%Y-%m-%dT%H:%M']
         self.fields['motif'].required = True
@@ -196,6 +224,11 @@ class BonSortieForm(StyledFormMixin, forms.ModelForm):
         self.fields['destination'].queryset = Service.objects.all()
         self.fields['destination'].empty_label = 'Sélectionnez un service'
         self.fields['destination'].label = 'Service'
+        if succursales is not None:
+            self.fields['succursale'].queryset = succursales
+        if domaines is not None:
+            self.fields['domaine'].queryset = domaines
+        appliquer_contexte(self, contexte)
 
     def clean_date_sortie(self):
         value = self.cleaned_data.get('date_sortie')
@@ -248,9 +281,13 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
             'nombre_portions': forms.NumberInput(attrs={'min': 0}),
         }
 
-    def __init__(self, *args, portions_map=None, **kwargs):
+    def __init__(self, *args, portions_map=None, succursale=None, domaine=None, **kwargs):
         super().__init__(*args, **kwargs)
         articles = Article.objects.select_related('categorie')
+        if succursale is not None:
+            articles = articles.filter(succursale_id=succursale)
+        if domaine is not None:
+            articles = articles.filter(domaine_id=domaine)
         portions_map = portions_map or {
             str(article.pk): article.categorie.nombre_portions
             for article in articles
@@ -284,7 +321,9 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
 
 
 class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, succursale=None, domaine=None, **kwargs):
+        self.succursale = succursale
+        self.domaine = domaine
         self.portions_map = {
             str(article.pk): article.categorie.nombre_portions
             for article in Article.objects.select_related('categorie')
@@ -293,6 +332,8 @@ class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
 
     def _construct_form(self, i, **kwargs):
         kwargs['portions_map'] = self.portions_map
+        kwargs['succursale'] = self.succursale
+        kwargs['domaine'] = self.domaine
         return super()._construct_form(i, **kwargs)
 
 
@@ -308,13 +349,48 @@ LigneSortieFormSet = inlineformset_factory(
 
 
 class InventaireForm(StyledFormMixin, forms.ModelForm):
+    """Inventaire à une date donnée, pour TOUS les articles du périmètre
+    ou pour UN article précis."""
+
+    PORTEE_CHOICES = [
+        ('COMPLET', 'Complet (tous les articles du périmètre)'),
+        ('ARTICLE', 'Un article précis'),
+    ]
+    portee = forms.ChoiceField(
+        choices=PORTEE_CHOICES,
+        initial='COMPLET',
+        label='Périmètre de l’inventaire',
+    )
+    article = forms.ModelChoiceField(
+        queryset=Article.objects.none(),
+        required=False,
+        label='Article',
+        help_text='Renseigné si « Un article précis ».',
+    )
+
     class Meta:
         model = Inventaire
-        fields = ['date_inventaire', 'commentaire']
+        fields = ['date_inventaire', 'succursale', 'domaine', 'commentaire']
         widgets = {
             'date_inventaire': forms.DateInput(attrs={'type': 'date'}),
             'commentaire': forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, succursales=None, domaines=None, contexte=None, articles=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if succursales is not None:
+            self.fields['succursale'].queryset = succursales
+        if domaines is not None:
+            self.fields['domaine'].queryset = domaines
+        if articles is not None:
+            self.fields['article'].queryset = articles
+        appliquer_contexte(self, contexte)
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('portee') == 'ARTICLE' and not cleaned.get('article'):
+            self.add_error('article', 'Sélectionnez l’article à inventorier.')
+        return cleaned
 
 
 class LigneInventaireForm(StyledFormMixin, forms.ModelForm):

@@ -1,0 +1,128 @@
+{% extends "core/base.html" %}
+
+{% block app_title %}Profil utilisateur{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Profil</p>
+    <h1>{{ utilisateur.get_full_name|default:utilisateur.username }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'core:utilisateur_liste' %}">← Retour</a>
+    {% if perms.core.deactivate_utilisateur and utilisateur.is_active %}
+    <form action="{% url 'core:utilisateur_desactiver' utilisateur.pk %}" method="post" class="inline-form">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Désactiver</button>
+    </form>
+    {% endif %}
+    {% if perms.core.activate_utilisateur and not utilisateur.is_active %}
+    <form action="{% url 'core:utilisateur_activer' utilisateur.pk %}" method="post" class="inline-form">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Réactiver</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <h2>Identité</h2>
+  <dl class="detail-grid">
+    <dt>Nom complet</dt><dd>{{ utilisateur.get_full_name|default:"—" }}</dd>
+    <dt>Identifiant</dt><dd>{{ utilisateur.username }}</dd>
+    <dt>E-mail</dt><dd>{{ utilisateur.email|default:"—" }}</dd>
+    <dt>Téléphone</dt><dd>{{ utilisateur.telephone|default:"—" }}</dd>
+    <dt>Fonction / service</dt><dd>{{ utilisateur.fonction|default:"—" }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Compte</h2>
+  <dl class="detail-grid">
+    <dt>Statut</dt>
+    <dd>
+      {% if utilisateur.is_active %}
+        <span class="statut statut-ok">Actif</span>
+      {% else %}
+        <span class="statut statut-stop">Désactivé</span>
+      {% endif %}
+    </dd>
+    <dt>Créé le</dt><dd>{{ utilisateur.date_joined|date:"d/m/Y H:i" }}</dd>
+    <dt>Dernière connexion</dt><dd>{{ utilisateur.last_login|default:"Jamais" }}</dd>
+    <dt>Créé par</dt><dd>{{ utilisateur.cree_par|default:"—" }}</dd>
+    <dt>Date de désactivation</dt><dd>{{ utilisateur.date_desactivation|default:"—" }}</dd>
+    <dt>Superutilisateur</dt><dd>{{ utilisateur.is_superuser|yesno:"Oui,Non" }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Rôles & permissions</h2>
+  <dl class="detail-grid">
+    <dt>Rôles</dt>
+    <dd>
+      {% for role in utilisateur.roles.all %}{{ role.nom }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+    </dd>
+    <dt>Permissions</dt>
+    <dd>{{ utilisateur.get_all_permissions|length }} permission(s) accordée(s)</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Périmètre d'accès (succursales / domaines)</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Succursale</th>
+          <th>Domaine</th>
+          <th>Rôle</th>
+          <th>Principale</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for aff in utilisateur.affectations_succursales.all %}
+        <tr>
+          <td>{{ aff.succursale }}</td>
+          <td>{{ aff.domaine }}</td>
+          <td>{{ aff.role|default:"—" }}</td>
+          <td>{{ aff.principale|yesno:"Oui,Non" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">Aucune affectation.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Historique d'audit</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Action</th>
+          <th>Par</th>
+          <th>Détail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for trace in audits %}
+        <tr>
+          <td>{{ trace.date|date:"d/m/Y H:i:s" }}</td>
+          <td>{{ trace.action }}</td>
+          <td>{{ trace.utilisateur|default:"—" }}</td>
+          <td>
+            {% if trace.nouvelle_valeur %}{{ trace.nouvelle_valeur }}{% endif %}
+            {% if trace.ancienne_valeur %}<br><small>avant : {{ trace.ancienne_valeur }}</small>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">Aucune trace d'audit.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

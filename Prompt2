@@ -1,0 +1,515 @@
+Oui, tu as raison d'être perdu ici : il faut distinguer “domaine d'activité” et “module fonctionnel”. Si on mélange les deux, l'architecture va devenir incohérente.
+
+Et je vais être strict : je ne recommande pas de faire d'« Approvisionnement » un domaine d'activité au même niveau que Boutique ou Restaurant.
+
+1. La bonne distinction
+
+Je te conseille cette hiérarchie :
+
+                    ORGANISATION
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+         SUCCURSALE             UTILISATEURS
+              │
+              ▼
+       DOMAINES D'ACTIVITÉ
+              │
+       ┌──────┼──────────┐
+       ▼      ▼          ▼
+  RESTAURANT BOUTIQUE IMMOBILISATIONS
+       │      │          │
+       └──────┴──────────┘
+              │
+              ▼
+       MODULES / FONCTIONS
+              │
+       APPROVISIONNEMENT
+       STOCK
+       INVENTAIRE
+       VENTE
+       IMMOBILISATION
+       etc.
+
+Donc :
+
+Restaurant, Boutique, Immobilisations = domaines/périmètres métier.
+
+Approvisionnement = fonction/module transversal.
+
+C'est une distinction très importante.
+
+2. Pourquoi ?
+
+Prenons ton exemple.
+
+Boutique
+
+Un utilisateur travaille dans :
+
+Succursale Kinshasa — Domaine Boutique
+
+Il peut avoir la permission :
+
+Créer un bon d'approvisionnement.
+
+Il crée :
+
+Bon d'approvisionnement
+    ↓
+Articles de boutique
+    ↓
+Entrée en stock
+    ↓
+Stock Boutique / Kinshasa
+Restaurant
+
+Un autre utilisateur travaille dans :
+
+Succursale Kinshasa — Domaine Restaurant
+
+Il crée également un bon :
+
+Bon d'approvisionnement
+    ↓
+Produits alimentaires
+    ↓
+Entrée en stock
+    ↓
+Stock Restaurant / Kinshasa
+Immobilisations
+
+Un utilisateur du domaine Immobilisations peut avoir une permission lui permettant de créer ou de gérer une acquisition :
+
+Approvisionnement
+       ↓
+Ordinateurs
+       ↓
+Réception
+       ↓
+Immobilisation
+
+Mais il ne voit pas les approvisionnements du restaurant, sauf s'il possède une permission ou un périmètre transversal qui l'autorise.
+
+3. Donc oui : plusieurs domaines peuvent utiliser Approvisionnement
+
+C'est exactement ce que je recommande.
+
+Approvisionnement devient une fonction transversale.
+
+Par exemple :
+
+Domaine	Peut approvisionner ?	Ce qu'il voit
+Restaurant	Oui	Approvisionnements Restaurant
+Boutique	Oui	Approvisionnements Boutique
+Immobilisations	Oui	Acquisitions/approvisionnements liés aux immobilisations
+Administration	Oui	Selon ses permissions, potentiellement tous
+Magasin central	Oui	Selon son périmètre, potentiellement plusieurs domaines
+
+Mais attention :
+
+Ce n'est pas le simple fait d'appartenir à un domaine qui donne le droit de créer un bon d'approvisionnement.
+
+C'est la combinaison :
+
+Utilisateur + rôle + permission + succursale + domaine.
+
+4. C'est là que les permissions deviennent vraiment intéressantes
+
+Supposons :
+
+Jean
+Domaine : Boutique
+Rôle : Responsable Boutique
+
+Permissions :
+
+approvisionnement.view
+approvisionnement.create
+approvisionnement.validate
+stock.view
+stock.inventory
+vente.create
+
+Jean peut donc :
+
+voir les approvisionnements de la Boutique ;
+créer un bon ;
+éventuellement le valider ;
+voir le stock Boutique ;
+faire un inventaire ;
+vendre.
+
+Mais il ne peut pas :
+
+voir approvisionnement.restaurant
+voir stock.restaurant
+
+même si ces données existent dans la même base.
+
+5. Et un responsable central ?
+
+Prenons :
+
+Administrateur / Responsable général
+Succursales :
+    Kinshasa
+    Lubumbashi
+    Goma
+
+
+Domaines :
+    Restaurant
+    Boutique
+    Immobilisations
+
+Permissions :
+
+approvisionnement.view
+approvisionnement.create
+approvisionnement.validate
+stock.view
+audit.view
+
+Lui peut avoir une vision beaucoup plus large.
+
+Il pourrait voir :
+
+Kinshasa
+ ├── Restaurant
+ │    └── Approvisionnements
+ │
+ ├── Boutique
+ │    └── Approvisionnements
+ │
+ └── Immobilisations
+      └── Acquisitions
+
+C'est donc le périmètre d'accès de l'utilisateur qui détermine ce qu'il voit.
+
+6. Mais il y a une nuance très importante concernant les Immobilisations
+
+Je ne mettrais pas forcément :
+
+« Immobilisation = domaine qui fait des bons d'approvisionnement »
+
+de manière systématique.
+
+Parce qu'une immobilisation est plutôt le résultat ou la destination d'une acquisition, alors que l'approvisionnement est le processus permettant d'obtenir le bien.
+
+Par exemple :
+
+Fournisseur
+      ↓
+Approvisionnement
+      ↓
+Ordinateur
+      ↓
+Réception
+      ↓
+Immobilisation
+
+Donc l'ordinateur peut être acheté via le processus d'approvisionnement, puis devenir une immobilisation.
+
+Il faut donc distinguer :
+
+Approvisionnement
+
+Comment avons-nous obtenu le bien ?
+
+Immobilisation
+
+Quel est le bien durable que nous possédons et quel est son cycle de vie ?
+
+C'est beaucoup plus propre.
+
+7. Je ferais même une distinction supplémentaire
+
+Il faut avoir un concept de destination ou de périmètre de stock dans l'approvisionnement.
+
+Par exemple :
+
+Bon d'approvisionnement #APP-00045
+
+
+Succursale :
+Kinshasa
+
+
+Domaine destinataire :
+BOUTIQUE
+
+
+Fournisseur :
+ABC
+
+
+Articles :
+T-shirt bleu M       20
+T-shirt bleu L       30
+
+Résultat :
+
+Stock
+Kinshasa
+└── Boutique
+     ├── T-shirt bleu M : 20
+     └── T-shirt bleu L : 30
+
+Un autre :
+
+Bon d'approvisionnement #APP-00046
+
+
+Succursale :
+Kinshasa
+
+
+Domaine destinataire :
+RESTAURANT
+
+
+Articles :
+Riz       100 kg
+Huile      50 L
+
+Résultat :
+
+Stock
+Kinshasa
+└── Restaurant
+     ├── Riz : 100 kg
+     └── Huile : 50 L
+
+C'est cette information qui empêchera les stocks de se mélanger.
+
+8. Et c'est là que ton idée de succursale est excellente
+
+Tu m'as dit que ton agent vient déjà de créer la notion de domaine d'activité.
+
+Je garderais cette idée, mais je structurerais les données comme ceci :
+
+Succursale
+    │
+    ├── Domaine Restaurant
+    │
+    ├── Domaine Boutique
+    │
+    └── Domaine Immobilisations
+
+Puis :
+
+Utilisateur
+    │
+    ├── Succursale
+    ├── Domaine
+    └── Rôle
+
+Et ensuite chaque opération métier porte son contexte.
+
+Par exemple :
+
+BonApprovisionnement
+    ├── succursale
+    ├── domaine
+    ├── fournisseur
+    ├── utilisateur
+    └── lignes
+
+C'est extrêmement important.
+
+9. Je changerais donc légèrement le modèle que je t'ai proposé précédemment
+
+Je ne voudrais pas avoir simplement :
+
+Utilisateur → Succursale
+
+Je veux plutôt :
+
+Utilisateur
+    ↓
+Affectation
+    ├── Succursale
+    ├── Domaine
+    ├── Rôle
+    └── éventuellement permissions spécifiques
+
+Par exemple :
+
+Jean
+│
+├── Kinshasa
+│    └── Boutique
+│         └── Responsable Boutique
+│
+└── Lubumbashi
+     └── Restaurant
+          └── Responsable Restaurant
+
+C'est beaucoup plus puissant.
+
+Cela permet à un même utilisateur d'avoir plusieurs périmètres, sans créer plusieurs comptes.
+
+10. Et l'approvisionnement devient alors très élégant
+
+Le processus serait :
+
+UTILISATEUR
+     │
+     ▼
+IDENTIFICATION
+     │
+     ▼
+SUCCURSALE + DOMAINE + RÔLE
+     │
+     ▼
+PERMISSIONS
+     │
+     ▼
+APPROVISIONNEMENT
+     │
+     ├── Créer bon
+     ├── Ajouter lignes
+     ├── Soumettre
+     └── Valider
+             │
+             ▼
+       ENTRÉE STOCK
+             │
+             ▼
+   SUCCURSALE + DOMAINE
+
+Donc oui :
+
+le restaurant peut faire des bons d'approvisionnement.
+
+la boutique peut faire des bons d'approvisionnement.
+
+un service chargé des immobilisations peut gérer des acquisitions.
+
+Mais chacun travaille dans son périmètre.
+
+11. Et surtout : le stock ne doit pas être « Boutique » ou « Restaurant » dans le code de manière rigide
+
+Évite de faire :
+
+stock_boutique
+stock_restaurant
+stock_immobilisation
+
+C'est mauvais à long terme.
+
+Il faut plutôt avoir une relation générique de contexte :
+
+Stock
+ ├── Article
+ ├── Succursale
+ ├── Domaine
+ └── Quantité
+
+Ainsi demain tu peux ajouter :
+
+BAR
+CUISINE
+PHARMACIE
+ATELIER
+MAGASIN_CENTRAL
+
+sans modifier toute l'architecture.
+
+12. Et l'Immobilisation est un cas particulier
+
+Je ne veux pas nécessairement lui donner un stock de quantité comme la Boutique.
+
+Par exemple :
+
+Boutique :
+T-shirt
+Quantité = 50
+
+alors que :
+
+Immobilisation :
+Ordinateur Dell
+Numéro de série = ABC123
+Quantité = 1
+
+L'immobilisation est individualisée.
+
+Donc :
+
+Approvisionnement
+      ↓
+Article
+      ↓
+Réception
+      ↓
+[si consommable/vente]
+Stock
+
+
+[si bien immobilisable]
+Immobilisation
+
+C'est une distinction importante.
+
+13. La logique finale que je te recommande
+
+Je serais donc strict sur cette architecture :
+
+Niveau 1 — Organisation
+Succursale
+Niveau 2 — Domaine métier
+Restaurant
+Boutique
+Immobilisations
+...
+Niveau 3 — Modules fonctionnels
+Approvisionnement
+Stock
+Inventaire
+Vente
+Immobilisations
+Utilisateurs
+Audit
+...
+Niveau 4 — Permissions
+Qui peut faire quoi ?
+Niveau 5 — Données
+Qui voit quelles données ?
+
+Donc Approvisionnement n'est pas un domaine d'activité.
+
+C'est un module transversal utilisable par plusieurs domaines d'activité.
+
+La règle simple à retenir
+
+Le domaine détermine "où/à quel secteur appartient l'opération".
+Le module détermine "quelle fonction l'utilisateur utilise".
+Le rôle et les permissions déterminent "ce qu'il a le droit de faire".
+La succursale détermine "dans quel établissement il agit".
+
+Par exemple :
+
+Jean
+│
+├── Succursale : Kinshasa
+├── Domaine : Boutique
+├── Rôle : Responsable
+│
+└── Permissions :
+      ├── approvisionnement.create
+      ├── approvisionnement.view
+      ├── stock.view
+      ├── stock.inventory
+      └── vente.create
+
+Jean utilise donc le module Approvisionnement, mais son bon est enregistré dans le contexte :
+
+Kinshasa + Boutique
+
+Et lorsqu'il ouvre l'écran Approvisionnement, il ne voit que les approvisionnements correspondant à son périmètre, sauf permission supérieure.
+
+C'est, à mon avis, la logique la plus propre pour ton application et surtout celle qui va te permettre d'ajouter d'autres domaines plus tard sans refaire toute l'architecture.
+
+Donc ne demande pas encore à ton agent de traiter Approvisionnement comme un domaine. Si le domaine d'activité vient juste d'être créé, il faut maintenant vérifier exactement comment il l'a modélisé avant de continuer, car c'est le moment idéal pour corriger la structure si nécessaire.

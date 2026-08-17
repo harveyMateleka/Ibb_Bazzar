@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}{% block app_title %}Utilisateurs{% endblock %} · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <nav class="subnav" aria-label="Utilisateurs">
+      <a href="{% url 'core:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="is-active"{% endif %}>Tableau de bord</a>
+      <a href="{% url 'core:utilisateur_liste' %}" {% if 'utilisateur' in request.resolver_match.url_name %}class="is-active"{% endif %}>Utilisateurs</a>
+      <a href="{% url 'core:roles' %}" {% if request.resolver_match.url_name == 'roles' %}class="is-active"{% endif %}>Rôles</a>
+      <a href="{% url 'core:succursales' %}" {% if request.resolver_match.url_name == 'succursales' %}class="is-active"{% endif %}>Succursales</a>
+      <a href="{% url 'core:permissions' %}" {% if request.resolver_match.url_name == 'permissions' %}class="is-active"{% endif %}>Permissions</a>
+      <a href="{% url 'core:audit' %}" {% if request.resolver_match.url_name == 'audit' %}class="is-active"{% endif %}>Audit</a>
+    </nav>
+    {% block app_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}

@@ -20,6 +20,12 @@
       <nav class="site-nav" aria-label="Navigation principale">
         <a href="{% url 'home' %}" class="{% if request.resolver_match.url_name == 'home' %}is-active{% endif %}">Accueil</a>
         <a href="{% url 'approvisionnement:dashboard' %}" class="{% if request.resolver_match.namespace == 'approvisionnement' %}is-active{% endif %}">Approvisionnement</a>
+        {% if perms.boutique.view_boutique %}
+        <a href="{% url 'boutique:dashboard' %}" class="{% if request.resolver_match.namespace == 'boutique' %}is-active{% endif %}">Boutique</a>
+        {% endif %}
+        {% if perms.core.view_utilisateur %}
+        <a href="{% url 'core:utilisateur_liste' %}" class="{% if request.resolver_match.namespace == 'core' %}is-active{% endif %}">Utilisateurs</a>
+        {% endif %}
         {% if user.is_staff %}
         <a href="{% url 'admin:index' %}">Paramètres</a>
         {% endif %}

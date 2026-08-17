@@ -1,0 +1,85 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Vente</p>
+    <h1>{{ vente.numero }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">← Retour</a>
+    {% if vente.statut == 'BROUILLON' %}
+      {% if perms.boutique.validate_vente %}
+      <form action="{% url 'boutique:vente_valider' vente.pk %}" method="post" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">Valider la vente</button>
+      </form>
+      {% endif %}
+      {% if perms.boutique.cancel_vente %}
+      <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Annuler</button>
+      </form>
+      {% endif %}
+    {% endif %}
+    {% if vente.statut == 'VALIDEE' %}
+    <a class="btn btn-primary" href="{% url 'boutique:vente_imprimer' vente.pk %}">Imprimer</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Date</dt><dd>{{ vente.date_vente|date:"d/m/Y H:i" }}</dd>
+    <dt>Succursale</dt><dd>{{ vente.succursale }}</dd>
+    <dt>Domaine</dt><dd>{{ vente.domaine }}</dd>
+    <dt>Utilisateur</dt><dd>{{ vente.utilisateur }}</dd>
+    <dt>Paiement</dt><dd>{{ vente.get_type_paiement_display }}</dd>
+    <dt>Statut</dt><dd>{{ vente.get_statut_display }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Articles</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Article</th><th>Qté</th><th>Prix unitaire</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.quantite }}</td>
+          <td>{{ ligne.prix_unitaire }}</td>
+          <td>{{ ligne.total }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">Aucun article.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <dl class="detail-grid">
+    <dt>Sous-total</dt><dd>{{ vente.sous_total }}</dd>
+    <dt>Remise</dt><dd>{{ vente.remise }}</dd>
+    <dt>Total</dt><dd><strong>{{ vente.total }}</strong></dd>
+  </dl>
+</section>
+
+{% if formset %}
+<section class="panel">
+  <h2>Ajouter des articles</h2>
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    {% for form in formset %}
+    <div class="field">{{ form.as_p }}</div>
+    {% endfor %}
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Enregistrer les articles</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

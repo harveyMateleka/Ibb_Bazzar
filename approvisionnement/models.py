@@ -127,6 +127,22 @@ class BonApprovisionnement(models.Model):
 
     numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
     date_approvisionnement = models.DateTimeField('date', default=timezone.now)
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.PROTECT,
+        related_name='bons_approvisionnement',
+        verbose_name='succursale',
+        null=True,
+        blank=True,
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.PROTECT,
+        related_name='bons_approvisionnement',
+        verbose_name='domaine d’activité',
+        null=True,
+        blank=True,
+    )
     fournisseur = models.ForeignKey(
         Fournisseur,
         on_delete=models.PROTECT,
@@ -182,6 +198,8 @@ class BonApprovisionnement(models.Model):
                     article=ligne.article,
                     type_mouvement=MouvementStock.Type.ENTREE,
                     quantite=ligne.quantite,
+                    succursale=self.succursale,
+                    domaine=self.domaine,
                     fournisseur=self.fournisseur,
                     reference=self.reference or self.numero,
                     date_mouvement=self.date_approvisionnement,
@@ -204,6 +222,22 @@ class BonSortie(models.Model):
 
     numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
     date_sortie = models.DateTimeField('date', default=timezone.now)
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.PROTECT,
+        related_name='bons_sortie',
+        verbose_name='succursale',
+        null=True,
+        blank=True,
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.PROTECT,
+        related_name='bons_sortie',
+        verbose_name='domaine d’activité',
+        null=True,
+        blank=True,
+    )
     motif = models.CharField('motif', max_length=200)
     destination = models.ForeignKey(
         'Service',
@@ -323,6 +357,8 @@ class BonSortie(models.Model):
                     article=ligne.article,
                     type_mouvement=MouvementStock.Type.SORTIE,
                     quantite=ligne.quantite,
+                    succursale=self.succursale,
+                    domaine=self.domaine,
                     motif=self.motif,
                     destination=self.nom_destination,
                     date_mouvement=self.date_sortie,
@@ -344,8 +380,27 @@ class BonSortie(models.Model):
 
 
 class Article(models.Model):
-    code = models.CharField('code', max_length=50, unique=True)
+    code = models.CharField('code', max_length=50)
     designation = models.CharField('désignation', max_length=200)
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.PROTECT,
+        related_name='articles',
+        verbose_name='succursale',
+        null=True,
+        blank=True,
+        help_text='Le stock est propre à la succursale : un même code peut exister '
+        'dans plusieurs succursales avec des quantités différentes.',
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.PROTECT,
+        related_name='articles',
+        verbose_name='domaine d’activité',
+        null=True,
+        blank=True,
+        help_text='Le stock est également propre au domaine d’activité (ex. BOUTIQUE).',
+    )
     categorie = models.ForeignKey(
         Categorie,
         on_delete=models.PROTECT,
@@ -365,6 +420,7 @@ class Article(models.Model):
         verbose_name = 'article'
         verbose_name_plural = 'articles'
         ordering = ['code']
+        unique_together = [('code', 'succursale', 'domaine')]
 
     def __str__(self):
         return f'{self.code} — {self.designation}'
@@ -419,6 +475,22 @@ class MouvementStock(models.Model):
         on_delete=models.PROTECT,
         related_name='mouvements',
         verbose_name='article',
+    )
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.PROTECT,
+        related_name='mouvements_stock',
+        verbose_name='succursale',
+        null=True,
+        blank=True,
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.PROTECT,
+        related_name='mouvements_stock',
+        verbose_name='domaine d’activité',
+        null=True,
+        blank=True,
     )
     type_mouvement = models.CharField(
         'type',
@@ -515,6 +587,9 @@ class MouvementStock(models.Model):
         self.clean()
         with transaction.atomic():
             article = Article.objects.select_for_update().get(pk=self.article_id)
+            # Succursale et domaine du mouvement = ceux de l'article.
+            self.succursale_id = article.succursale_id
+            self.domaine_id = article.domaine_id
             delta = self._delta()
             if (
                 self.type_mouvement == self.Type.SORTIE
@@ -523,14 +598,11 @@ class MouvementStock(models.Model):
                 raise ValidationError(
                     f'{article} : stock à 0 ou insuffisant. La sortie est refusée.'
                 )
-            if (
-                self.type_mouvement == self.Type.SORTIE
-                and article.stock <= article.seuil_minimum
-                and not self.autorisation_depassement
-            ):
+            if self.type_mouvement == self.Type.SORTIE and article.stock <= article.seuil_minimum:
                 raise ValidationError(
-                    f'{article} : le stock a atteint le seuil ({article.seuil_minimum}). '
-                    'Une autorisation du propriétaire est requise.'
+                    f'{article} : le stock ({article.stock}) est au seuil d\'alerte '
+                    f'({article.seuil_minimum}). Aucune sortie n\'est autorisée. '
+                    'Approvisionnez l\'article.'
                 )
             self.stock_avant = article.stock
             article.stock += delta
@@ -606,6 +678,22 @@ class Inventaire(models.Model):
         VALIDE = 'VALIDE', 'Validé'
 
     date_inventaire = models.DateField('date', default=timezone.now)
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.PROTECT,
+        related_name='inventaires',
+        verbose_name='succursale',
+        null=True,
+        blank=True,
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.PROTECT,
+        related_name='inventaires',
+        verbose_name='domaine d’activité',
+        null=True,
+        blank=True,
+    )
     responsable = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -625,6 +713,11 @@ class Inventaire(models.Model):
         verbose_name = 'inventaire'
         verbose_name_plural = 'inventaires'
         ordering = ['-date_inventaire']
+        # view_inventaire : générée automatiquement par Django.
+        permissions = [
+            ('create_inventaire', 'Peut créer un inventaire'),
+            ('validate_inventaire', 'Peut valider un inventaire'),
+        ]
 
     def __str__(self):
         return f'Inventaire du {self.date_inventaire}'
@@ -772,6 +865,22 @@ class Approvisionnement(models.Model):
         SORTIE = 'SORTIE', 'Sortie'
 
     numero = models.CharField('numéro', max_length=20, unique=True)
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='journal_approvisionnement',
+        verbose_name='succursale',
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='journal_approvisionnement',
+        verbose_name='domaine d’activité',
+    )
     type_operation = models.CharField(
         'type',
         max_length=12,
@@ -818,6 +927,15 @@ class Approvisionnement(models.Model):
         verbose_name = 'approvisionnement'
         verbose_name_plural = 'approvisionnements'
         ordering = ['-date_operation', '-id']
+        # view_approvisionnement : générée automatiquement par Django.
+        permissions = [
+            ('create_approvisionnement', 'Peut créer une entrée de stock'),
+            ('validate_approvisionnement', 'Peut valider une entrée de stock'),
+            ('view_sortie', 'Peut consulter les sorties'),
+            ('create_sortie', 'Peut créer une sortie de stock'),
+            ('validate_sortie', 'Peut valider une sortie de stock'),
+            ('view_historique', 'Peut consulter l’historique'),
+        ]
 
     def __str__(self):
         return f'{self.numero} ({self.get_type_operation_display()})'
@@ -828,6 +946,8 @@ class Approvisionnement(models.Model):
             numero=bon.numero,
             type_operation=cls.Type.ENTREE,
             date_operation=bon.date_approvisionnement,
+            succursale=bon.succursale,
+            domaine=bon.domaine,
             fournisseur=bon.fournisseur,
             reference=bon.reference,
             commentaire=bon.commentaire,
@@ -853,6 +973,8 @@ class Approvisionnement(models.Model):
             numero=bon.numero,
             type_operation=cls.Type.SORTIE,
             date_operation=bon.date_sortie,
+            succursale=bon.succursale,
+            domaine=bon.domaine,
             motif=bon.motif,
             destination=bon.nom_destination,
             commentaire=bon.commentaire,

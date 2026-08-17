@@ -30,6 +30,8 @@ urlpatterns = [
     path('', home, name='home'),
     path('connexion/', auth_views.LoginView.as_view(authentication_form=ConnexionForm), name='login'),
     path('deconnexion/', auth_views.LogoutView.as_view(), name='logout'),
+    path('', include('core.urls')),
     path('approvisionnement/', include('approvisionnement.urls')),
+    path('boutique/', include('boutique.urls')),
     path('admin/', admin.site.urls),
 ]

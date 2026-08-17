@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Ticket {{ vente.numero }} · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:vente_detail' vente.pk %}">← Retour</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<div class="bon-doc">
+  <div class="bon-head">
+    <h1>{{ vente.succursale }}</h1>
+    <p class="bon-numero">Vente {{ vente.numero }}</p>
+    <p class="bon-meta">Date : {{ vente.date_vente|date:"d/m/Y H:i" }}</p>
+    <p class="bon-meta">Caissier : {{ vente.utilisateur }}</p>
+    <p class="bon-meta">Paiement : {{ vente.get_type_paiement_display }}</p>
+  </div>
+  <table class="bon-table">
+    <thead>
+      <tr><th>Article</th><th>Qté</th><th>PU</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+      {% for ligne in lignes %}
+      <tr>
+        <td>{{ ligne.article.code }}</td>
+        <td>{{ ligne.quantite }}</td>
+        <td>{{ ligne.prix_unitaire }}</td>
+        <td>{{ ligne.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="bon-sign">
+    <p>Sous-total : {{ vente.sous_total }}</p>
+    <p>Remise : {{ vente.remise }}</p>
+    <p><strong>Total : {{ vente.total }}</strong></p>
+    <p>Montant reçu : {{ vente.montant_recu }}</p>
+    <p>Monnaie : {{ vente.monnaie }}</p>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1338 @@
+# Contexte général
+
+Nous travaillons sur une application Django existante dont le frontend est déjà développé.
+
+Le cahier des charges définit plusieurs modules, mais le périmètre de ce développement concerne prioritairement :
+
+1. **Gestion centralisée des utilisateurs, profils, rôles et permissions**
+2. **Gestion des succursales / établissements / sites**
+3. **Gestion de la boutique**
+
+
+
+
+
+4. **Gestion des immobilisations**
+
+Un module **Approvisionnement** existe déjà dans le backend et doit impérativement être conservé.
+
+L'objectif n'est donc PAS de reconstruire l'application ni de créer des systèmes parallèles.
+
+Il faut **étendre intelligemment l'architecture existante**, préserver les modèles et comportements déjà fonctionnels, et faire évoluer la base de données afin que l'ensemble de l'application devienne centralisé, multi-succursales et contrôlé par utilisateur.
+
+Le frontend existe déjà : **ne pas refaire le frontend pour le moment**.
+
+Le travail doit commencer **exclusivement côté backend Django**, en commençant par les modèles, migrations, logique métier, permissions, services, API et règles de filtrage.
+
+---
+
+# 1. RÈGLE ABSOLUE : PRÉSERVER L'APPROVISIONNEMENT EXISTANT
+
+Avant toute modification, analyser précisément le code existant du module Approvisionnement.
+
+Le module actuel possède notamment :
+
+* `Module`
+* `Acteur`
+* `Fonctionnalite`
+* `Categorie`
+* `Unite`
+* `Fournisseur`
+* `Service`
+* `BonApprovisionnement`
+* `BonSortie`
+* `Article`
+* `MouvementStock`
+* `AlerteStock`
+* `Inventaire`
+* `LigneInventaire`
+* `LigneApprovisionnement`
+* `LigneSortie`
+* `Approvisionnement`
+* `ApprovisionnementLigne`
+
+Le modèle `Article` constitue actuellement le référentiel commun des articles stockables et contient notamment :
+
+* code
+* désignation
+* catégorie
+* unité
+* seuil minimum
+* stock courant
+
+Ne pas créer un deuxième système d'articles ou de stocks sans nécessité.
+
+Le système actuel utilise `MouvementStock` pour gérer les :
+
+* entrées
+* sorties
+* ajustements
+
+et conserve déjà :
+
+* utilisateur
+* motif
+* référence
+* stock avant
+* stock après
+* date
+* validation.
+
+Cette logique doit être conservée.
+
+Les validations actuelles du stock doivent également être préservées, notamment :
+
+* contrôle du stock disponible ;
+* contrôle du seuil minimum ;
+* autorisation de dépassement ;
+* transaction atomique ;
+* verrouillage de l'article pendant la mise à jour ;
+* génération des alertes.
+
+Ne pas casser les fonctionnalités existantes d'Approvisionnement.
+
+Toute modification du module existant doit être :
+
+* justifiée ;
+* rétrocompatible autant que possible ;
+* accompagnée d'une migration Django ;
+* testée.
+
+---
+
+# 2. OBJECTIF ARCHITECTURAL GLOBAL
+
+L'application doit évoluer vers une architecture centralisée suivant cette logique :
+
+Utilisateur
+↓
+Profil / Rôle
+↓
+Permissions
+↓
+Succursale(s) autorisée(s)
+↓
+Module / Domaine fonctionnel
+↓
+Données accessibles
+↓
+Opérations autorisées
+↓
+Audit
+
+La notion de succursale doit permettre de distinguer les données appartenant à différents établissements ou activités.
+
+Exemple :
+
+```text
+IBB
+│
+├── Succursale A
+│   ├── Restaurant
+│   └── Boutique
+│
+├── Succursale B
+│   ├── Restaurant
+│   └── Boutique
+│
+└── Administration centrale
+```
+
+La structure exacte doit rester suffisamment flexible pour supporter plusieurs établissements dans le futur.
+
+---
+
+# 3. CENTRALISATION DES UTILISATEURS
+
+Commencer le développement par ce module.
+
+L'utilisateur doit être le point central de contrôle de l'application.
+
+Ne pas créer plusieurs systèmes d'utilisateurs pour :
+
+* Approvisionnement
+* Boutique
+* Immobilisations
+* Restaurant
+
+Tous les modules doivent utiliser le même `AUTH_USER_MODEL`.
+
+Le code existant utilise déjà `settings.AUTH_USER_MODEL` pour rattacher les opérations aux utilisateurs. Cette logique doit être conservée.
+
+---
+
+# 4. PROFIL UTILISATEUR
+
+Mettre en place une structure utilisateur suffisamment riche pour permettre la gestion future.
+
+Un utilisateur doit pouvoir avoir notamment :
+
+* identité ;
+* login ;
+* email ;
+* téléphone si nécessaire ;
+* statut actif/inactif ;
+* profil ;
+* rôle ;
+* date de création ;
+* dernière connexion ;
+* date de désactivation ;
+* utilisateur ayant créé le compte ;
+* éventuellement service/fonction.
+
+Ne jamais supprimer physiquement un utilisateur ayant déjà effectué des opérations métier.
+
+La désactivation doit conserver son historique.
+
+---
+
+# 5. RÔLES
+
+Créer une vraie gestion dynamique des rôles.
+
+Exemples de rôles issus du cahier des charges :
+
+* Administrateur
+* Direction / Propriétaire
+* Responsable
+* Opérateur
+* Magasinier
+* Caissier
+* Serveur / Serveuse
+* Cuisine
+* Bar
+
+Ces rôles doivent être configurables et non codés en dur dans toute l'application.
+
+Un administrateur doit pouvoir créer ou modifier un rôle selon les permissions disponibles.
+
+---
+
+# 6. PERMISSIONS GRANULAIRES
+
+Ne pas limiter les permissions à :
+
+```text
+boutique = oui/non
+```
+
+Utiliser des permissions par action.
+
+Exemples :
+
+```text
+users.view
+users.create
+users.update
+users.activate
+users.deactivate
+
+roles.view
+roles.create
+roles.update
+roles.delete
+
+permissions.view
+audit.view
+
+boutique.view
+boutique.create
+boutique.update
+
+boutique.sale.create
+boutique.sale.validate
+boutique.sale.cancel
+
+boutique.stock.view
+boutique.stock.adjust
+boutique.inventory
+
+boutique.discount.apply
+
+asset.view
+asset.create
+asset.update
+asset.assign
+asset.move
+asset.repair
+asset.report_damage
+asset.decommission
+
+approvisionnement.view
+approvisionnement.create
+approvisionnement.validate
+approvisionnement.sortie
+approvisionnement.inventory
+```
+
+La liste exacte doit rester alignée sur le cahier des charges.
+
+---
+
+# 7. NE JAMAIS UTILISER LE FRONTEND COMME MÉCANISME DE SÉCURITÉ
+
+Masquer un bouton dans le frontend ne constitue pas une permission.
+
+Chaque endpoint backend doit vérifier :
+
+1. utilisateur authentifié ;
+2. utilisateur actif ;
+3. permission requise ;
+4. succursale autorisée ;
+5. périmètre fonctionnel autorisé ;
+6. objet demandé accessible ;
+7. opération métier valide.
+
+Un utilisateur qui tente directement d'appeler une API interdite doit recevoir une réponse d'autorisation appropriée.
+
+---
+
+# 8. GESTION DES SUCCURSALES / ÉTABLISSEMENTS
+
+Introduire une entité centrale de type :
+
+```text
+Succursale
+```
+
+ou un nom équivalent cohérent avec le cahier des charges.
+
+Elle doit permettre d'identifier le site ou l'établissement auquel appartient une donnée.
+
+Prévoir au minimum :
+
+* nom ;
+* code unique ;
+* adresse/localisation si nécessaire ;
+* statut actif/inactif ;
+* description ;
+* date de création.
+
+La structure doit permettre plusieurs succursales.
+
+---
+
+# 9. RELATION UTILISATEUR ↔ SUCCURSALE
+
+Un utilisateur doit pouvoir être rattaché à une ou plusieurs succursales.
+
+Exemple :
+
+```text
+Jean
+→ Succursale Kinshasa Centre
+→ Boutique
+```
+
+ou :
+
+```text
+Responsable général
+→ Succursale A
+→ Succursale B
+→ Succursale C
+```
+
+Prévoir éventuellement une succursale principale.
+
+La relation doit permettre de déterminer automatiquement le périmètre de données accessible à l'utilisateur.
+
+---
+
+# 10. MODULE / DOMAINE D'ACTIVITÉ
+
+La succursale seule ne suffit pas.
+
+Il faut également pouvoir distinguer le domaine d'activité.
+
+Par exemple :
+
+```text
+Succursale A
+│
+├── RESTAURANT
+└── BOUTIQUE
+```
+
+Un utilisateur peut donc être autorisé à travailler :
+
+```text
+Succursale A + Boutique
+```
+
+sans nécessairement avoir accès à :
+
+```text
+Succursale A + Restaurant
+```
+
+Cette dimension doit être intégrée au système d'autorisation.
+
+Prévoir une structure suffisamment générique pour permettre à terme :
+
+```text
+RESTAURANT
+BOUTIQUE
+APPROVISIONNEMENT
+IMMOBILISATIONS
+ADMINISTRATION
+```
+
+sans dupliquer les utilisateurs.
+
+---
+
+# 11. FILTRAGE CENTRALISÉ DES DONNÉES
+
+C'est une exigence majeure.
+
+Lorsqu'un utilisateur se connecte, le backend doit automatiquement déterminer son périmètre.
+
+Exemple :
+
+```text
+Utilisateur :
+Jean
+
+Succursale :
+Kinshasa Centre
+
+Domaine :
+Boutique
+```
+
+Jean ne doit recevoir que les données auxquelles il a droit.
+
+Les QuerySets/API doivent appliquer automatiquement les filtres nécessaires.
+
+Ne pas compter sur le frontend pour filtrer les données.
+
+Exemple conceptuel :
+
+```text
+User
+ ↓
+UserSuccursale
+ ↓
+Succursale
+ ↓
+Domaine
+ ↓
+QuerySet filtré
+```
+
+Un utilisateur ne doit jamais pouvoir récupérer par simple modification d'un `id` une donnée appartenant à une autre succursale à laquelle il n'a pas accès.
+
+---
+
+# 12. CENTRALISATION DU STOCK
+
+Le stock existant doit rester centralisé autour de `Article` et `MouvementStock`.
+
+Ne pas créer :
+
+```text
+BoutiqueStock
+```
+
+et :
+
+```text
+ApprovisionnementStock
+```
+
+qui dupliqueraient le stock.
+
+Le système doit plutôt introduire une dimension permettant de déterminer le périmètre du stock.
+
+Exemple conceptuel :
+
+```text
+Article
++
+Succursale
++
+Domaine / emplacement
+```
+
+Ainsi, deux stocks peuvent être distingués :
+
+```text
+T-shirt bleu
+Succursale A / Boutique
+Stock = 25
+```
+
+et :
+
+```text
+T-shirt bleu
+Succursale B / Boutique
+Stock = 12
+```
+
+sans mélanger les deux.
+
+---
+
+# 13. ATTENTION AU MODÈLE ARTICLE EXISTANT
+
+Le modèle actuel possède un champ :
+
+```text
+stock
+```
+
+directement sur `Article`.
+
+Il faut analyser soigneusement cette architecture avant de la modifier.
+
+Si plusieurs succursales doivent posséder le même article avec des quantités différentes, le stock ne doit plus être conceptuellement considéré comme une quantité globale unique.
+
+Il faut envisager une structure de type :
+
+```text
+Article
+   ↓
+StockArticle
+   ├── article
+   ├── succursale
+   ├── domaine / emplacement
+   ├── quantité
+   └── seuil
+```
+
+ou une évolution équivalente.
+
+Important :
+
+**ne pas modifier arbitrairement le modèle existant avant d'avoir vérifié tous les endroits où `Article.stock` est utilisé.**
+
+Il faut rechercher toutes les dépendances dans le projet avant migration.
+
+---
+
+# 14. CONSERVER LA LOGIQUE DE MOUVEMENT DE STOCK
+
+La logique actuelle de `MouvementStock` doit être réutilisée.
+
+Une opération boutique doit continuer à produire un mouvement de stock traçable.
+
+Une entrée d'approvisionnement doit continuer à produire un mouvement d'entrée.
+
+Une sortie doit continuer à produire un mouvement de sortie.
+
+Un inventaire doit continuer à produire un ajustement.
+
+Le nouveau système doit simplement ajouter le contexte nécessaire :
+
+```text
+Qui ?
+Quelle succursale ?
+Quel domaine ?
+Quel article ?
+Quelle opération ?
+Quel stock ?
+Avant ?
+Après ?
+Pourquoi ?
+Quand ?
+```
+
+---
+
+# 15. MODULE BOUTIQUE
+
+Après la centralisation des utilisateurs et succursales, développer la Boutique.
+
+La Boutique doit réutiliser :
+
+* `Article`
+* `Categorie`
+* `Unite`
+* `Fournisseur`
+* `MouvementStock`
+* `Inventaire`
+* `AlerteStock`
+
+existants lorsque cela est pertinent.
+
+Ne pas recréer ces entités inutilement.
+
+---
+
+# 16. ARTICLES D'HABILLEMENT
+
+Ajouter les informations spécifiques à la Boutique sans casser le modèle général `Article`.
+
+Prévoir notamment :
+
+* type de produit ;
+* taille ;
+* couleur ;
+* référence/SKU ;
+* prix d'achat si nécessaire ;
+* prix de vente ;
+* statut ;
+* informations spécifiques à l'habillement.
+
+La structure doit permettre :
+
+```text
+Produit :
+T-shirt IBBS
+
+Variantes :
+T-shirt / Noir / M
+T-shirt / Noir / L
+T-shirt / Noir / XL
+T-shirt / Bleu / M
+T-shirt / Bleu / L
+```
+
+Chaque variante qui représente une unité stockable doit pouvoir être distinguée correctement.
+
+Ne pas créer un stock global pour plusieurs variantes.
+
+---
+
+# 17. APPROVISIONNEMENT → BOUTIQUE
+
+Un article destiné à la Boutique doit pouvoir être approvisionné avec le système existant.
+
+Flux attendu :
+
+```text
+Fournisseur
+ ↓
+BonApprovisionnement
+ ↓
+LigneApprovisionnement
+ ↓
+Article / variante boutique
+ ↓
+MouvementStock ENTREE
+ ↓
+Stock de la succursale
+```
+
+La validation existante du bon d'approvisionnement doit rester fonctionnelle.
+
+---
+
+# 18. VENTE BOUTIQUE
+
+Créer la logique métier de vente.
+
+Structure recommandée :
+
+```text
+Vente
+ ├── numéro
+ ├── succursale
+ ├── utilisateur
+ ├── date
+ ├── statut
+ ├── sous-total
+ ├── remise
+ ├── total
+ └── paiement
+
+VenteLigne
+ ├── article
+ ├── quantité
+ ├── prix unitaire
+ ├── remise
+ └── total
+```
+
+Lors de la validation d'une vente :
+
+```text
+Vente
+ ↓
+Validation
+ ↓
+MouvementStock SORTIE
+ ↓
+Stock diminué
+```
+
+La transaction doit être atomique.
+
+Une vente validée ne doit pas pouvoir diminuer le stock sans enregistrer la vente.
+
+Inversement, le stock ne doit pas être diminué si la vente n'est pas correctement enregistrée.
+
+---
+
+# 19. REMISES
+
+La remise doit être contrôlée par permission.
+
+Exemple :
+
+```text
+Vendeur
+→ aucune remise
+
+Responsable
+→ remise autorisée jusqu'à X %
+
+Direction
+→ autorisation supérieure
+```
+
+Ne pas coder arbitrairement ces règles dans le frontend.
+
+Les limites doivent être contrôlées côté backend.
+
+---
+
+# 20. RETOUR / ÉCHANGE
+
+Prévoir une structure permettant ultérieurement :
+
+```text
+Vente
+ ↓
+Retour
+ ↓
+MouvementStock ENTREE
+```
+
+et :
+
+```text
+Vente
+ ↓
+Échange
+ ├── sortie ancien article
+ └── entrée nouvel article
+```
+
+Même si certaines fonctions sont désactivées en première version, concevoir les modèles de façon à ne pas bloquer leur ajout futur.
+
+---
+
+# 21. INVENTAIRE BOUTIQUE
+
+Réutiliser la logique existante de `Inventaire` et `LigneInventaire`.
+
+Le système existant compare déjà :
+
+```text
+stock système
+vs
+stock physique
+```
+
+et crée un mouvement d'ajustement lorsque l'écart existe.
+
+Conserver cette logique.
+
+Ajouter simplement le contexte :
+
+```text
+Succursale
+Domaine
+Emplacement
+```
+
+si nécessaire.
+
+---
+
+# 22. MODULE IMMOBILISATIONS
+
+Créer un véritable domaine `immobilisations`.
+
+Une immobilisation ne doit pas être traitée comme un simple stock.
+
+Elle peut cependant être issue d'un article acquis via Approvisionnement.
+
+Flux possible :
+
+```text
+Fournisseur
+ ↓
+Approvisionnement
+ ↓
+Article
+ ↓
+Acquisition
+ ↓
+Immobilisation
+```
+
+Puis l'immobilisation possède sa propre vie :
+
+```text
+Création
+ ↓
+Affectation
+ ↓
+Déplacement
+ ↓
+Changement d'état
+ ↓
+Casse
+ ↓
+Réparation
+ ↓
+Déclassement
+```
+
+---
+
+# 23. MODÈLE IMMOBILISATION
+
+Prévoir au minimum :
+
+```text
+Immobilisation
+ ├── code
+ ├── désignation
+ ├── catégorie
+ ├── article_source éventuel
+ ├── numéro de série
+ ├── valeur d'acquisition
+ ├── date d'acquisition
+ ├── fournisseur éventuel
+ ├── succursale
+ ├── état
+ ├── statut
+ ├── emplacement
+ ├── service
+ ├── utilisateur affecté
+ ├── observation
+ └── dates de création/modification
+```
+
+Ne pas supprimer physiquement une immobilisation historique.
+
+---
+
+# 24. ÉTATS
+
+Prévoir au minimum :
+
+```text
+NEUF
+BON
+A_REPARER
+CASSE
+```
+
+Et distinguer si nécessaire :
+
+```text
+État physique
+```
+
+de :
+
+```text
+Statut administratif
+```
+
+Exemple :
+
+```text
+État = CASSE
+Statut = EN_REPARATION
+```
+
+ou :
+
+```text
+État = CASSE
+Statut = DECLASSE
+```
+
+---
+
+# 25. AFFECTATION
+
+Une immobilisation doit pouvoir être affectée :
+
+* à un utilisateur ;
+* à un service ;
+* à une succursale ;
+* à un emplacement.
+
+L'affectation doit être historisée.
+
+Ne pas simplement écraser l'ancienne valeur.
+
+---
+
+# 26. DÉPLACEMENT
+
+Créer une logique dédiée de déplacement.
+
+Exemple :
+
+```text
+Ancienne succursale
+Ancien emplacement
+Ancien service
+Ancien utilisateur
+
+↓
+
+Nouvelle succursale
+Nouvel emplacement
+Nouveau service
+Nouvel utilisateur
+```
+
+Conserver :
+
+* date ;
+* utilisateur ayant effectué le déplacement ;
+* motif ;
+* ancienne situation ;
+* nouvelle situation.
+
+---
+
+# 27. CASSE
+
+Créer une gestion d'incident.
+
+Prévoir :
+
+```text
+Immobilisation
+Date
+Déclarant
+Motif
+Description
+État
+Décision
+Observation
+```
+
+Flux :
+
+```text
+Déclaration
+ ↓
+Évaluation
+ ↓
+Réparation / remplacement / déclassement
+```
+
+Toutes les étapes doivent être historisées.
+
+---
+
+# 28. DÉCLASSEMENT
+
+Le déclassement doit être une opération contrôlée par permission.
+
+Un utilisateur standard ne doit pas pouvoir déclasser librement une immobilisation.
+
+Prévoir :
+
+```text
+Immobilisation
+ ↓
+Demande / déclaration
+ ↓
+Validation autorisée
+ ↓
+Déclassement
+```
+
+Conserver l'immobilisation dans la base pour l'historique.
+
+---
+
+# 29. AUDIT CENTRALISÉ
+
+Créer une logique d'audit commune à l'ensemble de l'application.
+
+L'audit doit pouvoir enregistrer :
+
+```text
+utilisateur
+succursale
+module
+action
+type d'objet
+id objet
+date/heure
+ancienne valeur
+nouvelle valeur
+motif
+adresse IP si disponible
+```
+
+Les opérations sensibles doivent être auditables.
+
+### Utilisateurs
+
+* création ;
+* modification ;
+* activation ;
+* désactivation ;
+* changement de rôle ;
+* changement de permission.
+
+### Boutique
+
+* création/modification article ;
+* modification prix ;
+* vente ;
+* annulation ;
+* remise ;
+* ajustement ;
+* inventaire ;
+* retour ;
+* opérations de stock.
+
+### Immobilisations
+
+* création ;
+* affectation ;
+* déplacement ;
+* changement d'état ;
+* casse ;
+* réparation ;
+* déclassement.
+
+### Approvisionnement
+
+Conserver l'audit et les relations existantes.
+
+---
+
+# 30. HISTORISATION
+
+Ne pas utiliser la suppression physique pour les objets métiers importants.
+
+Privilégier :
+
+```text
+PROTECT
+```
+
+ou une suppression logique lorsque nécessaire.
+
+L'objectif est de pouvoir répondre à :
+
+> Qui a fait cette opération ?
+
+> Quand ?
+
+> Sur quelle succursale ?
+
+> Sur quel article ?
+
+> Sur quel bien ?
+
+> Quelle était la valeur avant ?
+
+> Quelle est la valeur après ?
+
+---
+
+# 31. SERVICES MÉTIER
+
+Éviter de placer toute la logique dans les views ou serializers.
+
+Créer des services métier lorsque cela est pertinent :
+
+```text
+UserService
+RoleService
+PermissionService
+SuccursaleService
+
+BoutiqueService
+VenteService
+StockService
+
+ImmobilisationService
+AffectationService
+DeplacementService
+CasseService
+```
+
+Les opérations critiques doivent être transactionnelles.
+
+Utiliser `transaction.atomic()` lorsque plusieurs écritures doivent réussir ou échouer ensemble.
+
+---
+
+# 32. API
+
+Créer ou adapter les API backend nécessaires.
+
+Les API doivent :
+
+* respecter les permissions ;
+* respecter la succursale de l'utilisateur ;
+* respecter le domaine fonctionnel ;
+* filtrer les QuerySets ;
+* ne jamais exposer les données d'une autre succursale sans autorisation.
+
+Prévoir les endpoints nécessaires pour que le frontend existant puisse être connecté ultérieurement.
+
+Ne pas refaire les écrans frontend dans cette phase.
+
+---
+
+# 33. MIGRATIONS
+
+Avant toute modification de modèle :
+
+1. analyser les dépendances existantes ;
+2. identifier les données existantes ;
+3. prévoir une migration compatible ;
+4. ne pas détruire les données ;
+5. conserver les relations existantes ;
+6. tester les migrations sur une base contenant déjà des données.
+
+Ne pas simplement supprimer et recréer les tables.
+
+---
+
+# 34. TESTS
+
+Créer des tests backend pour vérifier au minimum :
+
+### Utilisateurs
+
+* utilisateur actif ;
+* utilisateur désactivé ;
+* rôle ;
+* permission ;
+* accès autorisé ;
+* accès refusé ;
+* accès à une autre succursale refusé.
+
+### Boutique
+
+* création article boutique ;
+* approvisionnement ;
+* entrée stock ;
+* vente ;
+* diminution du stock ;
+* stock insuffisant ;
+* seuil minimum ;
+* inventaire ;
+* ajustement ;
+* séparation des stocks par succursale.
+
+### Immobilisations
+
+* création ;
+* affectation ;
+* déplacement ;
+* changement d'état ;
+* casse ;
+* réparation ;
+* déclassement ;
+* historique.
+
+### Approvisionnement
+
+Vérifier qu'aucune fonctionnalité existante n'est cassée.
+
+---
+
+# 35. ORDRE DE DÉVELOPPEMENT IMPOSÉ
+
+Ne pas développer les trois modules simultanément.
+
+Suivre cet ordre :
+
+## PHASE 1 — Analyse du backend existant
+
+Avant d'écrire du code :
+
+* analyser les modèles ;
+* analyser les serializers ;
+* analyser les views ;
+* analyser les URLs ;
+* analyser les permissions existantes ;
+* rechercher toutes les utilisations de `Article.stock` ;
+* rechercher toutes les utilisations de `MouvementStock` ;
+* rechercher toutes les relations avec `AUTH_USER_MODEL` ;
+* rechercher toutes les opérations d'Approvisionnement.
+
+Présenter les dépendances avant modification.
+
+## PHASE 2 — Utilisateurs
+
+Développer :
+
+* utilisateurs ;
+* profils ;
+* rôles ;
+* permissions ;
+* activation/désactivation ;
+* succursales ;
+* affectation utilisateur ↔ succursale ;
+* domaine d'activité ;
+* filtrage centralisé ;
+* audit.
+
+Tester cette phase avant de continuer.
+
+## PHASE 3 — Extension Approvisionnement / stock
+
+Adapter l'existant uniquement lorsque nécessaire pour :
+
+* succursale ;
+* domaine ;
+* emplacement ;
+* séparation des stocks ;
+* compatibilité Boutique.
+
+Ne pas réécrire la logique existante inutilement.
+
+## PHASE 4 — Boutique
+
+Développer :
+
+* articles d'habillement ;
+* variantes ;
+* prix ;
+* stock ;
+* ventes ;
+* remises ;
+* paiements si nécessaire selon le cahier des charges ;
+* inventaire ;
+* mouvements ;
+* historique.
+
+## PHASE 5 — Immobilisations
+
+Développer :
+
+* catégories ;
+* biens ;
+* acquisition ;
+* états ;
+* affectations ;
+* déplacements ;
+* casse ;
+* réparation ;
+* déclassement ;
+* historique.
+
+## PHASE 6 — Audit et vérification globale
+
+Vérifier que toutes les opérations importantes sont :
+
+* authentifiées ;
+* autorisées ;
+* rattachées à une succursale ;
+* rattachées à un utilisateur ;
+* historisées.
+
+---
+
+# 36. CONTRAINTE IMPORTANTE : NE PAS MODIFIER LE FRONTEND
+
+Le frontend existe déjà.
+
+Dans cette phase :
+
+**BACKEND FIRST.**
+
+Il faut donc principalement travailler sur :
+
+* `models.py`
+* migrations ;
+* services ;
+* serializers ;
+* permissions ;
+* views/viewsets ;
+* URLs ;
+* logique métier ;
+* tests ;
+* audit.
+
+Ne pas refaire les interfaces frontend.
+
+Si une information backend supplémentaire est nécessaire pour le frontend existant, créer l'API et documenter clairement le champ retourné.
+
+---
+
+# 37. RÈGLE DE COMPATIBILITÉ
+
+Avant chaque modification importante, vérifier :
+
+```text
+Est-ce que cette modification casse Approvisionnement ?
+Est-ce qu'elle modifie le comportement de Article ?
+Est-ce qu'elle modifie le calcul du stock ?
+Est-ce qu'elle modifie les mouvements existants ?
+Est-ce qu'elle modifie les utilisateurs déjà enregistrés ?
+Est-ce qu'elle modifie les relations existantes ?
+```
+
+Si oui, adapter la solution plutôt que casser l'existant.
+
+---
+
+# 38. RÉSULTAT ATTENDU
+
+À la fin de ce développement, l'application doit avoir une architecture centralisée :
+
+```text
+                         UTILISATEUR
+                              │
+                     ┌────────┴────────┐
+                     │                 │
+                   RÔLE          SUCCURSALES
+                     │                 │
+                PERMISSIONS      DOMAINES
+                     │                 │
+                     └────────┬────────┘
+                              │
+               ┌──────────────┼──────────────┐
+               │              │              │
+               ▼              ▼              ▼
+        APPROVISIONNEMENT  BOUTIQUE   IMMOBILISATIONS
+               │              │              │
+               └──────────────┼──────────────┘
+                              │
+                              ▼
+                       STOCK CENTRALISÉ
+                              │
+                              ▼
+                         MOUVEMENTS
+                              │
+                              ▼
+                            AUDIT
+```
+
+Le système doit être capable de déterminer automatiquement :
+
+```text
+QUI ?
+↓
+QUEL RÔLE ?
+↓
+QUELLES PERMISSIONS ?
+↓
+QUELLE SUCCURSALE ?
+↓
+QUEL DOMAINE ?
+↓
+QUELLES DONNÉES ?
+↓
+QUELLE ACTION ?
+↓
+QUEL HISTORIQUE ?
+```
+
+L'objectif final est une application **centralisée, multi-succursales, multi-domaines, sécurisée, traçable et compatible avec le module Approvisionnement existant**, sans duplication inutile des articles, stocks, utilisateurs ou mécanismes de validation.
+
+Avant de commencer l'implémentation, produire une courte analyse technique du code existant et signaler les modèles qui doivent être modifiés, les nouveaux modèles nécessaires, les migrations à prévoir et les risques de régression. Ne commencer les modifications qu'après cette analyse.

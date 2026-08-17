@@ -664,3 +664,36 @@ h1 {
     flex-wrap: wrap;
   }
 }
+
+/* --- Module utilisateurs --- */
+.inline-form { display: inline; }
+.btn-danger {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #c0392b;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-danger:hover { background: #c0392b; }
+.statut {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.statut-ok { background: #e8f6ef; color: #1e8449; }
+.statut-stop { background: #fdecea; color: #b03a2e; }
+.detail-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.detail-grid dt { font-weight: 700; color: #555; }
+.detail-grid dd { margin: 0; }

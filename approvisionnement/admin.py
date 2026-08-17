@@ -46,13 +46,13 @@ class ServiceAdmin(admin.ModelAdmin):
 
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
-    list_display = ['code', 'designation', 'categorie', 'unite', 'seuil_minimum', 'stock', 'en_alerte', 'en_vigilance']
-    list_filter = ['categorie', 'unite']
+    list_display = ['code', 'designation', 'succursale', 'domaine', 'categorie', 'unite', 'seuil_minimum', 'stock', 'en_alerte', 'en_vigilance']
+    list_filter = ['succursale', 'domaine', 'categorie', 'unite']
     search_fields = ['code', 'designation']
     readonly_fields = ['stock']
     fieldsets = (
         (None, {
-            'fields': ('code', 'designation', 'categorie', 'unite', 'seuil_minimum'),
+            'fields': ('code', 'designation', 'succursale', 'domaine', 'categorie', 'unite', 'seuil_minimum'),
         }),
         ('Stock (mis à jour par les mouvements)', {
             'fields': ('stock',),

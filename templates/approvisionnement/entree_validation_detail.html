@@ -22,6 +22,19 @@
   {{ formset.management_form }}
   {{ formset.non_form_errors }}
   <section class="panel">
+    <h2>Bon — fournisseur</h2>
+    <p class="help">Le fournisseur et la référence restent modifiables avant validation.</p>
+    <div class="form-grid">
+      {% for field in bon_form %}
+      <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="panel">
     <h2>Contrôle des produits</h2>
     <div class="table-wrap">
       <table>

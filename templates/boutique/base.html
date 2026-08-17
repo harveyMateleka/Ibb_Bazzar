@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}{% block app_title %}Boutique{% endblock %} · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <nav class="subnav" aria-label="Boutique">
+      <a href="{% url 'boutique:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="is-active"{% endif %}>Tableau de bord</a>
+      <a href="{% url 'boutique:articles' %}" {% if request.resolver_match.url_name == 'articles' %}class="is-active"{% endif %}>Articles</a>
+      <a href="{% url 'boutique:ventes' %}" {% if 'vente' in request.resolver_match.url_name %}class="is-active"{% endif %}>Ventes</a>
+      <a href="{% url 'approvisionnement:inventaires' %}">Inventaire</a>
+      <a href="{% url 'approvisionnement:historique' %}">Historique</a>
+    </nav>
+    {% block app_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}

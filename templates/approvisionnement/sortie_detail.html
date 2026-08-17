@@ -92,8 +92,8 @@
 </section>
 {% elif seuils %}
 <section class="panel panel-warning">
-  <h2>Stock au seuil — autorisation du propriétaire</h2>
-  <p class="help">Le stock de ces articles est égal ou inférieur au seuil. Le propriétaire doit saisir son identifiant et son mot de passe pour autoriser la sortie. Le stock sera ensuite diminué et l’opération enregistrée dans l’historique.</p>
+  <h2>Sortie refusée — stock au seuil d'alerte</h2>
+  <p class="help">Le stock de ces articles est égal ou inférieur au seuil d'alerte. Aucune sortie n'est autorisée tant que l'article n'est pas réapprovisionné.</p>
   <div class="table-wrap">
     <table>
       <thead>
@@ -116,22 +116,6 @@
       </tbody>
     </table>
   </div>
-  <form method="post" action="{% url 'approvisionnement:sortie_valider' bon.pk %}" class="auth-form">
-    {% csrf_token %}
-    {{ auth_form.non_field_errors }}
-    <div class="form-grid auth-grid">
-      {% for field in auth_form %}
-      <div class="field">
-        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {{ field.errors }}
-      </div>
-      {% endfor %}
-    </div>
-    <div class="actions" style="margin-top: 1.2rem;">
-      <button type="submit" class="btn btn-primary">Autoriser et valider le bon de sortie</button>
-    </div>
-  </form>
 </section>
 {% else %}
 <form method="post" action="{% url 'approvisionnement:sortie_valider' bon.pk %}">

@@ -1,0 +1,47 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Stock</p>
+    <h1>Articles boutique</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Variante</th>
+          <th>Prix vente</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Niveau</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in articles %}
+        <tr class="{{ a.classe_stock }}">
+          <td>{{ a.code }}</td>
+          <td>{{ a.designation }}</td>
+          <td>
+            {% with infos=a.infos_boutique %}
+              {{ infos.taille }}/{{ infos.couleur }}{% if infos.type_produit %} ({{ infos.type_produit }}){% endif %}
+            {% endwith %}
+          </td>
+          <td>{{ a.infos_boutique.prix_vente|default:"—" }}</td>
+          <td>{{ a.stock }}</td>
+          <td>{{ a.seuil_minimum }}</td>
+          <td>{{ a.niveau_stock }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucun article boutique dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
