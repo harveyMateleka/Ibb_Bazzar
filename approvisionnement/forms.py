@@ -26,7 +26,8 @@ class ArticlePortionsSelect(forms.Select):
         option = super().create_option(
             name, value, label, selected, index, subindex=subindex, attrs=attrs
         )
-        pk = str(getattr(value, 'value', value) or '')
+        raw = value.value if hasattr(value, 'value') else value
+        pk = str(raw) if raw not in (None, '') else ''
         option['attrs']['data-nombre-portions'] = str(self.portions_map.get(pk, 0))
         return option
 
@@ -248,27 +249,58 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
             'nombre_portions': forms.NumberInput(attrs={'min': 0}),
         }
 
-    def __init__(self, *args, portions_map=None, **kwargs):
+    def __init__(self, *args, portions_map=None, articles_exclus=None, **kwargs):
         super().__init__(*args, **kwargs)
-        articles = Article.objects.select_related('categorie')
+        articles = Article.objects.select_related('categorie', 'unite')
         portions_map = portions_map or {
             str(article.pk): article.categorie.nombre_portions
             for article in articles
         }
+        exclus = set(articles_exclus or [])
+        if self.instance.pk and self.instance.article_id:
+            exclus.discard(self.instance.article_id)
+        if exclus:
+            articles = articles.exclude(pk__in=exclus)
         self.fields['article'].required = False
         self.fields['quantite'].required = False
         self.fields['nombre_portions'].required = False
-        self.fields['article'].queryset = articles
+        self.fields['article'].empty_label = 'Sélectionnez un article'
         self.fields['article'].widget = ArticlePortionsSelect(
             portions_map=portions_map,
-            attrs={'class': 'input'},
+            attrs={'class': 'input', 'data-article-ligne': '1'},
         )
+        self.fields['article'].queryset = articles
+        self.fields['nombre_portions'].widget.attrs.update(
+            {
+                'min': '0',
+                'placeholder': 'Nb portions',
+            }
+        )
+
+    def _ligne_incomplete(self):
+        article = None
+        quantite = None
+        if self.is_bound:
+            article = self.data.get(self.add_prefix('article'))
+            quantite = self.data.get(self.add_prefix('quantite'))
+        elif hasattr(self, 'cleaned_data'):
+            article = self.cleaned_data.get('article')
+            quantite = self.cleaned_data.get('quantite')
+        return not article and not quantite
+
+    def has_changed(self):
+        if not self.instance.pk and self._ligne_incomplete():
+            return False
+        return super().has_changed()
 
     def clean(self):
         cleaned = super().clean()
         article = cleaned.get('article')
         quantite = cleaned.get('quantite')
         portions = cleaned.get('nombre_portions') or 0
+        if not article and not quantite:
+            cleaned['nombre_portions'] = 0
+            return cleaned
         if article and not quantite:
             self.add_error('quantite', 'La quantité est obligatoire.')
         if quantite and not article:
@@ -284,7 +316,8 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
 
 
 class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, articles_exclus=None, **kwargs):
+        self.articles_exclus = set(articles_exclus or [])
         self.portions_map = {
             str(article.pk): article.categorie.nombre_portions
             for article in Article.objects.select_related('categorie')
@@ -293,7 +326,42 @@ class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
 
     def _construct_form(self, i, **kwargs):
         kwargs['portions_map'] = self.portions_map
+        kwargs['articles_exclus'] = self.articles_exclus
         return super()._construct_form(i, **kwargs)
+
+    def clean(self):
+        super().clean()
+        deja_choisis = set()
+        for form in self.forms:
+            if not getattr(form, 'cleaned_data', None):
+                continue
+            if form.cleaned_data.get('DELETE'):
+                continue
+            article = form.cleaned_data.get('article')
+            if not article:
+                continue
+            if article.pk in deja_choisis:
+                form.add_error(
+                    'article',
+                    'Ce produit est déjà présent sur une autre ligne.',
+                )
+            else:
+                deja_choisis.add(article.pk)
+
+    def save(self, commit=True):
+        instances = super().save(commit=False)
+        saved = []
+        for obj in instances:
+            if obj is None or not obj.article_id or not obj.quantite:
+                continue
+            if commit:
+                obj.save()
+            saved.append(obj)
+        if commit:
+            for obj in self.deleted_objects:
+                obj.delete()
+            self.save_m2m()
+        return saved
 
 
 LigneSortieFormSet = inlineformset_factory(
@@ -302,6 +370,52 @@ LigneSortieFormSet = inlineformset_factory(
     form=LigneSortieForm,
     formset=BaseLigneSortieFormSet,
     extra=4,
+    can_delete=False,
+    min_num=0,
+)
+
+
+class LigneSortieValidationForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = LigneSortie
+        fields = ['quantite', 'nombre_portions']
+        widgets = {
+            'quantite': forms.NumberInput(attrs={'min': 1}),
+            'nombre_portions': forms.NumberInput(attrs={'min': 0}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        article = getattr(self.instance, 'article', None)
+        if not article or not article.exige_portions:
+            self.fields['nombre_portions'].widget = forms.HiddenInput()
+            self.fields['nombre_portions'].required = False
+
+    def clean_quantite(self):
+        quantite = self.cleaned_data.get('quantite')
+        if quantite is None or quantite <= 0:
+            raise forms.ValidationError('La quantité doit être positive.')
+        return quantite
+
+    def clean(self):
+        cleaned = super().clean()
+        article = getattr(self.instance, 'article', None)
+        portions = cleaned.get('nombre_portions') or 0
+        if article and article.exige_portions and portions <= 0:
+            self.add_error(
+                'nombre_portions',
+                'Indiquez le nombre de portions pour cette catégorie de vivres frais.',
+            )
+        if article and not article.exige_portions:
+            cleaned['nombre_portions'] = 0
+        return cleaned
+
+
+LigneSortieValidationFormSet = inlineformset_factory(
+    BonSortie,
+    LigneSortie,
+    form=LigneSortieValidationForm,
+    extra=0,
     can_delete=True,
     min_num=0,
 )
@@ -312,9 +426,16 @@ class InventaireForm(StyledFormMixin, forms.ModelForm):
         model = Inventaire
         fields = ['date_inventaire', 'commentaire']
         widgets = {
-            'date_inventaire': forms.DateInput(attrs={'type': 'date'}),
+            'date_inventaire': forms.DateInput(
+                attrs={'type': 'date'},
+                format='%Y-%m-%d',
+            ),
             'commentaire': forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['date_inventaire'].input_formats = ['%Y-%m-%d']
 
 
 class LigneInventaireForm(StyledFormMixin, forms.ModelForm):
@@ -330,3 +451,44 @@ LigneInventaireFormSet = inlineformset_factory(
     extra=0,
     can_delete=False,
 )
+
+
+class RapportPeriodeForm(StyledFormMixin, forms.Form):
+    TYPE_ENTREE = 'ENTREE'
+    TYPE_SORTIE = 'SORTIE'
+    TYPE_INVENTAIRE = 'INVENTAIRE'
+    TYPE_CHOICES = [
+        ('', 'Sélectionnez'),
+        (TYPE_ENTREE, 'Entrée'),
+        (TYPE_SORTIE, 'Sortie'),
+        (TYPE_INVENTAIRE, 'Inventaire'),
+    ]
+
+    date_debut = forms.DateField(
+        label='Du',
+        widget=forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+    )
+    date_fin = forms.DateField(
+        label='Au',
+        widget=forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+    )
+    type_rapport = forms.ChoiceField(
+        label='Type',
+        choices=TYPE_CHOICES,
+        required=True,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['date_debut'].input_formats = ['%Y-%m-%d']
+        self.fields['date_fin'].input_formats = ['%Y-%m-%d']
+
+    def clean(self):
+        cleaned = super().clean()
+        debut = cleaned.get('date_debut')
+        fin = cleaned.get('date_fin')
+        if debut and fin and debut > fin:
+            raise forms.ValidationError(
+                'La date de début doit précéder ou être égale à la date de fin.'
+            )
+        return cleaned

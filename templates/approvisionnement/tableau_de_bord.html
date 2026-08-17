@@ -33,7 +33,7 @@
 <section class="panel">
   <h2>Alertes stock</h2>
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>Article</th>
@@ -60,7 +60,7 @@
 <section class="panel">
   <h2>État des stocks</h2>
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>Code</th>
@@ -96,7 +96,7 @@
 <section class="panel">
   <h2>Derniers approvisionnements</h2>
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>Date</th>
@@ -104,24 +104,75 @@
           <th>Type</th>
           <th>Tiers / Motif</th>
           <th>Utilisateur</th>
+          <th class="_nosort">Détail</th>
         </tr>
       </thead>
       <tbody>
         {% for journal in derniers_mouvements %}
         <tr>
           <td>{{ journal.date_operation|date:"d/m/Y H:i" }}</td>
-          <td><a href="{% url 'approvisionnement:historique_detail' journal.pk %}">{{ journal.numero }}</a></td>
+          <td>{{ journal.numero }}</td>
           <td>{{ journal.get_type_operation_display }}</td>
           <td>{{ journal.fournisseur|default:journal.motif|default:"—" }}</td>
           <td>{{ journal.utilisateur }}</td>
+          <td>
+            <button type="button" class="icon-btn" data-open-dialog="detail-appro-{{ journal.pk }}" title="Voir les produits" aria-label="Voir le détail de {{ journal.numero }}">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <span>Voir</span>
+            </button>
+          </td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="5">Aucun historique pour le moment.</td>
+          <td colspan="6">Aucun historique pour le moment.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+
+{% for journal in derniers_mouvements %}
+<dialog id="detail-appro-{{ journal.pk }}" class="detail-dialog">
+  <p class="eyebrow">{{ journal.get_type_operation_display }}</p>
+  <h2>{{ journal.numero }}</h2>
+  <p class="help">
+    {{ journal.date_operation|date:"d/m/Y H:i" }}
+    · {{ journal.utilisateur }}
+    {% if journal.fournisseur %} · {{ journal.fournisseur }}{% endif %}
+    {% if journal.motif %} · {{ journal.motif }}{% endif %}
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Produit</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in journal.lignes.all %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.quantite }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="3">Aucun produit.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="actions" style="margin-top: 1.2rem;">
+    <a class="btn btn-ghost" href="{% url 'approvisionnement:historique_detail' journal.pk %}">Fiche complète</a>
+    <button type="button" class="btn btn-primary" data-close-dialog>Fermer</button>
+  </div>
+</dialog>
+{% endfor %}
 {% endblock %}

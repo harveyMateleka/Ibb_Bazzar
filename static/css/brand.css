@@ -306,6 +306,92 @@ th {
   background: #fff3b0;
 }
 
+.portions-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 150px;
+  padding: 0.45rem 0.55rem;
+  background: var(--brand-maroon-soft);
+  border-radius: 8px;
+}
+
+.portions-zone[hidden] {
+  display: none !important;
+}
+
+.portions-zone label {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-maroon);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 40px;
+  padding: 0 0.85rem;
+  border: 2px solid var(--brand-black);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--brand-maroon);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.icon-btn:hover {
+  border-color: var(--brand-maroon);
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.detail-dialog {
+  width: min(640px, calc(100% - 2rem));
+  border: 0;
+  padding: 1.4rem;
+  box-shadow: var(--shadow);
+}
+
+.detail-dialog::backdrop {
+  background: rgba(17, 17, 17, 0.45);
+}
+
+.detail-dialog h2 {
+  margin-bottom: 0.4rem;
+}
+
+div.dt-container,
+.dataTables_wrapper {
+  font-family: var(--font-body);
+}
+
+div.dt-container .dt-search input,
+div.dt-container .dt-length select,
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select {
+  min-height: 40px;
+  border: 1px solid var(--brand-line);
+  font: inherit;
+}
+
+div.dt-container .dt-paging .dt-paging-button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
+  background: var(--brand-maroon) !important;
+  color: var(--brand-white) !important;
+  border: 0 !important;
+}
+
 .form-panel {
   max-width: 720px;
 }
@@ -486,6 +572,19 @@ textarea {
   font-size: 0.9rem;
 }
 
+.rapport-bloc {
+  margin: 1rem 0 1.4rem;
+}
+
+.rapport-section {
+  margin-top: 1.8rem;
+}
+
+.rapport-section h2 {
+  margin-bottom: 0.8rem;
+  font-size: 1.05rem;
+}
+
 @media print {
   .site-header,
   .site-footer,
@@ -502,6 +601,14 @@ textarea {
     margin: 0;
     width: auto;
     padding: 0;
+  }
+
+  .rapport-bloc {
+    page-break-inside: avoid;
+  }
+
+  .rapport-section {
+    page-break-before: auto;
   }
 }
 

@@ -20,7 +20,7 @@
 <section class="panel">
   <h2>Produits enregistrés</h2>
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>Article</th>
@@ -49,7 +49,7 @@
 </section>
 
 {% if formset %}
-<form method="post" id="form-lignes-entree">
+<form method="post" id="form-lignes-entree" novalidate>
   {% csrf_token %}
   {{ formset.management_form }}
   {{ formset.non_form_errors }}

@@ -23,7 +23,7 @@
 
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>Date</th>
@@ -32,11 +32,12 @@
           <th>Fournisseur</th>
           <th>Motif / Destination</th>
           <th>Utilisateur</th>
-          <th></th>
+          <th class="_nosort">Détail</th>
+          <th class="_nosort"></th>
         </tr>
       </thead>
       <tbody>
-        {% for journal in page %}
+        {% for journal in journaux %}
         <tr>
           <td>{{ journal.date_operation|date:"d/m/Y H:i" }}</td>
           <td>{{ journal.numero }}</td>
@@ -50,8 +51,15 @@
             {% endif %}
           </td>
           <td>{{ journal.utilisateur }}</td>
+          <td>
+            <button type="button" class="icon-btn" data-open-dialog="detail-hist-{{ journal.pk }}" title="Voir le détail" aria-label="Voir le détail de {{ journal.numero }}">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </td>
           <td class="actions">
-            <a class="btn btn-ghost" href="{% url 'approvisionnement:historique_detail' journal.pk %}">Détail</a>
             {% if journal.bon_entree_id %}
             <a class="btn btn-primary" href="{% url 'approvisionnement:entree_imprimer' journal.bon_entree_id %}">Imprimer</a>
             {% elif journal.bon_sortie_id %}
@@ -61,22 +69,52 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="7">Aucun historique d'approvisionnement.</td>
+          <td colspan="8">Aucun historique d'approvisionnement.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% if page.has_other_pages %}
-  <div class="pagination">
-    {% if page.has_previous %}
-    <a href="?page={{ page.previous_page_number }}&type={{ type_filtre }}&q={{ recherche }}">Précédent</a>
-    {% endif %}
-    <span>Page {{ page.number }} / {{ page.paginator.num_pages }}</span>
-    {% if page.has_next %}
-    <a href="?page={{ page.next_page_number }}&type={{ type_filtre }}&q={{ recherche }}">Suivant</a>
-    {% endif %}
-  </div>
-  {% endif %}
 </section>
+
+{% for journal in journaux %}
+<dialog id="detail-hist-{{ journal.pk }}" class="detail-dialog">
+  <p class="eyebrow">{{ journal.get_type_operation_display }}</p>
+  <h2>{{ journal.numero }}</h2>
+  <p class="help">
+    {{ journal.date_operation|date:"d/m/Y H:i" }}
+    · {{ journal.utilisateur }}
+    {% if journal.fournisseur %} · {{ journal.fournisseur }}{% endif %}
+    {% if journal.motif %} · {{ journal.motif }}{% endif %}
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Produit</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in journal.lignes.all %}
+        <tr>
+          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.quantite }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="3">Aucun produit.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="actions" style="margin-top: 1.2rem;">
+    <a class="btn btn-ghost" href="{% url 'approvisionnement:historique_detail' journal.pk %}">Fiche complète</a>
+    <button type="button" class="btn btn-primary" data-close-dialog>Fermer</button>
+  </div>
+</dialog>
+{% endfor %}
 {% endblock %}

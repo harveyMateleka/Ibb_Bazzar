@@ -6,22 +6,23 @@
 <div class="page-head">
   <div>
     <p class="eyebrow">APP-03</p>
-    <h1>Bons de sortie</h1>
+    <h1>Enregistrement des sorties</h1>
   </div>
   <a class="btn btn-primary" href="{% url 'approvisionnement:sortie_nouveau' %}">Nouvelle sortie</a>
 </div>
 
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>N°</th>
           <th>Date</th>
           <th>Motif</th>
           <th>Service</th>
+          <th>Produits</th>
           <th>Statut</th>
-          <th></th>
+          <th class="_nosort"></th>
         </tr>
       </thead>
       <tbody>
@@ -31,7 +32,16 @@
           <td>{{ bon.date_sortie|date:"d/m/Y H:i" }}</td>
           <td>{{ bon.motif }}</td>
           <td>{{ bon.destination|default:"—" }}</td>
-          <td>{{ bon.get_statut_display }}</td>
+          <td>{{ bon.nb_lignes }}</td>
+          <td>
+            {% if bon.statut == 'VALIDE' %}
+              Validé
+            {% elif bon.nb_lignes %}
+              En attente de validation
+            {% else %}
+              Saisie en cours
+            {% endif %}
+          </td>
           <td class="actions">
             <a class="btn btn-ghost" href="{% url 'approvisionnement:sortie_detail' bon.pk %}">Ouvrir</a>
             {% if bon.statut == 'VALIDE' %}
@@ -41,7 +51,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="6">Aucun bon de sortie.</td>
+          <td colspan="7">Aucun bon de sortie.</td>
         </tr>
         {% endfor %}
       </tbody>

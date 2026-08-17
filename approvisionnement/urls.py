@@ -15,6 +15,8 @@ urlpatterns = [
     path('entrees/<int:pk>/imprimer/', views.entree_imprimer, name='entree_imprimer'),
     path('sorties/', views.sortie_liste, name='sortie'),
     path('sorties/nouvelle/', views.sortie_nouveau, name='sortie_nouveau'),
+    path('sorties/validation/', views.sortie_validation_liste, name='sortie_validation'),
+    path('sorties/validation/<int:pk>/', views.sortie_validation_detail, name='sortie_validation_detail'),
     path('sorties/<int:pk>/', views.sortie_detail, name='sortie_detail'),
     path('sorties/<int:pk>/valider/', views.sortie_valider, name='sortie_valider'),
     path('sorties/<int:pk>/imprimer/', views.sortie_imprimer, name='sortie_imprimer'),
@@ -24,4 +26,6 @@ urlpatterns = [
     path('inventaires/nouveau/', views.inventaire_nouveau, name='inventaire_nouveau'),
     path('inventaires/<int:pk>/', views.inventaire_detail, name='inventaire_detail'),
     path('inventaires/<int:pk>/valider/', views.inventaire_valider, name='inventaire_valider'),
+    path('rapports/', views.rapport, name='rapport'),
+    path('rapports/imprimer/', views.rapport_imprimer, name='rapport_imprimer'),
 ]

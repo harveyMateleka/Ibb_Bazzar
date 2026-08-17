@@ -90,7 +90,7 @@ class Unite(models.Model):
         ordering = ['code']
 
     def __str__(self):
-        return self.code
+        return self.libelle or self.code
 
 
 class Fournisseur(models.Model):
@@ -625,6 +625,12 @@ class Inventaire(models.Model):
         verbose_name = 'inventaire'
         verbose_name_plural = 'inventaires'
         ordering = ['-date_inventaire']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['date_inventaire'],
+                name='inventaire_unique_par_jour',
+            ),
+        ]
 
     def __str__(self):
         return f'Inventaire du {self.date_inventaire}'

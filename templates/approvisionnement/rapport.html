@@ -1,0 +1,171 @@
+{% extends "approvisionnement/base.html" %}
+
+{% block app_title %}Rapport de période{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">APP-07</p>
+    <h1>Rapport d’approvisionnement</h1>
+    <p class="lead">Choisissez une période et un type, puis affichez ou imprimez le rapport.</p>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  {{ form.non_field_errors }}
+  <label class="field" style="margin: 0;">
+    <span class="help" style="margin: 0 0 0.3rem;">Du</span>
+    {{ form.date_debut }}
+    {{ form.date_debut.errors }}
+  </label>
+  <label class="field" style="margin: 0;">
+    <span class="help" style="margin: 0 0 0.3rem;">Au</span>
+    {{ form.date_fin }}
+    {{ form.date_fin.errors }}
+  </label>
+  <label class="field" style="margin: 0;">
+    <span class="help" style="margin: 0 0 0.3rem;">Type</span>
+    {{ form.type_rapport }}
+    {{ form.type_rapport.errors }}
+  </label>
+  <button type="submit" class="btn btn-ghost">Afficher</button>
+</form>
+
+{% if date_debut and date_fin %}
+<div class="stats">
+  <article class="stat">
+    <p>Entrées</p>
+    <strong>{{ nb_entrees }}</strong>
+    <span>{{ qte_entrees }} unité(s)</span>
+  </article>
+  <article class="stat">
+    <p>Sorties</p>
+    <strong>{{ nb_sorties }}</strong>
+    <span>{{ qte_sorties }} unité(s)</span>
+  </article>
+  <article class="stat">
+    <p>Inventaires</p>
+    <strong>{{ nb_inventaires }}</strong>
+    <span>validé{{ nb_inventaires|pluralize }}</span>
+  </article>
+</div>
+{% endif %}
+
+{% if type_rapport == 'ENTREE' %}
+<section class="panel">
+  <h2>Entrées du {{ date_debut|date:"d/m/Y" }} au {{ date_fin|date:"d/m/Y" }}</h2>
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>N°</th>
+          <th>Fournisseur</th>
+          <th>Article</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in lignes_rapport %}
+        <tr>
+          <td>{{ item.journal.date_operation|date:"d/m/Y H:i" }}</td>
+          <td>{{ item.journal.numero }}</td>
+          <td>{{ item.journal.fournisseur|default:"—" }}</td>
+          <td>{{ item.ligne.article }}</td>
+          <td>{{ item.ligne.article.unite }}</td>
+          <td>{{ item.ligne.quantite }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6">Aucune entrée validée sur cette période.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% elif type_rapport == 'SORTIE' %}
+<section class="panel">
+  <h2>Sorties du {{ date_debut|date:"d/m/Y" }} au {{ date_fin|date:"d/m/Y" }}</h2>
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>N°</th>
+          <th>Motif</th>
+          <th>Service</th>
+          <th>Article</th>
+          <th>Unité</th>
+          <th>Quantité</th>
+          <th>Portions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in lignes_rapport %}
+        <tr>
+          <td>{{ item.journal.date_operation|date:"d/m/Y H:i" }}</td>
+          <td>{{ item.journal.numero }}</td>
+          <td>{{ item.journal.motif }}</td>
+          <td>{{ item.journal.destination|default:"—" }}</td>
+          <td>{{ item.ligne.article }}</td>
+          <td>{{ item.ligne.article.unite }}</td>
+          <td>{{ item.ligne.quantite }}</td>
+          <td>{% if item.ligne.nombre_portions %}{{ item.ligne.nombre_portions }}{% else %}—{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">Aucune sortie validée sur cette période.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% elif type_rapport == 'INVENTAIRE' %}
+<section class="panel">
+  <h2>Inventaires du {{ date_debut|date:"d/m/Y" }} au {{ date_fin|date:"d/m/Y" }}</h2>
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Responsable</th>
+          <th>Article</th>
+          <th>Unité</th>
+          <th>Stock système</th>
+          <th>Stock physique</th>
+          <th>Écart</th>
+          <th>Motif</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in lignes_rapport %}
+        <tr>
+          <td>{{ item.inventaire.date_inventaire|date:"d/m/Y" }}</td>
+          <td>{{ item.inventaire.responsable }}</td>
+          <td>{{ item.ligne.article }}</td>
+          <td>{{ item.ligne.article.unite }}</td>
+          <td>{{ item.ligne.stock_systeme }}</td>
+          <td>{{ item.ligne.stock_physique }}</td>
+          <td>{{ item.ligne.ecart }}</td>
+          <td>{{ item.ligne.motif|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">Aucun inventaire validé sur cette période.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if type_rapport %}
+<div class="actions" style="margin-top: 1.2rem;">
+  <a class="btn btn-primary" href="{% url 'approvisionnement:rapport_imprimer' %}?date_debut={{ date_debut|date:'Y-m-d' }}&amp;date_fin={{ date_fin|date:'Y-m-d' }}&amp;type_rapport={{ type_rapport }}&amp;auto=1">Imprimer</a>
+</div>
+{% endif %}
+{% endblock %}

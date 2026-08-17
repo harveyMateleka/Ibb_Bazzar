@@ -12,7 +12,7 @@
 </div>
 
 {% if formset %}
-<form method="post">
+<form method="post" novalidate>
   {% csrf_token %}
   {{ formset.management_form }}
   <section class="panel">
@@ -44,21 +44,15 @@
       </table>
     </div>
     <div class="actions" style="margin-top: 1.2rem;">
-      <button type="submit" class="btn btn-ghost">Enregistrer les saisies</button>
+      <button type="submit" name="action" value="enregistrer" class="btn btn-ghost">Enregistrer les saisies</button>
+      <button type="submit" name="action" value="valider" class="btn btn-primary">Valider l’inventaire</button>
     </div>
   </section>
-</form>
-
-<form method="post" action="{% url 'approvisionnement:inventaire_valider' inventaire.pk %}">
-  {% csrf_token %}
-  <div class="actions">
-    <button type="submit" class="btn btn-primary">Valider l’inventaire</button>
-  </div>
 </form>
 {% else %}
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table class="js-datatable">
       <thead>
         <tr>
           <th>Article</th>

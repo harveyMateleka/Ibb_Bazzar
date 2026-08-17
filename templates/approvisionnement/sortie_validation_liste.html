@@ -1,13 +1,13 @@
 {% extends "approvisionnement/base.html" %}
 
-{% block app_title %}Validation des entrées{% endblock %}
+{% block app_title %}Validation des sorties{% endblock %}
 
 {% block app_content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Responsable</p>
     <h1>Produits en attente de validation</h1>
-    <p class="lead">Contrôlez les quantités, supprimez une ligne si nécessaire, puis validez pour mettre à jour le stock.</p>
+    <p class="lead">Contrôlez les quantités, supprimez une ligne si nécessaire, puis validez pour diminuer le stock.</p>
   </div>
 </div>
 
@@ -16,15 +16,14 @@
   <div class="page-head" style="margin-bottom: 1rem;">
     <div>
       <p class="eyebrow">{{ bon.numero }}</p>
-      <h2>{{ bon.fournisseur }}</h2>
+      <h2>{{ bon.motif }}{% if bon.destination %} · {{ bon.destination }}{% endif %}</h2>
       <p class="help" style="margin-bottom: 0;">
-        {{ bon.date_approvisionnement|date:"d/m/Y H:i" }}
+        {{ bon.date_sortie|date:"d/m/Y H:i" }}
         · Saisi par {{ bon.utilisateur }}
-        {% if bon.reference %} · Réf. {{ bon.reference }}{% endif %}
         · {{ bon.nb_lignes }} produit{{ bon.nb_lignes|pluralize }}
       </p>
     </div>
-    <a class="btn btn-primary" href="{% url 'approvisionnement:entree_validation_detail' bon.pk %}">Contrôler et valider</a>
+    <a class="btn btn-primary" href="{% url 'approvisionnement:sortie_validation_detail' bon.pk %}">Contrôler et valider</a>
   </div>
   <div class="table-wrap">
     <table class="js-datatable">
@@ -33,6 +32,7 @@
           <th>Article</th>
           <th>Unité</th>
           <th>Quantité</th>
+          <th>Portions</th>
         </tr>
       </thead>
       <tbody>
@@ -41,6 +41,7 @@
           <td>{{ ligne.article }}</td>
           <td>{{ ligne.article.unite }}</td>
           <td>{{ ligne.quantite }}</td>
+          <td>{% if ligne.nombre_portions %}{{ ligne.nombre_portions }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

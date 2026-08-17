@@ -1,0 +1,11 @@
+<nav class="local-tabs" aria-label="Sortie de stock">
+  <a href="{% url 'approvisionnement:sortie' %}" {% if not onglet_validation %}class="is-active"{% endif %}>
+    Enregistrement
+  </a>
+  <a href="{% url 'approvisionnement:sortie_validation' %}" {% if onglet_validation %}class="is-active"{% endif %}>
+    Validation
+    {% if nb_en_attente %}
+    <span class="tab-badge">{{ nb_en_attente }}</span>
+    {% endif %}
+  </a>
+</nav>

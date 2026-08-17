@@ -1,7 +1,12 @@
 {% extends "base.html" %}
+{% load static %}
 {% load approvisionnement_onglets %}
 
 {% block title %}{% block app_title %}Approvisionnement{% endblock %} · IBBS BAZAR{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+{% endblock %}
 
 {% block content %}
 <section class="app-shell">
@@ -12,11 +17,20 @@
       <a href="{% url 'approvisionnement:sortie' %}" {% if 'sortie' in request.resolver_match.url_name %}class="is-active"{% endif %}>Sortie stock</a>
       <a href="{% url 'approvisionnement:historique' %}" {% if 'historique' in request.resolver_match.url_name %}class="is-active"{% endif %}>Historique</a>
       <a href="{% url 'approvisionnement:inventaires' %}" {% if 'inventaire' in request.resolver_match.url_name %}class="is-active"{% endif %}>Inventaire</a>
+      <a href="{% url 'approvisionnement:rapport' %}" {% if 'rapport' in request.resolver_match.url_name %}class="is-active"{% endif %}>Rapport</a>
     </nav>
     {% if 'entree' in request.resolver_match.url_name %}
     {% entree_onglets %}
+    {% elif 'sortie' in request.resolver_match.url_name %}
+    {% sortie_onglets %}
     {% endif %}
     {% block app_content %}{% endblock %}
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="{% static 'js/approvisionnement.js' %}"></script>
 {% endblock %}
