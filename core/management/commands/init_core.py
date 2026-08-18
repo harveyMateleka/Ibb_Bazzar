@@ -23,8 +23,8 @@ PERMISSIONS_ROLES = {
                              'validate_approvisionnement', 'view_sortie', 'create_sortie',
                              'validate_sortie', 'view_historique', 'view_inventaire',
                              'create_inventaire', 'validate_inventaire']),
-        (BOUTIQUE, ['view_boutique', 'view_stock', 'create_vente', 'validate_vente',
-                    'cancel_vente', 'apply_remise', 'adjust_stock']),
+        (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente',
+                    'validate_vente', 'cancel_vente', 'apply_remise', 'adjust_stock']),
         (CORE, ['view_audit', 'view_utilisateur', 'view_succursale']),
     ],
     'RESPONSABLE': [
@@ -32,8 +32,8 @@ PERMISSIONS_ROLES = {
                              'validate_approvisionnement', 'view_sortie', 'create_sortie',
                              'validate_sortie', 'view_historique', 'view_inventaire',
                              'create_inventaire', 'validate_inventaire']),
-        (BOUTIQUE, ['view_boutique', 'view_stock', 'create_vente', 'validate_vente',
-                    'cancel_vente', 'apply_remise', 'adjust_stock']),
+        (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente',
+                    'validate_vente', 'cancel_vente', 'apply_remise', 'adjust_stock']),
         (CORE, ['view_audit']),
     ],
     'MAGASINIER': [
