@@ -504,6 +504,7 @@ class Vente(models.Model):
         AUTRE = 'AUTRE', 'Autre'
 
     numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
+    client = models.CharField('client', max_length=200, blank=True)
     succursale = models.ForeignKey(
         'core.Succursale',
         on_delete=models.PROTECT,

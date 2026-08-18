@@ -86,10 +86,11 @@ class VenteService:
     """Cycle de vie d'une vente (création → validation → stock boutique)."""
 
     @staticmethod
-    def creer(*, succursale, domaine, utilisateur, type_paiement='ESPECES', montant_recu=0, remise=0):
+    def creer(*, succursale, domaine, utilisateur, client='', type_paiement='ESPECES', montant_recu=0, remise=0):
         with transaction.atomic():
             vente = Vente.objects.create(
                 numero=Vente.prochain_numero(),
+                client=client,
                 succursale=succursale,
                 domaine=domaine,
                 utilisateur=utilisateur,

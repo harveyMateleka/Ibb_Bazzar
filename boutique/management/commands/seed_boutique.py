@@ -247,7 +247,8 @@ class Command(BaseCommand):
             return
         # Vente validée (caissier)
         v1 = VenteService.creer(
-            succursale=self.succ, domaine=self.domaine, utilisateur=self.caissier)
+            succursale=self.succ, domaine=self.domaine, utilisateur=self.caissier,
+            client='Jean Kalala', type_paiement='MOBILE_MONEY', montant_recu=75000)
         VenteService.ajouter_ligne(
             v1, ArticleBoutique.objects.get(code='TSHIRT-N-M', succursale=self.succ),
             2, 20000)
@@ -255,24 +256,26 @@ class Command(BaseCommand):
             v1, ArticleBoutique.objects.get(code='JEAN-B-32', succursale=self.succ),
             1, 35000)
         VenteService.valider(v1, par=self.responsable)
-        self.stdout.write(f'  vente validée : {v1.numero} (total {v1.total}).')
+        self.stdout.write(f'  vente validée : {v1.numero} (client {v1.client}, total {v1.total}).')
 
         # Vente brouillon (caissier)
         v2 = VenteService.creer(
-            succursale=self.succ, domaine=self.domaine, utilisateur=self.caissier)
+            succursale=self.succ, domaine=self.domaine, utilisateur=self.caissier,
+            client='Marie Tshala')
         VenteService.ajouter_ligne(
             v2, ArticleBoutique.objects.get(code='TSHIRT-B-L', succursale=self.succ),
             1, 20000)
-        self.stdout.write(f'  vente brouillon : {v2.numero}.')
+        self.stdout.write(f'  vente brouillon : {v2.numero} (client {v2.client}).')
 
         # Vente validée avec remise (responsable)
         v3 = VenteService.creer(
-            succursale=self.succ, domaine=self.domaine, utilisateur=self.responsable, remise=5000)
+            succursale=self.succ, domaine=self.domaine, utilisateur=self.responsable,
+            remise=5000, client='Patrick Mbuyi', type_paiement='ESPECES', montant_recu=100000)
         VenteService.ajouter_ligne(
             v3, ArticleBoutique.objects.get(code='CHEMISE-W-M', succursale=self.succ),
             3, 30000)
         VenteService.valider(v3, par=self.responsable)
-        self.stdout.write(f'  vente avec remise : {v3.numero} (total {v3.total}).')
+        self.stdout.write(f'  vente avec remise : {v3.numero} (client {v3.client}, total {v3.total}).')
 
     # --- Inventaire --------------------------------------------------------
 

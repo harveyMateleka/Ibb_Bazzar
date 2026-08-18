@@ -152,6 +152,13 @@ class TestVenteService(BoutiqueBase):
         self.assertTrue(vente.numero.startswith('VTE-'))
         self.assertEqual(vente.statut, Vente.Statut.BROUILLON)
 
+    def test_vente_enregistre_le_client(self):
+        vente = VenteService.creer(
+            succursale=self.succ_a, domaine=self.domaine,
+            utilisateur=self.responsable, client='Jean Kalala')
+        self.assertEqual(vente.client, 'Jean Kalala')
+        self.assertTrue(Vente.objects.filter(client='Jean Kalala').exists())
+
     def test_validation_diminue_stock(self):
         self._entrer(self.art_a, 60)
         vente = self._vente(quantite=3)
@@ -311,7 +318,8 @@ class TestPermissionsEtRemises(BoutiqueBase):
         self.client.force_login(self.caissier)
         resp = self.client.post(
             reverse('boutique:vente_nouvelle'),
-            {'type_paiement': 'ESPECES', 'montant_recu': '0', 'remise': '10'},
+            {'client': 'Client test', 'type_paiement': 'ESPECES',
+             'montant_recu': '0', 'remise': '10'},
         )
         self.assertEqual(Vente.objects.count(), 0)
         self.assertContains(resp, 'remise')
@@ -320,11 +328,21 @@ class TestPermissionsEtRemises(BoutiqueBase):
         self.client.force_login(self.responsable)
         resp = self.client.post(
             reverse('boutique:vente_nouvelle'),
-            {'type_paiement': 'ESPECES', 'montant_recu': '0', 'remise': '10'},
+            {'client': 'Client test', 'type_paiement': 'ESPECES',
+             'montant_recu': '0', 'remise': '10'},
         )
         self.assertEqual(resp.status_code, 302)
         vente = Vente.objects.first()
         self.assertEqual(vente.remise, 10)
+
+    def test_client_obligatoire_a_la_creation(self):
+        self.client.force_login(self.caissier)
+        resp = self.client.post(
+            reverse('boutique:vente_nouvelle'),
+            {'type_paiement': 'ESPECES', 'montant_recu': '0', 'remise': '0'},
+        )
+        self.assertEqual(Vente.objects.count(), 0)
+        self.assertContains(resp, 'client')
 
 
 class TestPerimetreBoutique(BoutiqueBase):

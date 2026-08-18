@@ -95,10 +95,16 @@ class StockEntreeForm(forms.Form):
 class VenteForm(forms.ModelForm):
     class Meta:
         model = Vente
-        fields = ['succursale', 'domaine', 'type_paiement', 'montant_recu', 'remise']
+        fields = ['client', 'succursale', 'domaine', 'type_paiement', 'montant_recu', 'remise']
+        widgets = {
+            'client': forms.TextInput(attrs={'class': 'input', 'placeholder': 'Nom du client'}),
+            'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+        }
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, request_user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        # Une vente est rattachée à un client (règle métier).
+        self.fields['client'].required = True
         if succursales is not None:
             self.fields['succursale'].queryset = succursales
         if domaines is not None:
@@ -110,13 +116,41 @@ class VenteForm(forms.ModelForm):
             self.fields['remise'].help_text = 'Remise réservée aux profils autorisés.'
 
 
+class ArticleBoutiqueSelect(forms.Select):
+    """Select d'article : embarque prix normal / min / max sur chaque option.
+
+    Permet au frontend d'afficher le prix normal et le prix minimum de
+    l'article sélectionné (et de pré-remplir le prix unitaire)."""
+
+    def __init__(self, attrs=None, prix_par_article=None):
+        self.prix_par_article = prix_par_article or {}
+        super().__init__(attrs)
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        # ModelChoiceIteratorValue expose la PK via son attribut .value
+        # (int() lève sur cet objet).
+        pk = getattr(value, 'value', value)
+        try:
+            pk = int(pk) if pk else None
+        except (TypeError, ValueError):
+            pk = None
+        if pk and pk in self.prix_par_article:
+            normal, mini, maxi = self.prix_par_article[pk]
+            option['attrs']['data-prix-normal'] = normal
+            option['attrs']['data-prix-min'] = mini
+            option['attrs']['data-prix-max'] = maxi
+        return option
+
+
 class VenteLigneForm(forms.ModelForm):
     class Meta:
         model = VenteLigne
         fields = ['article', 'quantite', 'prix_unitaire']
         widgets = {
+            'quantite': forms.NumberInput(attrs={'min': 1, 'class': 'input'}),
             'prix_unitaire': forms.NumberInput(
-                attrs={'step': '0.01', 'min': '0', 'data-prix-ligne': '1'}
+                attrs={'step': '0.01', 'min': '0', 'class': 'input', 'data-prix-ligne': '1'}
             ),
         }
 
@@ -131,7 +165,17 @@ class VenteLigneForm(forms.ModelForm):
         self.fields['article'].required = False
         self.fields['quantite'].required = False
         self.fields['prix_unitaire'].required = False
-        self.fields['article'].widget.attrs['data-article-ligne'] = '1'
+        # Widget embarquant les prix (normal / min / max) par option.
+        prix_par_article = {
+            a.pk: (str(a.prix_unitaire), str(a.prix_minimum), str(a.prix_maximum))
+            for a in articles
+        }
+        self.fields['article'].widget = ArticleBoutiqueSelect(
+            attrs={'class': 'input', 'data-article-ligne': '1'},
+            prix_par_article=prix_par_article,
+        )
+        # Ré-attacher les choix (le remplacement du widget perd la liaison).
+        self.fields['article'].widget.choices = self.fields['article'].choices
 
     def clean(self):
         cleaned = super().clean()
@@ -173,6 +217,17 @@ class BaseVenteLigneFormSet(forms.BaseInlineFormSet):
         kwargs['succursale'] = self.succursale
         kwargs['domaine'] = self.domaine
         return super()._construct_form(i, **kwargs)
+
+
+class EncaissementForm(forms.ModelForm):
+    """Montant reçu d'une vente (modifiable sur la page de détail)."""
+
+    class Meta:
+        model = Vente
+        fields = ['montant_recu']
+        widgets = {
+            'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'input'}),
+        }
 
 
 VenteLigneFormSet = inlineformset_factory(

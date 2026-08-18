@@ -15,6 +15,7 @@
     <h1>{{ vente.succursale }}</h1>
     <p class="bon-numero">Vente {{ vente.numero }}</p>
     <p class="bon-meta">Date : {{ vente.date_vente|date:"d/m/Y H:i" }}</p>
+    <p class="bon-meta">Client : {{ vente.client|default:"—" }}</p>
     <p class="bon-meta">Caissier : {{ vente.utilisateur }}</p>
     <p class="bon-meta">Paiement : {{ vente.get_type_paiement_display }}</p>
   </div>

@@ -31,6 +31,7 @@
 <section class="panel">
   <dl class="detail-grid">
     <dt>Date</dt><dd>{{ vente.date_vente|date:"d/m/Y H:i" }}</dd>
+    <dt>Client</dt><dd>{{ vente.client|default:"—" }}</dd>
     <dt>Succursale</dt><dd>{{ vente.succursale }}</dd>
     <dt>Domaine</dt><dd>{{ vente.domaine }}</dd>
     <dt>Utilisateur</dt><dd>{{ vente.utilisateur }}</dd>
@@ -67,19 +68,97 @@
   </dl>
 </section>
 
+<section class="panel">
+  <h2>Encaissement</h2>
+  <dl class="detail-grid">
+    <dt>Montant reçu</dt><dd>{{ vente.montant_recu }}</dd>
+    <dt>Monnaie à rendre</dt><dd><strong>{{ vente.monnaie }}</strong></dd>
+  </dl>
+  {% if vente.statut == 'BROUILLON' %}
+  <form method="post" action="{% url 'boutique:vente_encaissement' vente.pk %}" class="form-grid">
+    {% csrf_token %}
+    <div class="field">
+      <label for="{{ encaissement_form.montant_recu.id_for_label }}">{{ encaissement_form.montant_recu.label }}</label>
+      {{ encaissement_form.montant_recu }}
+      {{ encaissement_form.montant_recu.errors }}
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Enregistrer le montant reçu</button>
+    </div>
+  </form>
+  {% endif %}
+</section>
+
 {% if formset %}
 <section class="panel">
   <h2>Ajouter des articles</h2>
-  <form method="post" class="form-grid">
+  <form method="post" id="form-lignes-vente" class="form-grid">
     {% csrf_token %}
     {{ formset.management_form }}
+    {{ formset.non_form_errors }}
     {% for form in formset %}
-    <div class="field">{{ form.as_p }}</div>
+    <div class="ligne-vente">
+      {{ form.id }}
+      <div class="field">
+        <label for="{{ form.article.id_for_label }}">{{ form.article.label }}</label>
+        {{ form.article }}
+        <p class="help">Prix normal : <strong data-affiche-prix-normal>—</strong>
+          · Prix minimum : <strong data-affiche-prix-min>—</strong></p>
+        {{ form.article.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.quantite.id_for_label }}">{{ form.quantite.label }}</label>
+        {{ form.quantite }}
+        {{ form.quantite.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.prix_unitaire.id_for_label }}">{{ form.prix_unitaire.label }}</label>
+        {{ form.prix_unitaire }}
+        {{ form.prix_unitaire.errors }}
+      </div>
+      {% if form.DELETE %}
+      <div class="field">
+        <label>{{ form.DELETE }} Supprimer cette ligne</label>
+      </div>
+      {% endif %}
+    </div>
     {% endfor %}
     <div class="actions">
       <button type="submit" class="btn btn-primary">Enregistrer les articles</button>
     </div>
   </form>
 </section>
+
+<script>
+  (function () {
+    var form = document.getElementById("form-lignes-vente");
+    if (!form) return;
+
+    function majPrix(select) {
+      var ligne = select.closest(".ligne-vente");
+      if (!ligne) return;
+      var affNormal = ligne.querySelector("[data-affiche-prix-normal]");
+      var affMin = ligne.querySelector("[data-affiche-prix-min]");
+      var inputPrix = ligne.querySelector("input[data-prix-ligne]");
+      var opt = select.selectedOptions[0];
+      if (!opt || !opt.dataset.prixNormal) {
+        if (affNormal) affNormal.textContent = "—";
+        if (affMin) affMin.textContent = "—";
+        return;
+      }
+      if (affNormal) affNormal.textContent = opt.dataset.prixNormal;
+      if (affMin) affMin.textContent = opt.dataset.prixMin;
+      // Pré-remplit le prix unitaire avec le prix normal si non saisi.
+      if (inputPrix && !inputPrix.value) inputPrix.value = opt.dataset.prixNormal;
+    }
+
+    form.addEventListener("change", function (event) {
+      if (event.target && event.target.matches("select[data-article-ligne]")) {
+        majPrix(event.target);
+      }
+    });
+    Array.prototype.forEach.call(form.querySelectorAll("select[data-article-ligne]"), majPrix);
+  })();
+</script>
 {% endif %}
 {% endblock %}

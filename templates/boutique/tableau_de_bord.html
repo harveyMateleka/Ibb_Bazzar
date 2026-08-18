@@ -97,6 +97,7 @@
         <tr>
           <th>Date</th>
           <th>N°</th>
+          <th>Client</th>
           <th>Total</th>
           <th>Paiement</th>
           <th>Utilisateur</th>
@@ -108,13 +109,14 @@
         <tr>
           <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
           <td>{{ v.numero }}</td>
+          <td>{{ v.client|default:"—" }}</td>
           <td>{{ v.total }}</td>
           <td>{{ v.get_type_paiement_display }}</td>
           <td>{{ v.utilisateur }}</td>
           <td>{{ v.get_statut_display }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6">Aucune vente pour le moment.</td></tr>
+        <tr><td colspan="7">Aucune vente pour le moment.</td></tr>
         {% endfor %}
       </tbody>
     </table>

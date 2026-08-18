@@ -18,6 +18,7 @@
         <tr>
           <th>N°</th>
           <th>Date</th>
+          <th>Client</th>
           <th>Succursale</th>
           <th>Utilisateur</th>
           <th>Articles</th>
@@ -31,6 +32,7 @@
         <tr>
           <td>{{ v.numero }}</td>
           <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
+          <td>{{ v.client|default:"—" }}</td>
           <td>{{ v.succursale }}</td>
           <td>{{ v.utilisateur }}</td>
           <td>{{ v.nb_lignes }}</td>
@@ -41,7 +43,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8">Aucune vente.</td></tr>
+        <tr><td colspan="9">Aucune vente.</td></tr>
         {% endfor %}
       </tbody>
     </table>
