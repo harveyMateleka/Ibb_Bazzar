@@ -498,3 +498,72 @@ class TestHistoriqueMouvements(BoutiqueBase):
         self.assertContains(resp, 'Total')
         # Le rapport n'est pas paginé : la seule entrée du jour est listée.
         self.assertContains(resp, 'Entrée')
+
+
+class TestTableauxBoutique(BoutiqueBase):
+    def test_articles_pagines(self):
+        """Au-delà de 25 articles, la liste est paginée (backend)."""
+        for i in range(28):
+            ArticleBoutique.objects.create(
+                code=f'PAGE-{i:02d}', designation=f'Article page {i}',
+                succursale=self.succ_a, domaine=self.domaine)
+        self.client.force_login(self.caissier)
+        resp = self.client.get(reverse('boutique:articles'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'pagination')
+        resp2 = self.client.get(reverse('boutique:articles'), {'page': '2'})
+        self.assertEqual(resp2.status_code, 200)
+        self.assertContains(resp2, 'pagination')
+
+    def test_inventaire_brouillon_tableau_editable(self):
+        """En brouillon, les champs (stock physique, motif) sont dans le tableau."""
+        inv = InventaireBoutiqueService.creer(
+            date_inventaire=timezone.localdate(),
+            succursale=self.succ_a, domaine=self.domaine,
+            utilisateur=self.responsable, portee='COMPLET')
+        self.client.force_login(self.responsable)
+        resp = self.client.get(
+            reverse('boutique:inventaire_detail', kwargs={'pk': inv.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'ligne-inventaire')
+        self.assertContains(resp, 'stock_physique')
+        self.assertContains(resp, 'stock-systeme')
+
+    def test_inventaire_valide_filtre_ecart(self):
+        """Sur un inventaire validé, le filtre écart (avec/sans) fonctionne."""
+        self._entrer(self.art_a, 10)
+        inv = InventaireBoutiqueService.creer(
+            date_inventaire=timezone.localdate(),
+            succursale=self.succ_a, domaine=self.domaine,
+            utilisateur=self.responsable, portee='COMPLET')
+        ligne = inv.lignes.get(article=self.art_a)
+        ligne.stock_physique = 7
+        ligne.motif = 'ECART'
+        ligne.save()
+        InventaireBoutiqueService.valider(inv, par=self.responsable)
+        self.client.force_login(self.responsable)
+        url = reverse('boutique:inventaire_detail', kwargs={'pk': inv.pk})
+        avec = self.client.get(url, {'ecart': 'avec'})
+        self.assertContains(avec, 'TSHIRT-N-M')
+        sans = self.client.get(url, {'ecart': 'sans'})
+        self.assertNotContains(sans, 'TSHIRT-N-M')
+
+    def test_message_validation_compte_ajustements(self):
+        """Le message de validation indique le nombre d'articles ajustés."""
+        self._entrer(self.art_a, 10)
+        inv = InventaireBoutiqueService.creer(
+            date_inventaire=timezone.localdate(),
+            succursale=self.succ_a, domaine=self.domaine,
+            utilisateur=self.responsable, portee='COMPLET')
+        ligne = inv.lignes.get(article=self.art_a)
+        ligne.stock_physique = 7
+        ligne.motif = 'ECART'
+        ligne.save()
+        self.client.force_login(self.responsable)
+        resp = self.client.post(
+            reverse('boutique:inventaire_valider', kwargs={'pk': inv.pk}))
+        self.assertEqual(resp.status_code, 302)
+        page = self.client.get(
+            reverse('boutique:inventaire_detail', kwargs={'pk': inv.pk}))
+        self.assertContains(page, '1 article')
+        self.assertContains(page, 'validé avec succès')

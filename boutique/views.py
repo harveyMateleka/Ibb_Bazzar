@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -33,6 +33,7 @@ from .forms import (
 from .models import (
     AlerteStockBoutique,
     ArticleBoutique,
+    CategorieBoutique,
     InventaireBoutique,
     MouvementStockBoutique,
     StockBoutique,
@@ -60,6 +61,10 @@ def _articles_perimetre(peri):
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
+
+
+def _paginer(request, qs, par_page=25):
+    return Paginator(qs, par_page).get_page(request.GET.get('page'))
 
 
 @require_permission('boutique.view_boutique')
@@ -103,20 +108,28 @@ def tableau_de_bord(request):
 def articles(request):
     peri = _perimetre(request.user)
     articles_qs = _articles_perimetre(peri)
+    q = request.GET.get('q', '')
+    if q:
+        articles_qs = articles_qs.filter(
+            Q(code__icontains=q)
+            | Q(designation__icontains=q)
+            | Q(reference__icontains=q)
+        )
+    page_obj = _paginer(request, articles_qs.order_by('code'))
     stocks = StockBoutique.objects.filter(
-        article_id__in=articles_qs.values('id'),
+        article_id__in=page_obj.object_list.values('id'),
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
     stocks_par_article = {s.article_id: s for s in stocks}
     liste = [
         {'article': a, 'stock': stocks_par_article.get(a.pk)}
-        for a in articles_qs
+        for a in page_obj.object_list
     ]
     return render(
         request,
         'boutique/articles.html',
-        {'articles': liste},
+        {'articles': liste, 'page_obj': page_obj, 'q': q},
     )
 
 
@@ -190,10 +203,26 @@ def stocks(request):
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
+    q = request.GET.get('q', '')
+    etat = request.GET.get('etat', '')
+    if q:
+        stocks_qs = stocks_qs.filter(
+            Q(article__code__icontains=q) | Q(article__designation__icontains=q)
+        )
+    if etat == 'rupture':
+        stocks_qs = stocks_qs.filter(quantite__lte=0)
+    elif etat == 'alerte':
+        stocks_qs = stocks_qs.filter(seuil_alerte__gt=0, quantite__lte=F('seuil_alerte'))
+    elif etat == 'vigilance':
+        stocks_qs = stocks_qs.filter(
+            seuil_alerte__gt=0, seuil_alerte__lt=F('quantite'), quantite__lte=F('seuil_alerte') + 10)
+    elif etat == 'disponible':
+        stocks_qs = stocks_qs.exclude(seuil_alerte__gt=0, quantite__lte=F('seuil_alerte'))
+    page_obj = _paginer(request, stocks_qs.order_by('article__code'))
     return render(
         request,
         'boutique/stocks.html',
-        {'stocks': stocks_qs},
+        {'stocks': page_obj.object_list, 'page_obj': page_obj, 'q': q, 'etat': etat},
     )
 
 
@@ -319,10 +348,11 @@ def alertes(request):
         stock__domaine_id=peri['domaine_id'],
         statut=AlerteStockBoutique.Statut.ACTIVE,
     )
+    page_obj = _paginer(request, alertes_qs.order_by('-date_creation'))
     return render(
         request,
         'boutique/alertes.html',
-        {'alertes': alertes_qs},
+        {'alertes': page_obj.object_list, 'page_obj': page_obj},
     )
 
 
@@ -337,10 +367,16 @@ def ventes(request):
         )
         .annotate(nb_lignes=Count('lignes'))
     )
+    q = request.GET.get('q', '')
+    if q:
+        ventes_qs = ventes_qs.filter(
+            Q(numero__icontains=q) | Q(client__icontains=q)
+        )
+    page_obj = _paginer(request, ventes_qs.order_by('-date_vente'))
     return render(
         request,
         'boutique/ventes.html',
-        {'ventes': ventes_qs},
+        {'ventes': page_obj.object_list, 'page_obj': page_obj, 'q': q},
     )
 
 
@@ -533,10 +569,14 @@ def inventaires(request):
         )
         .annotate(nb_lignes=Count('lignes'))
     )
+    q = request.GET.get('q', '')
+    if q:
+        inventaires_qs = inventaires_qs.filter(Q(numero__icontains=q))
+    page_obj = _paginer(request, inventaires_qs.order_by('-date_inventaire'))
     return render(
         request,
         'boutique/inventaires.html',
-        {'inventaires': inventaires_qs},
+        {'inventaires': page_obj.object_list, 'page_obj': page_obj, 'q': q},
     )
 
 
@@ -591,9 +631,31 @@ def inventaire_detail(request, pk):
         ),
         pk=pk,
     )
-    lignes = inventaire.lignes.select_related('article', 'mouvement')
+    lignes_qs = inventaire.lignes.select_related('article', 'article__categorie', 'mouvement')
+
+    # Filtres (affichage / rapport de lignes — lisible même sur beaucoup d'articles).
+    q = request.GET.get('q', '')
+    categorie = request.GET.get('categorie', '')
+    ecart = request.GET.get('ecart', '')
+    motif = request.GET.get('motif', '')
+    if q:
+        lignes_qs = lignes_qs.filter(
+            Q(article__code__icontains=q) | Q(article__designation__icontains=q)
+        )
+    if categorie:
+        lignes_qs = lignes_qs.filter(article__categorie_id=categorie)
+    if ecart == 'avec':
+        lignes_qs = lignes_qs.exclude(stock_systeme=F('stock_physique'))
+    elif ecart == 'sans':
+        lignes_qs = lignes_qs.filter(stock_systeme=F('stock_physique'))
+    if motif:
+        lignes_qs = lignes_qs.filter(motif__icontains=motif)
+
     formset = None
+    page_obj = None
     if inventaire.statut == InventaireBoutique.Statut.BROUILLON:
+        # Le tableau est le formulaire : TOUTES les lignes sont éditées d'un coup
+        # (un formulaire ne peut pas être paginé), ce qui permet le comptage.
         formset = LigneInventaireFormSet(
             request.POST if request.method == 'POST' else None,
             instance=inventaire,
@@ -602,10 +664,29 @@ def inventaire_detail(request, pk):
             formset.save()
             messages.success(request, 'Quantités physiques enregistrées.')
             return redirect('boutique:inventaire_detail', pk=inventaire.pk)
+        lignes = lignes_qs
+    else:
+        # Vue validée : lignes en lecture seule, paginées et filtrables.
+        page_obj = _paginer(request, lignes_qs.order_by('article__code'))
+        lignes = page_obj.object_list
+
+    categories = CategorieBoutique.objects.filter(
+        pk__in=lignes_qs.values('article__categorie')
+    )
     return render(
         request,
         'boutique/inventaire_detail.html',
-        {'inventaire': inventaire, 'formset': formset, 'lignes': lignes},
+        {
+            'inventaire': inventaire,
+            'formset': formset,
+            'lignes': lignes,
+            'page_obj': page_obj,
+            'categories': categories,
+            'q': q,
+            'categorie': categorie,
+            'ecart': ecart,
+            'motif': motif,
+        },
     )
 
 
@@ -622,7 +703,12 @@ def inventaire_valider(request, pk):
     )
     try:
         InventaireBoutiqueService.valider(inventaire, par=request.user)
-        messages.success(request, f'Inventaire {inventaire.numero} validé. Ajustements appliqués.')
+        nb_ajustes = inventaire.lignes.filter(mouvement__isnull=False).count()
+        messages.success(
+            request,
+            f'Inventaire {inventaire.numero} validé avec succès. '
+            f'{nb_ajustes} article(s) présentent un écart et ont été ajustés.',
+        )
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
     return redirect('boutique:inventaire_detail', pk=inventaire.pk)

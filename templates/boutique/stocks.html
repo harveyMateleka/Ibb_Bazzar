@@ -11,6 +11,18 @@
   {% endif %}
 </div>
 
+<form method="get" class="filters">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation...">
+  <select class="input" name="etat">
+    <option value="">Tous les états</option>
+    <option value="rupture" {% if etat == 'rupture' %}selected{% endif %}>Rupture</option>
+    <option value="alerte" {% if etat == 'alerte' %}selected{% endif %}>Seuil atteint</option>
+    <option value="vigilance" {% if etat == 'vigilance' %}selected{% endif %}>Vigilance</option>
+    <option value="disponible" {% if etat == 'disponible' %}selected{% endif %}>Disponible</option>
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
 <section class="panel">
   <div class="table-wrap">
     <table>
@@ -44,5 +56,6 @@
       </tbody>
     </table>
   </div>
+  {% include "boutique/_pagination.html" %}
 </section>
 {% endblock %}

@@ -11,6 +11,11 @@
   {% endif %}
 </div>
 
+<form method="get" class="filters">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="N° d'inventaire...">
+  <button type="submit" class="btn btn-primary">Rechercher</button>
+</form>
+
 <section class="panel">
   <div class="table-wrap">
     <table>
@@ -44,5 +49,6 @@
       </tbody>
     </table>
   </div>
+  {% include "boutique/_pagination.html" %}
 </section>
 {% endblock %}
