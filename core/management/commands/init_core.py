@@ -16,6 +16,11 @@ from core.services import PermissionService
 APPROVISIONNEMENT = 'approvisionnement'
 CORE = 'core'
 BOUTIQUE = 'boutique'
+IMMOBILISATIONS = 'immobilisations'
+
+IMMO_TOUTES = ['view_asset', 'create_asset', 'update_asset', 'assign_asset',
+               'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset']
+IMMO_SANS_DECLASSEMENT = [p for p in IMMO_TOUTES if p != 'decommission_asset']
 
 PERMISSIONS_ROLES = {
     'DIRECTION': [
@@ -25,6 +30,7 @@ PERMISSIONS_ROLES = {
                              'create_inventaire', 'validate_inventaire']),
         (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente',
                     'validate_vente', 'cancel_vente', 'apply_remise', 'adjust_stock']),
+        (IMMOBILISATIONS, IMMO_TOUTES),
         (CORE, ['view_audit', 'view_utilisateur', 'view_succursale']),
     ],
     'RESPONSABLE': [
@@ -34,6 +40,7 @@ PERMISSIONS_ROLES = {
                              'create_inventaire', 'validate_inventaire']),
         (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente',
                     'validate_vente', 'cancel_vente', 'apply_remise', 'adjust_stock']),
+        (IMMOBILISATIONS, IMMO_SANS_DECLASSEMENT),
         (CORE, ['view_audit']),
     ],
     'MAGASINIER': [
@@ -41,11 +48,13 @@ PERMISSIONS_ROLES = {
                              'view_sortie', 'create_sortie',
                              'view_inventaire', 'view_historique']),
         (BOUTIQUE, ['view_boutique', 'view_stock']),
+        (IMMOBILISATIONS, ['view_asset', 'create_asset']),
     ],
     'OPERATEUR': [
         (APPROVISIONNEMENT, ['view_approvisionnement', 'view_sortie',
                              'view_inventaire', 'view_historique']),
         (BOUTIQUE, ['view_boutique', 'view_stock']),
+        (IMMOBILISATIONS, ['view_asset']),
     ],
     'CAISSIER': [
         (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente']),

@@ -23,6 +23,9 @@
         {% if perms.boutique.view_boutique %}
         <a href="{% url 'boutique:dashboard' %}" class="{% if request.resolver_match.namespace == 'boutique' %}is-active{% endif %}">Boutique</a>
         {% endif %}
+        {% if perms.immobilisations.view_asset %}
+        <a href="{% url 'immobilisations:dashboard' %}" class="{% if request.resolver_match.namespace == 'immobilisations' %}is-active{% endif %}">Immobilisations</a>
+        {% endif %}
         {% if perms.core.view_utilisateur %}
         <a href="{% url 'core:utilisateur_liste' %}" class="{% if request.resolver_match.namespace == 'core' %}is-active{% endif %}">Utilisateurs</a>
         {% endif %}

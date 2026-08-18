@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}{% block app_title %}Immobilisations{% endblock %} · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <nav class="subnav" aria-label="Immobilisations">
+      <a href="{% url 'immobilisations:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="is-active"{% endif %}>Tableau de bord</a>
+      <a href="{% url 'immobilisations:biens' %}" {% if 'bien' in request.resolver_match.url_name %}class="is-active"{% endif %}>Biens</a>
+      <a href="{% url 'immobilisations:affectations' %}" {% if 'affectation' in request.resolver_match.url_name %}class="is-active"{% endif %}>Affectations</a>
+      <a href="{% url 'immobilisations:deplacements' %}" {% if 'deplacement' in request.resolver_match.url_name %}class="is-active"{% endif %}>Déplacements</a>
+      <a href="{% url 'immobilisations:etats' %}" {% if request.resolver_match.url_name == 'etats' %}class="is-active"{% endif %}>États</a>
+      <a href="{% url 'immobilisations:historique' %}" {% if request.resolver_match.url_name == 'historique' %}class="is-active"{% endif %}>Historique</a>
+    </nav>
+    {% block app_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}

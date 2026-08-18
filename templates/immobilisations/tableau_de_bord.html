@@ -1,0 +1,87 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Gestion</p>
+    <h1>Immobilisations</h1>
+  </div>
+  <div class="actions">
+    {% if perms.immobilisations.create_asset %}
+    <a class="btn btn-primary" href="{% url 'immobilisations:bien_nouveau' %}">Nouveau bien</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="stats">
+  <article class="stat"><span>Biens</span><strong>{{ nb_biens }}</strong></article>
+  <article class="stat"><span>En service</span><strong>{{ nb_en_service }}</strong></article>
+  <article class="stat {% if nb_en_reparation %}stat-alert{% endif %}"><span>En réparation</span><strong>{{ nb_en_reparation }}</strong></article>
+  <article class="stat {% if nb_casses %}stat-alert{% endif %}"><span>Casses</span><strong>{{ nb_casses }}</strong></article>
+  <article class="stat"><span>Déclassés</span><strong>{{ nb_declasses }}</strong></article>
+</div>
+
+<section class="panel">
+  <h2>Derniers biens</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Catégorie</th>
+          <th>État</th>
+          <th>Statut</th>
+          <th>Emplacement</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in derniers_biens %}
+        <tr>
+          <td>{{ b.code }}</td>
+          <td>{{ b.designation }}</td>
+          <td>{{ b.categorie|default:"—" }}</td>
+          <td>{{ b.get_etat_physique_display }}</td>
+          <td>{{ b.get_statut_administratif_display }}</td>
+          <td>{{ b.emplacement|default:"—" }}</td>
+          <td class="actions"><a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' b.pk %}">Voir</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucun bien dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Dernières opérations</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Opération</th>
+          <th>Bien</th>
+          <th>Détails</th>
+          <th>Par</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in evenements %}
+        <tr>
+          <td>{{ e.date|date:"d/m/Y H:i" }}</td>
+          <td>{{ e.type }}</td>
+          <td>{{ e.bien.code }}</td>
+          <td>{{ e.details }}</td>
+          <td>{{ e.par }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucune opération pour le moment.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
