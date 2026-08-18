@@ -1,5 +1,7 @@
 """Tests du module Boutique (indépendant de l'Approvisionnement)."""
 
+from decimal import Decimal
+
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -92,12 +94,19 @@ class BoutiqueBase(TestCase):
             quantite=quantite, utilisateur=utilisateur,
         )
 
-    def _vente(self, user=None, quantite=3, prix=None):
+    def _vente(self, user=None, quantite=3, prix=None, montant_recu=None):
         user = user or self.responsable
         vente = VenteService.creer(
             succursale=self.succ_a, domaine=self.domaine, utilisateur=user)
         VenteService.ajouter_ligne(
             vente, self.art_a, quantite, prix or self.art_a.prix_unitaire)
+        vente.recalculer()
+        # Montant reçu par défaut suffisant (la validation l'exige désormais).
+        vente.montant_recu = (
+            Decimal(str(montant_recu)) if montant_recu is not None
+            else Decimal('999999')
+        )
+        vente.save(update_fields=['montant_recu'])
         return vente
 
 
@@ -220,6 +229,88 @@ class TestVenteService(BoutiqueBase):
         self.assertEqual(ArticleAppro.objects.count(), 0)
         self.assertEqual(
             StockBoutique.objects.get(article=self.art_a, succursale=self.succ_a).quantite, 57)
+
+    def test_paiement_insuffisant_refuse(self):
+        """Montant reçu < total : la validation est refusée (transaction annulée)."""
+        self._entrer(self.art_a, 10)
+        vente = self._vente(quantite=2, prix=15, montant_recu=20)  # total 30
+        with self.assertRaises(ValidationError):
+            VenteService.valider(vente)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.BROUILLON)
+        self.assertEqual(
+            StockBoutique.objects.get(article=self.art_a, succursale=self.succ_a).quantite, 10)
+
+    def test_validation_bloque_si_paiement_insuffisant(self):
+        """Via le formulaire : action Valider avec montant reçu insuffisant."""
+        self._entrer(self.art_a, 10)
+        vente = VenteService.creer(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable)
+        self.client.force_login(self.responsable)
+        url = reverse('boutique:vente_detail', kwargs={'pk': vente.pk})
+        data = {
+            'lignes-TOTAL_FORMS': '1',
+            'lignes-INITIAL_FORMS': '0',
+            'lignes-MIN_NUM_FORMS': '0',
+            'lignes-MAX_NUM_FORMS': '1000',
+            'lignes-0-article': self.art_a.pk,
+            'lignes-0-quantite': '2',
+            'lignes-0-prix_unitaire': '15',
+            'lignes-0-id': '',
+            'montant_recu': '10',
+            'action': 'valider',
+        }
+        resp = self.client.post(url, data)
+        self.assertEqual(resp.status_code, 302)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.BROUILLON)
+        self.assertEqual(vente.lignes.count(), 1)  # le panier est conservé
+        page = self.client.get(url)
+        self.assertContains(page, 'montant reçu')
+
+    def test_formset_refuse_prix_sous_minimum(self):
+        self._entrer(self.art_a, 10)
+        vente = VenteService.creer(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable)
+        self.client.force_login(self.responsable)
+        url = reverse('boutique:vente_detail', kwargs={'pk': vente.pk})
+        data = {
+            'lignes-TOTAL_FORMS': '1',
+            'lignes-INITIAL_FORMS': '0',
+            'lignes-MIN_NUM_FORMS': '0',
+            'lignes-MAX_NUM_FORMS': '1000',
+            'lignes-0-article': self.art_a.pk,
+            'lignes-0-quantite': '2',
+            'lignes-0-prix_unitaire': '10',  # < prix_minimum 12
+            'lignes-0-id': '',
+            'montant_recu': '',
+            'action': 'enregistrer',
+        }
+        self.client.post(url, data)
+        vente.refresh_from_db()
+        self.assertEqual(vente.lignes.count(), 0)
+
+    def test_formset_refuse_prix_superieur_maximum(self):
+        self._entrer(self.art_a, 10)
+        vente = VenteService.creer(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable)
+        self.client.force_login(self.responsable)
+        url = reverse('boutique:vente_detail', kwargs={'pk': vente.pk})
+        data = {
+            'lignes-TOTAL_FORMS': '1',
+            'lignes-INITIAL_FORMS': '0',
+            'lignes-MIN_NUM_FORMS': '0',
+            'lignes-MAX_NUM_FORMS': '1000',
+            'lignes-0-article': self.art_a.pk,
+            'lignes-0-quantite': '1',
+            'lignes-0-prix_unitaire': '25',  # > prix_maximum 20
+            'lignes-0-id': '',
+            'montant_recu': '',
+            'action': 'enregistrer',
+        }
+        self.client.post(url, data)
+        vente.refresh_from_db()
+        self.assertEqual(vente.lignes.count(), 0)
 
 
 class TestInventaireBoutique(BoutiqueBase):

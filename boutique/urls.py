@@ -16,7 +16,6 @@ urlpatterns = [
     path('ventes/', views.ventes, name='ventes'),
     path('ventes/nouvelle/', views.vente_nouvelle, name='vente_nouvelle'),
     path('ventes/<int:pk>/', views.vente_detail, name='vente_detail'),
-    path('ventes/<int:pk>/encaissement/', views.vente_encaissement, name='vente_encaissement'),
     path('ventes/<int:pk>/valider/', views.vente_valider, name='vente_valider'),
     path('ventes/<int:pk>/annuler/', views.vente_annuler, name='vente_annuler'),
     path('ventes/<int:pk>/imprimer/', views.vente_imprimer, name='vente_imprimer'),

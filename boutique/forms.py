@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django import forms
 from django.forms import inlineformset_factory
 
@@ -93,12 +95,14 @@ class StockEntreeForm(forms.Form):
 
 
 class VenteForm(forms.ModelForm):
+    """Étape 1 d'une vente : informations générales (sans le montant reçu,
+    qui est saisi à l'étape 2 avec les articles et le total)."""
+
     class Meta:
         model = Vente
-        fields = ['client', 'succursale', 'domaine', 'type_paiement', 'montant_recu', 'remise']
+        fields = ['client', 'succursale', 'domaine', 'type_paiement', 'remise']
         widgets = {
             'client': forms.TextInput(attrs={'class': 'input', 'placeholder': 'Nom du client'}),
-            'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
         }
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, request_user=None, **kwargs):
@@ -220,7 +224,8 @@ class BaseVenteLigneFormSet(forms.BaseInlineFormSet):
 
 
 class EncaissementForm(forms.ModelForm):
-    """Montant reçu d'une vente (modifiable sur la page de détail)."""
+    """Montant reçu d'une vente (étape 2). Non obligatoire à l'enregistrement,
+    mais la validation bloque si montant reçu < total."""
 
     class Meta:
         model = Vente
@@ -229,13 +234,22 @@ class EncaissementForm(forms.ModelForm):
             'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'input'}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['montant_recu'].required = False
+
+    def clean_montant_recu(self):
+        value = self.cleaned_data.get('montant_recu')
+        # Jamais de None : champ vide → 0 (la validation exigera montant ≥ total).
+        return value if value is not None else Decimal('0')
+
 
 VenteLigneFormSet = inlineformset_factory(
     Vente,
     VenteLigne,
     form=VenteLigneForm,
     formset=BaseVenteLigneFormSet,
-    extra=3,
+    extra=1,
     can_delete=True,
     min_num=0,
 )

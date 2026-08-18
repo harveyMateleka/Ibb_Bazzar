@@ -10,6 +10,7 @@ mouvements, ses alertes et ses inventaires lui sont propres.
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -327,7 +328,6 @@ def vente_nouvelle(request):
                 utilisateur=request.user,
                 client=formulaire.cleaned_data.get('client', ''),
                 type_paiement=formulaire.cleaned_data['type_paiement'],
-                montant_recu=formulaire.cleaned_data['montant_recu'],
                 remise=remise,
             )
             messages.success(request, f'Vente {vente.numero} créée. Ajoutez les articles.')
@@ -351,6 +351,7 @@ def vente_detail(request, pk):
     )
     lignes = vente.lignes.select_related('article', 'mouvement')
     formset = None
+    encaissement_form = None
     if vente.statut == Vente.Statut.BROUILLON:
         formset = VenteLigneFormSet(
             request.POST if request.method == 'POST' else None,
@@ -358,11 +359,43 @@ def vente_detail(request, pk):
             succursale=vente.succursale_id,
             domaine=vente.domaine_id,
         )
-        if request.method == 'POST' and formset.is_valid():
-            formset.save()
-            vente.recalculer()
-            messages.success(request, 'Articles enregistrés.')
-            return redirect('boutique:vente_detail', pk=vente.pk)
+        encaissement_form = EncaissementForm(
+            request.POST if request.method == 'POST' else None,
+            instance=vente,
+        )
+        if request.method == 'POST':
+            action = request.POST.get('action', '')
+            if formset.is_valid() and encaissement_form.is_valid():
+                with transaction.atomic():
+                    formset.save()
+                    encaissement_form.save()
+                    vente.recalculer()
+                if action == 'valider':
+                    ruptures = vente.analyser_stock()
+                    if ruptures:
+                        messages.error(
+                            request,
+                            'Stock insuffisant pour un ou plusieurs articles : '
+                            + ', '.join(
+                                f'{r["article"].code} (dispo {r["stock"]})'
+                                for r in ruptures
+                            ),
+                        )
+                        return redirect('boutique:vente_detail', pk=vente.pk)
+                    try:
+                        VenteService.valider(vente, par=request.user)
+                    except ValidationError as exc:
+                        messages.error(
+                            request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+                        return redirect('boutique:vente_detail', pk=vente.pk)
+                    messages.success(request, 'Vente enregistrée avec succès.')
+                    return redirect(
+                        reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1'
+                    )
+                messages.success(request, 'Articles et montant reçu enregistrés.')
+                return redirect('boutique:vente_detail', pk=vente.pk)
+            messages.error(
+                request, 'Impossible d\'enregistrer la vente. Veuillez vérifier les informations saisies.')
     return render(
         request,
         'boutique/vente_detail.html',
@@ -370,32 +403,9 @@ def vente_detail(request, pk):
             'vente': vente,
             'formset': formset,
             'lignes': lignes,
-            'encaissement_form': EncaissementForm(instance=vente),
+            'encaissement_form': encaissement_form,
         },
     )
-
-
-@require_permission('boutique.create_vente')
-@require_POST
-def vente_encaissement(request, pk):
-    peri = _perimetre(request.user)
-    vente = get_object_or_404(
-        Vente.objects.filter(
-            succursale_id__in=peri['succursales_ids'],
-            domaine_id=peri['domaine_id'],
-        ),
-        pk=pk,
-    )
-    if vente.statut != Vente.Statut.BROUILLON:
-        messages.error(request, 'Le montant reçu ne peut être modifié que sur une vente en brouillon.')
-        return redirect('boutique:vente_detail', pk=vente.pk)
-    formulaire = EncaissementForm(request.POST, instance=vente)
-    if formulaire.is_valid():
-        formulaire.save()
-        messages.success(request, 'Montant reçu enregistré.')
-    else:
-        messages.error(request, 'Montant reçu invalide.')
-    return redirect('boutique:vente_detail', pk=vente.pk)
 
 
 @require_permission('boutique.validate_vente')

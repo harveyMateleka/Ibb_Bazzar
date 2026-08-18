@@ -576,6 +576,11 @@ class Vente(models.Model):
     def monnaie(self):
         return max(self.montant_recu - self.total, Decimal('0'))
 
+    @property
+    def ecart_paiement(self):
+        """Différence signée montant reçu − total (négative = paiement insuffisant)."""
+        return self.montant_recu - self.total
+
     def recalculer(self):
         """Recalcule sous-total, total et éventuellement la remise à partir des lignes."""
         sous_total = sum(
@@ -642,6 +647,13 @@ class Vente(models.Model):
                 mouvement.valider()
                 ligne.mouvement = mouvement
                 ligne.save(update_fields=['mouvement'])
+            # Contrôle de cohérence du paiement : montant reçu ≥ total.
+            if self.montant_recu < self.total:
+                raise ValidationError(
+                    f'Le montant reçu ({self.montant_recu}) est inférieur au total '
+                    f'({self.total}). Le paiement est incohérent : saisissez un '
+                    'montant reçu supérieur ou égal au total.'
+                )
             self.statut = self.Statut.VALIDEE
             self.date_validation = timezone.now()
             self.save(update_fields=['statut', 'date_validation'])

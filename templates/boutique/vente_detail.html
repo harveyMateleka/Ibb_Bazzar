@@ -3,24 +3,16 @@
 {% block app_content %}
 <div class="page-head">
   <div>
-    <p class="eyebrow">Vente</p>
+    <p class="eyebrow">Vente · Étape 2</p>
     <h1>{{ vente.numero }}</h1>
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">← Retour</a>
-    {% if vente.statut == 'BROUILLON' %}
-      {% if perms.boutique.validate_vente %}
-      <form action="{% url 'boutique:vente_valider' vente.pk %}" method="post" class="inline-form">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-primary">Valider la vente</button>
-      </form>
-      {% endif %}
-      {% if perms.boutique.cancel_vente %}
-      <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="inline-form">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-danger">Annuler</button>
-      </form>
-      {% endif %}
+    {% if vente.statut == 'BROUILLON' and perms.boutique.cancel_vente %}
+    <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="inline-form">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Annuler la vente</button>
+    </form>
     {% endif %}
     {% if vente.statut == 'VALIDEE' %}
     <a class="btn btn-primary" href="{% url 'boutique:vente_imprimer' vente.pk %}">Imprimer</a>
@@ -34,12 +26,209 @@
     <dt>Client</dt><dd>{{ vente.client|default:"—" }}</dd>
     <dt>Succursale</dt><dd>{{ vente.succursale }}</dd>
     <dt>Domaine</dt><dd>{{ vente.domaine }}</dd>
-    <dt>Utilisateur</dt><dd>{{ vente.utilisateur }}</dd>
     <dt>Paiement</dt><dd>{{ vente.get_type_paiement_display }}</dd>
     <dt>Statut</dt><dd>{{ vente.get_statut_display }}</dd>
   </dl>
 </section>
 
+{% if vente.statut == 'BROUILLON' %}
+<form method="post" id="form-lignes-vente">
+  {% csrf_token %}
+  {{ formset.management_form }}
+  {{ formset.non_form_errors }}
+
+  <section class="panel">
+    <h2>Articles</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Article</th>
+            <th>Qté</th>
+            <th>Prix unitaire</th>
+            <th>Montant</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="lignes-panier">
+          {% for form in formset %}
+          <tr class="ligne-vente">
+            <td>
+              {{ form.id }}
+              {{ form.article }}
+              <p class="help">Prix normal : <strong data-affiche-prix-normal>—</strong>
+                · Prix minimum : <strong data-affiche-prix-min>—</strong>
+                {{ form.article.errors }}</p>
+            </td>
+            <td>{{ form.quantite }}{{ form.quantite.errors }}</td>
+            <td>{{ form.prix_unitaire }}{{ form.prix_unitaire.errors }}</td>
+            <td><span class="montant-ligne">0</span></td>
+            <td>
+              <span style="display:none">{{ form.DELETE }}</span>
+              <button type="button" class="btn btn-danger btn-supprimer-ligne" title="Retirer la ligne">🗑</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button type="button" id="btn-ajouter-ligne" class="btn btn-ghost">+ Ajouter un article</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Paiement</h2>
+    <dl class="detail-grid">
+      <dt>Total</dt><dd><strong id="panier-total">{{ vente.total }}</strong></dd>
+      <dt>Montant reçu</dt>
+      <dd>
+        {{ encaissement_form.montant_recu }}
+        {{ encaissement_form.montant_recu.errors }}
+      </dd>
+      <dt>Monnaie à rendre</dt><dd><strong id="panier-monnaie" class="{% if vente.ecart_paiement < 0 %}text-danger{% endif %}">{{ vente.monnaie }}</strong></dd>
+    </dl>
+    <div class="actions">
+      <button type="submit" name="action" value="enregistrer" class="btn btn-ghost">Enregistrer</button>
+      {% if perms.boutique.validate_vente %}
+      <button type="submit" name="action" value="valider" class="btn btn-primary">Valider la vente</button>
+      {% endif %}
+    </div>
+  </section>
+</form>
+
+<script>
+  (function () {
+    var form = document.getElementById("form-lignes-vente");
+    if (!form) return;
+    var tbody = document.getElementById("lignes-panier");
+    var btnAjouter = document.getElementById("btn-ajouter-ligne");
+    var totalField = form.querySelector("[name='lignes-TOTAL_FORMS']");
+    var elTotal = document.getElementById("panier-total");
+    var elMonnaie = document.getElementById("panier-monnaie");
+    var montantRecuInput = document.getElementById("id_montant_recu");
+
+    function indexDe(ligne) {
+      var select = ligne.querySelector("select");
+      var name = select && select.getAttribute("name") || "";
+      var m = name.match(/^lignes-(\d+)-/);
+      return m ? m[1] : "0";
+    }
+
+    function majPrix(select) {
+      var ligne = select.closest(".ligne-vente");
+      if (!ligne) return;
+      var affNormal = ligne.querySelector("[data-affiche-prix-normal]");
+      var affMin = ligne.querySelector("[data-affiche-prix-min]");
+      var inputPrix = ligne.querySelector("input[data-prix-ligne]");
+      var opt = select.selectedOptions[0];
+      if (!opt || !opt.dataset.prixNormal) {
+        if (affNormal) affNormal.textContent = "—";
+        if (affMin) affMin.textContent = "—";
+        return;
+      }
+      if (affNormal) affNormal.textContent = opt.dataset.prixNormal;
+      if (affMin) affMin.textContent = opt.dataset.prixMin;
+      // Préremplir TOUJOURS le prix unitaire avec le prix normal.
+      if (inputPrix) inputPrix.value = opt.dataset.prixNormal;
+      calculerTotaux();
+    }
+
+    function calculerTotaux() {
+      var total = 0;
+      Array.prototype.forEach.call(tbody.querySelectorAll(".ligne-vente"), function (ligne) {
+        if (ligne.style.display === "none") return;
+        var q = ligne.querySelector("input[name$='-quantite']");
+        var p = ligne.querySelector("input[name$='-prix_unitaire']");
+        var qte = q ? (parseFloat(q.value) || 0) : 0;
+        var prix = p ? (parseFloat(p.value) || 0) : 0;
+        var montant = qte * prix;
+        var span = ligne.querySelector(".montant-ligne");
+        if (span) span.textContent = montant.toLocaleString("fr-FR");
+        total += montant;
+      });
+      if (elTotal) elTotal.textContent = total.toLocaleString("fr-FR");
+      var recu = montantRecuInput ? (parseFloat(montantRecuInput.value) || 0) : 0;
+      var diff = recu - total;
+      if (elMonnaie) {
+        if (diff < 0) {
+          elMonnaie.textContent = "Montant insuffisant (" + diff.toLocaleString("fr-FR") + ")";
+          elMonnaie.classList.add("text-danger");
+        } else {
+          elMonnaie.textContent = diff.toLocaleString("fr-FR");
+          elMonnaie.classList.remove("text-danger");
+        }
+      }
+    }
+
+    function ajouterLigne() {
+      var lignes = tbody.querySelectorAll(".ligne-vente");
+      var modele = lignes[lignes.length - 1];
+      if (!modele) return;
+      var clone = modele.cloneNode(true);
+      var ancien = indexDe(modele);
+      var nouveau = parseInt(totalField.value, 10) || 0;
+
+      clone.querySelectorAll("input, select").forEach(function (champ) {
+        var name = champ.getAttribute("name");
+        if (name) champ.setAttribute("name", name.replace("lignes-" + ancien + "-", "lignes-" + nouveau + "-"));
+        var id = champ.getAttribute("id");
+        if (id) champ.setAttribute("id", id.replace("id_lignes-" + ancien + "-", "id_lignes-" + nouveau + "-"));
+        if (champ.type === "hidden") champ.value = "";
+      });
+      clone.querySelectorAll("label").forEach(function (label) {
+        var pour = label.getAttribute("for");
+        if (pour) label.setAttribute("for", pour.replace("id_lignes-" + ancien + "-", "id_lignes-" + nouveau + "-"));
+      });
+      var select = clone.querySelector("select");
+      if (select) select.value = "";
+      var del = clone.querySelector("input[name$='-DELETE']");
+      if (del) del.checked = false;
+      clone.style.display = "";
+      var spans = clone.querySelectorAll("[data-affiche-prix-normal], [data-affiche-prix-min]");
+      Array.prototype.forEach.call(spans, function (s) { s.textContent = "—"; });
+      var montant = clone.querySelector(".montant-ligne");
+      if (montant) montant.textContent = "0";
+      totalField.value = nouveau + 1;
+      tbody.appendChild(clone);
+      var nouveauSelect = clone.querySelector("select");
+      if (nouveauSelect) nouveauSelect.focus();
+      calculerTotaux();
+    }
+
+    function supprimerLigne(btn) {
+      var ligne = btn.closest(".ligne-vente");
+      if (!ligne) return;
+      var del = ligne.querySelector("input[name$='-DELETE']");
+      var select = ligne.querySelector("select");
+      if (!select || !select.value) {
+        ligne.remove();
+        totalField.value = (parseInt(totalField.value, 10) || 1) - 1;
+      } else {
+        if (del) del.checked = true;
+        ligne.style.display = "none";
+      }
+      calculerTotaux();
+    }
+
+    form.addEventListener("change", function (event) {
+      if (event.target && event.target.matches("select[data-article-ligne]")) majPrix(event.target);
+      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name='montant_recu']")) calculerTotaux();
+    });
+    form.addEventListener("input", function (event) {
+      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name='montant_recu']")) calculerTotaux();
+    });
+    if (btnAjouter) btnAjouter.addEventListener("click", ajouterLigne);
+    if (tbody) tbody.addEventListener("click", function (event) {
+      var btn = event.target.closest(".btn-supprimer-ligne");
+      if (btn) supprimerLigne(btn);
+    });
+
+    Array.prototype.forEach.call(tbody.querySelectorAll("select[data-article-ligne]"), majPrix);
+    calculerTotaux();
+  })();
+</script>
+{% else %}
 <section class="panel">
   <h2>Articles</h2>
   <div class="table-wrap">
@@ -65,100 +254,9 @@
     <dt>Sous-total</dt><dd>{{ vente.sous_total }}</dd>
     <dt>Remise</dt><dd>{{ vente.remise }}</dd>
     <dt>Total</dt><dd><strong>{{ vente.total }}</strong></dd>
-  </dl>
-</section>
-
-<section class="panel">
-  <h2>Encaissement</h2>
-  <dl class="detail-grid">
     <dt>Montant reçu</dt><dd>{{ vente.montant_recu }}</dd>
-    <dt>Monnaie à rendre</dt><dd><strong>{{ vente.monnaie }}</strong></dd>
+    <dt>Monnaie</dt><dd><strong>{{ vente.monnaie }}</strong></dd>
   </dl>
-  {% if vente.statut == 'BROUILLON' %}
-  <form method="post" action="{% url 'boutique:vente_encaissement' vente.pk %}" class="form-grid">
-    {% csrf_token %}
-    <div class="field">
-      <label for="{{ encaissement_form.montant_recu.id_for_label }}">{{ encaissement_form.montant_recu.label }}</label>
-      {{ encaissement_form.montant_recu }}
-      {{ encaissement_form.montant_recu.errors }}
-    </div>
-    <div class="actions">
-      <button type="submit" class="btn btn-primary">Enregistrer le montant reçu</button>
-    </div>
-  </form>
-  {% endif %}
 </section>
-
-{% if formset %}
-<section class="panel">
-  <h2>Ajouter des articles</h2>
-  <form method="post" id="form-lignes-vente" class="form-grid">
-    {% csrf_token %}
-    {{ formset.management_form }}
-    {{ formset.non_form_errors }}
-    {% for form in formset %}
-    <div class="ligne-vente">
-      {{ form.id }}
-      <div class="field">
-        <label for="{{ form.article.id_for_label }}">{{ form.article.label }}</label>
-        {{ form.article }}
-        <p class="help">Prix normal : <strong data-affiche-prix-normal>—</strong>
-          · Prix minimum : <strong data-affiche-prix-min>—</strong></p>
-        {{ form.article.errors }}
-      </div>
-      <div class="field">
-        <label for="{{ form.quantite.id_for_label }}">{{ form.quantite.label }}</label>
-        {{ form.quantite }}
-        {{ form.quantite.errors }}
-      </div>
-      <div class="field">
-        <label for="{{ form.prix_unitaire.id_for_label }}">{{ form.prix_unitaire.label }}</label>
-        {{ form.prix_unitaire }}
-        {{ form.prix_unitaire.errors }}
-      </div>
-      {% if form.DELETE %}
-      <div class="field">
-        <label>{{ form.DELETE }} Supprimer cette ligne</label>
-      </div>
-      {% endif %}
-    </div>
-    {% endfor %}
-    <div class="actions">
-      <button type="submit" class="btn btn-primary">Enregistrer les articles</button>
-    </div>
-  </form>
-</section>
-
-<script>
-  (function () {
-    var form = document.getElementById("form-lignes-vente");
-    if (!form) return;
-
-    function majPrix(select) {
-      var ligne = select.closest(".ligne-vente");
-      if (!ligne) return;
-      var affNormal = ligne.querySelector("[data-affiche-prix-normal]");
-      var affMin = ligne.querySelector("[data-affiche-prix-min]");
-      var inputPrix = ligne.querySelector("input[data-prix-ligne]");
-      var opt = select.selectedOptions[0];
-      if (!opt || !opt.dataset.prixNormal) {
-        if (affNormal) affNormal.textContent = "—";
-        if (affMin) affMin.textContent = "—";
-        return;
-      }
-      if (affNormal) affNormal.textContent = opt.dataset.prixNormal;
-      if (affMin) affMin.textContent = opt.dataset.prixMin;
-      // Pré-remplit le prix unitaire avec le prix normal si non saisi.
-      if (inputPrix && !inputPrix.value) inputPrix.value = opt.dataset.prixNormal;
-    }
-
-    form.addEventListener("change", function (event) {
-      if (event.target && event.target.matches("select[data-article-ligne]")) {
-        majPrix(event.target);
-      }
-    });
-    Array.prototype.forEach.call(form.querySelectorAll("select[data-article-ligne]"), majPrix);
-  })();
-</script>
 {% endif %}
 {% endblock %}
