@@ -234,24 +234,38 @@ def entree(request):
     )
 
 
-@require_permission('boutique.view_stock')
-def mouvements(request):
-    peri = _perimetre(request.user)
+def _filtrer_mouvements(request, peri):
+    """Mouvements du périmètre, filtrés par type, recherche et période."""
     qs = MouvementStockBoutique.objects.select_related('article', 'utilisateur').filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
-    type_ = request.GET.get('type', '')
-    q = request.GET.get('q', '')
-    if type_:
-        qs = qs.filter(type=type_)
-    if q:
+    filtres = {
+        'type': request.GET.get('type', ''),
+        'q': request.GET.get('q', ''),
+        'date_debut': request.GET.get('date_debut', ''),
+        'date_fin': request.GET.get('date_fin', ''),
+    }
+    if filtres['type']:
+        qs = qs.filter(type=filtres['type'])
+    if filtres['q']:
         qs = qs.filter(
-            Q(article__code__icontains=q)
-            | Q(article__designation__icontains=q)
-            | Q(reference__icontains=q)
-            | Q(motif__icontains=q)
+            Q(article__code__icontains=filtres['q'])
+            | Q(article__designation__icontains=filtres['q'])
+            | Q(reference__icontains=filtres['q'])
+            | Q(motif__icontains=filtres['q'])
         )
+    if filtres['date_debut']:
+        qs = qs.filter(date_mouvement__date__gte=filtres['date_debut'])
+    if filtres['date_fin']:
+        qs = qs.filter(date_mouvement__date__lte=filtres['date_fin'])
+    return qs, filtres
+
+
+@require_permission('boutique.view_stock')
+def mouvements(request):
+    peri = _perimetre(request.user)
+    qs, filtres = _filtrer_mouvements(request, peri)
     paginator = Paginator(qs, 25)
     page = paginator.get_page(request.GET.get('page'))
     return render(
@@ -260,8 +274,39 @@ def mouvements(request):
         {
             'mouvements': page,
             'types': MouvementStockBoutique.Type.choices,
-            'type': type_,
-            'q': q,
+            'type': filtres['type'],
+            'q': filtres['q'],
+            'date_debut': filtres['date_debut'],
+            'date_fin': filtres['date_fin'],
+        },
+    )
+
+
+@require_permission('boutique.view_stock')
+def mouvements_report(request):
+    """Rapport imprimable : toutes les lignes de mouvement correspondant aux
+    filtres (type, recherche, période début/fin), avec totaux par type."""
+    peri = _perimetre(request.user)
+    qs, filtres = _filtrer_mouvements(request, peri)
+    total_entrees = qs.filter(type=MouvementStockBoutique.Type.ENTREE).aggregate(
+        total=Sum('quantite'))['total'] or 0
+    total_sorties = qs.filter(type=MouvementStockBoutique.Type.SORTIE).aggregate(
+        total=Sum('quantite'))['total'] or 0
+    return render(
+        request,
+        'boutique/mouvements_report.html',
+        {
+            'mouvements': qs.order_by('date_mouvement', 'id'),
+            'types': MouvementStockBoutique.Type.choices,
+            'type': filtres['type'],
+            'q': filtres['q'],
+            'date_debut': filtres['date_debut'],
+            'date_fin': filtres['date_fin'],
+            'nb_mouvements': qs.count(),
+            'total_entrees': total_entrees,
+            'total_sorties': total_sorties,
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
         },
     )
 

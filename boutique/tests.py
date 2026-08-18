@@ -1,5 +1,6 @@
 """Tests du module Boutique (indépendant de l'Approvisionnement)."""
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import Permission
@@ -462,3 +463,38 @@ class TestPerimetreBoutique(BoutiqueBase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotContains(resp, 'TSHIRT-N-M')
         self.assertNotContains(resp, 'TSHIRT-N-L')
+
+
+class TestHistoriqueMouvements(BoutiqueBase):
+    def setUp(self):
+        super().setUp()
+        self._entrer(self.art_a, 10)  # une entrée datée d'aujourd'hui
+
+    def test_historique_filtre_par_periode(self):
+        """Un mouvement hors période n'apparaît pas dans la liste filtrée."""
+        ancien = timezone.now() - timedelta(days=30)
+        MouvementStockBoutique.objects.create(
+            article=self.art_a, succursale=self.succ_a, domaine=self.domaine,
+            type='AJUSTEMENT', quantite=1, stock_avant=10, stock_apres=11,
+            date_mouvement=ancien, utilisateur=self.responsable, motif='MOUV_ANCIEN')
+        self.client.force_login(self.caissier)
+        # Période = aujourd'hui → seule l'entrée du jour apparaît.
+        url = reverse('boutique:mouvements') + (
+            '?date_debut={0}&date_fin={0}'.format(timezone.localdate().isoformat()))
+        resp = self.client.get(url)
+        self.assertContains(resp, 'TSHIRT-N-M')
+        self.assertNotContains(resp, 'MOUV_ANCIEN')
+        # Période = janvier → aucun mouvement.
+        resp2 = self.client.get(
+            reverse('boutique:mouvements') + '?date_debut=2026-01-01&date_fin=2026-01-31')
+        self.assertContains(resp2, 'Aucun mouvement')
+
+    def test_rapport_mouvements(self):
+        """Le rapport liste toutes les lignes du filtre et affiche les totaux."""
+        self.client.force_login(self.caissier)
+        resp = self.client.get(reverse('boutique:mouvements_report'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'TSHIRT-N-M')
+        self.assertContains(resp, 'Total')
+        # Le rapport n'est pas paginé : la seule entrée du jour est listée.
+        self.assertContains(resp, 'Entrée')
