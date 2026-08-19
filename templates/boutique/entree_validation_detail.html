@@ -8,17 +8,6 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'boutique:entrees_validation' %}">← Retour</a>
-    {% if bon.statut == 'BROUILLON' and perms.boutique.validate_entree %}
-    <form action="{% url 'boutique:entree_valider' bon.pk %}" method="post" class="inline-form">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-primary">Valider l'entrée</button>
-    </form>
-    <form action="{% url 'boutique:entree_annuler' bon.pk %}" method="post" class="inline-form">
-      {% csrf_token %}
-      <input class="input" type="text" name="commentaire" placeholder="Raison de l'annulation (obligatoire)">
-      <button type="submit" class="btn btn-danger">Annuler</button>
-    </form>
-    {% endif %}
   </div>
 </div>
 
@@ -44,4 +33,23 @@
     {% endif %}
   </dl>
 </section>
+
+{% if bon.statut == 'BROUILLON' and perms.boutique.validate_entree %}
+<section class="panel">
+  <h2>Décision</h2>
+  <div class="form-grid">
+    <form action="{% url 'boutique:entree_valider' bon.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Valider la demande</button>
+    </form>
+    <form action="{% url 'boutique:entree_annuler' bon.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <label for="id_commentaire">Raison de l'annulation (obligatoire)</label>
+      <input class="input" type="text" id="id_commentaire" name="commentaire" required
+             placeholder="Motif de l'annulation de la demande">
+      <button type="submit" class="btn btn-danger">Annuler la demande</button>
+    </form>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

@@ -8,21 +8,6 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">← Retour</a>
-    {% if vente.statut == 'PENDING_VALIDATION' and perms.boutique.validate_vente %}
-    <form action="{% url 'boutique:vente_approuver' vente.pk %}" method="post" class="inline-form">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-primary">Approuver la vente</button>
-    </form>
-    {% endif %}
-    {% if vente.statut == 'BROUILLON' or vente.statut == 'PENDING_VALIDATION' %}
-      {% if perms.boutique.cancel_vente %}
-      <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="inline-form">
-        {% csrf_token %}
-        <input class="input" type="text" name="commentaire" placeholder="Raison de l'annulation (obligatoire)">
-        <button type="submit" class="btn btn-danger">Annuler</button>
-      </form>
-      {% endif %}
-    {% endif %}
     {% if vente.statut == 'VALIDEE' %}
     <a class="btn btn-primary" href="{% url 'boutique:vente_imprimer' vente.pk %}">Imprimer</a>
     {% endif %}
@@ -42,6 +27,27 @@
     {% endif %}
   </dl>
 </section>
+
+{% if vente.statut == 'PENDING_VALIDATION' and perms.boutique.validate_vente %}
+<section class="panel">
+  <h2>Décision</h2>
+  <div class="form-grid">
+    <form action="{% url 'boutique:vente_approuver' vente.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Approuver la vente</button>
+    </form>
+    {% if perms.boutique.cancel_vente %}
+    <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <label for="id_commentaire">Raison de l'annulation (obligatoire)</label>
+      <input class="input" type="text" id="id_commentaire" name="commentaire" required
+             placeholder="Motif de l'annulation de la demande">
+      <button type="submit" class="btn btn-danger">Annuler la demande</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 <section class="panel">
   <h2>Articles</h2>

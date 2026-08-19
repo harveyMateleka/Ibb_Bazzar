@@ -274,9 +274,15 @@ class TestVenteService(BoutiqueBase):
 
     def test_annulation_brouillon(self):
         vente = self._vente()
-        VenteService.annuler(vente)
+        VenteService.annuler(vente, commentaire='Annulée pour cause de test')
         vente.refresh_from_db()
         self.assertEqual(vente.statut, Vente.Statut.ANNULEE)
+
+    def test_annulation_sans_commentaire_refuse(self):
+        """Annuler sans commentaire est refusé (le commentaire est obligatoire)."""
+        vente = self._vente()
+        with self.assertRaises(ValidationError):
+            VenteService.annuler(vente)
 
     def test_vente_ne_touche_pas_approvisionnement(self):
         self._entrer(self.var_noir_m, 60)

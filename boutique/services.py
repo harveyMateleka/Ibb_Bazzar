@@ -185,9 +185,11 @@ class BonEntreeService:
     @staticmethod
     def annuler(*, bon, par, commentaire=''):
         """Annulation (rejet) d'une entrée en brouillon par le responsable,
-        avec un commentaire visible par le demandeur."""
+        avec un commentaire obligatoire visible par le demandeur."""
         if bon.statut != BonEntreeBoutique.Statut.BROUILLON:
             raise ValidationError('Seule une entrée en brouillon peut être annulée.')
+        if not (commentaire or '').strip():
+            raise ValidationError('Le commentaire (raison) est obligatoire pour annuler.')
         with transaction.atomic():
             bon.statut = BonEntreeBoutique.Statut.ANNULEE
             bon.commentaire = commentaire
@@ -429,6 +431,8 @@ class VenteService:
 
     @staticmethod
     def annuler(vente, par=None, commentaire=''):
+        if not (commentaire or '').strip():
+            raise ValidationError('Le commentaire (raison) est obligatoire pour annuler.')
         with transaction.atomic():
             vente.annuler(commentaire=commentaire)
             AuditService.auditer(
