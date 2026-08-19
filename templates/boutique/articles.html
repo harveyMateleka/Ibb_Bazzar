@@ -8,7 +8,6 @@
   </div>
   <div class="actions">
     {% if perms.boutique.adjust_stock %}
-    <a class="btn btn-ghost" href="{% url 'boutique:variante_nouvelle' %}">Nouvelle variante</a>
     <a class="btn btn-primary" href="{% url 'boutique:article_nouveau' %}">Nouvel article</a>
     {% endif %}
   </div>

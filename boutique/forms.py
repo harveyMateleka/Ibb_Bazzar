@@ -33,37 +33,6 @@ class ArticleBoutiqueForm(forms.ModelForm):
         appliquer_contexte(self, contexte)
 
 
-class VarianteArticleForm(forms.ModelForm):
-    """Création d'une variante pour un article (caractéristiques + prix + seuil)."""
-
-    class Meta:
-        model = VarianteArticle
-        fields = [
-            'article', 'categorie', 'sous_categorie', 'unite', 'genre',
-            'taille', 'couleur', 'marque', 'matiere', 'modele',
-            'rayon', 'etagere', 'emplacement',
-            'prix_achat', 'prix_unitaire', 'prix_minimum', 'prix_maximum',
-            'seuil_alerte', 'statut', 'en_vente',
-        ]
-
-    def __init__(self, *args, articles=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        if articles is not None:
-            self.fields['article'].queryset = articles
-
-    def clean(self):
-        cleaned = super().clean()
-        prix = cleaned.get('prix_unitaire')
-        mini = cleaned.get('prix_minimum')
-        maxi = cleaned.get('prix_maximum')
-        if prix is not None:
-            if mini and prix < mini:
-                self.add_error('prix_unitaire', f'Le prix de vente ({prix}) est inférieur au prix minimum ({mini}).')
-            if maxi and prix > maxi:
-                self.add_error('prix_unitaire', f'Le prix de vente ({prix}) est supérieur au prix maximum ({maxi}).')
-        return cleaned
-
-
 class StockEntreeForm(forms.Form):
     """Nouvelle entrée en stock : sélection de l'article parent, création de la
     variante (caractéristiques + prix + seuil) et quantité — le tout soumis d'un bloc."""

@@ -25,7 +25,6 @@ from .forms import (
     InventaireForm,
     LigneInventaireFormSet,
     StockEntreeForm,
-    VarianteArticleForm,
     VenteForm,
     VenteLigneFormSet,
 )
@@ -218,49 +217,6 @@ def article_detail(request, pk):
         request,
         'boutique/article_detail.html',
         {'article': article, 'variantes': variantes},
-    )
-
-
-@require_permission('boutique.adjust_stock')
-def variante_nouvelle(request):
-    peri = _perimetre(request.user)
-    formulaire = VarianteArticleForm(
-        request.POST if request.method == 'POST' else None,
-        articles=_articles_perimetre(peri),
-    )
-    if request.method == 'POST' and formulaire.is_valid():
-        donnees = formulaire.cleaned_data
-        variante, cree = VarianteService.creer_ou_trouver(
-            article=donnees['article'],
-            categorie=donnees.get('categorie'),
-            sous_categorie=donnees.get('sous_categorie'),
-            unite=donnees.get('unite'),
-            genre=donnees.get('genre', ''),
-            taille=donnees.get('taille', ''),
-            couleur=donnees.get('couleur', ''),
-            marque=donnees.get('marque', ''),
-            matiere=donnees.get('matiere', ''),
-            modele=donnees.get('modele', ''),
-            rayon=donnees.get('rayon', ''),
-            etagere=donnees.get('etagere', ''),
-            emplacement=donnees.get('emplacement', ''),
-            prix_achat=donnees.get('prix_achat', 0),
-            prix_unitaire=donnees.get('prix_unitaire', 0),
-            prix_minimum=donnees.get('prix_minimum', 0),
-            prix_maximum=donnees.get('prix_maximum', 0),
-            seuil_alerte=donnees.get('seuil_alerte', 0),
-            par=request.user,
-        )
-        messages.success(
-            request,
-            f'Variante {variante.code_variante} créée.'
-            if cree else f'Variante {variante.code_variante} déjà existante, réutilisée.'
-        )
-        return redirect('boutique:article_detail', pk=donnees['article'].pk)
-    return render(
-        request,
-        'boutique/variante_form.html',
-        {'form': formulaire},
     )
 
 
