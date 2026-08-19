@@ -245,10 +245,121 @@ class StockBoutiqueService:
 
 
 class VenteService:
-    """Cycle de vie d'une vente (création → validation → stock des variantes)."""
+    """Cycle de vie d'une vente : soumission unique → VALIDEE (sorties immédiates)
+    ou PENDING_VALIDATION (validation responsable) → VALIDEE."""
+
+    @staticmethod
+    def _controle_prix_ligne(ligne):
+        """Règles de prix par ligne. Retourne 'ok' ou 'pending' ; lève une
+        ValidationError si le prix est sous le minimum ou au-dessus de la référence."""
+        var = ligne.variante
+        if var.prix_minimum and ligne.prix_unitaire < var.prix_minimum:
+            raise ValidationError(
+                f'Cette variante ne peut pas être vendue en dessous de son prix '
+                f'minimum autorisé ({var.prix_minimum}).')
+        if ligne.prix_unitaire > var.prix_unitaire:
+            raise ValidationError(
+                f'Le prix de vente de la variante {var.article.code} ({var.label}) '
+                f'({ligne.prix_unitaire}) est supérieur au prix de référence '
+                f'autorisé ({var.prix_unitaire}).')
+        if ligne.prix_unitaire < var.prix_unitaire:
+            return 'pending'
+        return 'ok'
+
+    @staticmethod
+    def _finaliser(vente, par):
+        """Contrôles (prix sur chaque ligne, paiement) puis statut final :
+        PENDING_VALIDATION si au moins une ligne est sous la référence, sinon
+        VALIDEE avec application immédiate des sorties."""
+        lignes = list(vente.lignes.select_related('variante', 'variante__article'))
+        if not lignes:
+            raise ValidationError('Ajoutez au moins une ligne de produit.')
+        needs_validation = False
+        for ligne in lignes:
+            if VenteService._controle_prix_ligne(ligne) == 'pending':
+                needs_validation = True
+        if vente.montant_recu < vente.total:
+            raise ValidationError(
+                f'Le montant reçu ({vente.montant_recu}) est inférieur au total '
+                f'({vente.total}). Le paiement est incohérent : saisissez un '
+                'montant reçu supérieur ou égal au total.'
+            )
+        if needs_validation:
+            vente.statut = Vente.Statut.PENDING_VALIDATION
+            vente.save(update_fields=['statut'])
+            AuditService.auditer(
+                utilisateur=par, succursale=vente.succursale, module='BOUTIQUE',
+                action='vente.submit', objet_type='Vente', objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'statut': 'PENDING_VALIDATION'},
+            )
+        else:
+            vente._appliquer_sorties()  # lève si stock insuffisant → rollback
+            vente.statut = Vente.Statut.VALIDEE
+            vente.date_validation = timezone.now()
+            vente.save(update_fields=['statut', 'date_validation'])
+            AuditService.auditer(
+                utilisateur=par, succursale=vente.succursale, module='BOUTIQUE',
+                action='vente.validate', objet_type='Vente', objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'total': str(vente.total)},
+            )
+        return vente
+
+    @staticmethod
+    def soumettre(*, succursale, domaine, utilisateur, client='', type_paiement='ESPECES',
+                  montant_recu=0, remise=0, lignes=(), par=None):
+        """Interface unique : crée la vente + ses lignes, contrôle tout (prix,
+        stocks, paiement), détermine le statut et applique les sorties si la
+        vente est normale. Tout est atomique (tout ou rien)."""
+        with transaction.atomic():
+            vente = Vente.objects.create(
+                numero=Vente.prochain_numero(),
+                client=client,
+                succursale=succursale,
+                domaine=domaine,
+                utilisateur=utilisateur,
+                type_paiement=type_paiement,
+                montant_recu=montant_recu or 0,
+                remise=remise or 0,
+            )
+            AuditService.auditer(
+                utilisateur=utilisateur, succursale=succursale, module='BOUTIQUE',
+                action='vente.create', objet_type='Vente', objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'domaine': domaine.code if domaine else None},
+            )
+            for var, quantite, prix, remise_ligne in lignes:
+                VenteLigne.objects.create(
+                    vente=vente, variante=var, quantite=quantite,
+                    prix_unitaire=prix, remise=remise_ligne or 0)
+            vente.recalculer()
+            VenteService._finaliser(vente, par or utilisateur)
+        return vente
+
+    @staticmethod
+    def approuver(vente, par=None):
+        """Approuve une vente PENDING_VALIDATION : re-vérifie le stock, crée les
+        mouvements SORTIE, décrémente les stocks et passe la vente en VALIDEE."""
+        with transaction.atomic():
+            if vente.statut != Vente.Statut.PENDING_VALIDATION:
+                raise ValidationError(
+                    f'Cette vente ne peut pas être approuvée (statut actuel : '
+                    f'{vente.get_statut_display()}).')
+            if not vente.lignes.exists():
+                raise ValidationError('Cette vente n’a aucune ligne.')
+            vente._appliquer_sorties()
+            vente.statut = Vente.Statut.VALIDEE
+            vente.date_validation = timezone.now()
+            vente.save(update_fields=['statut', 'date_validation'])
+            AuditService.auditer(
+                utilisateur=par or vente.utilisateur,
+                succursale=vente.succursale, module='BOUTIQUE',
+                action='vente.approve', objet_type='Vente', objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'statut': 'VALIDEE'},
+            )
+        return vente
 
     @staticmethod
     def creer(*, succursale, domaine, utilisateur, client='', type_paiement='ESPECES', montant_recu=0, remise=0):
+        """Création d'entête (rétrocompatibilité)."""
         with transaction.atomic():
             vente = Vente.objects.create(
                 numero=Vente.prochain_numero(),
@@ -286,17 +397,11 @@ class VenteService:
 
     @staticmethod
     def valider(vente, par=None):
+        """Validation normale d'un brouillon (rétrocompatibilité seed/tests)."""
         with transaction.atomic():
-            vente.valider()
-            AuditService.auditer(
-                utilisateur=par or vente.utilisateur,
-                succursale=vente.succursale,
-                module='BOUTIQUE',
-                action='vente.validate',
-                objet_type='Vente',
-                objet_id=vente.pk,
-                nouvelle_valeur={'numero': vente.numero, 'total': str(vente.total)},
-            )
+            if vente.statut == Vente.Statut.VALIDEE:
+                raise ValidationError('Cette vente est déjà validée.')
+            VenteService._finaliser(vente, par or vente.utilisateur)
         return vente
 
     @staticmethod

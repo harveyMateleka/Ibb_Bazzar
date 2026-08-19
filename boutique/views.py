@@ -8,25 +8,23 @@ auto + readonly dans les formulaires via `contexte_actif()` / `appliquer_context
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from core.models import Domaine
+from core.models import Domaine, Succursale
 from core.permissions import require_permission, succursales_autorisees
 from core.services import AuditService
 
 from .forms import (
     ArticleBoutiqueForm,
-    EncaissementForm,
     InventaireForm,
     LigneInventaireFormSet,
+    LigneVenteSaisieFormSet,
     StockEntreeForm,
     VenteForm,
-    VenteLigneFormSet,
 )
 from .models import (
     AlerteStockBoutique,
@@ -463,40 +461,74 @@ def ventes(request):
 
 @require_permission('boutique.create_vente')
 def vente_nouvelle(request):
+    """Interface UNIQUE de vente : entête + lignes + paiement, puis « Créer et soumettre »."""
     peri = _perimetre(request.user)
-    domaine = Domaine.objects.filter(pk=peri['domaine_id']) if peri['domaine_id'] else Domaine.objects.none()
     contexte = request.user.contexte_actif()
+    # Succursale/domaine déterminés côté backend (contexte utilisateur).
+    succursale = contexte['succursale'] if contexte and contexte['succursale'] else (
+        Succursale.objects.filter(pk__in=peri['succursales_ids']).first())
+    domaine = contexte['domaine'] if contexte and contexte['domaine'] else peri['domaine']
+
     formulaire = VenteForm(
         request.POST if request.method == 'POST' else None,
-        succursales=peri['succursales'],
-        domaines=domaine,
-        contexte=contexte,
         request_user=request.user,
     )
-    if request.method == 'POST' and formulaire.is_valid():
+    formset = LigneVenteSaisieFormSet(
+        request.POST if request.method == 'POST' else None,
+        prefix='lignes',
+        succursale=succursale.pk if succursale else None,
+        domaine=domaine.pk if domaine else None,
+    )
+    if request.method == 'POST' and formulaire.is_valid() and formset.is_valid():
         remise = formulaire.cleaned_data['remise'] or 0
         if remise > 0 and not request.user.has_perm('boutique.apply_remise'):
             messages.error(request, 'Vous n’êtes pas autorisé à appliquer une remise.')
         else:
-            succursale = formulaire.cleaned_data.get('succursale')
-            domaine_v = formulaire.cleaned_data.get('domaine')
-            if contexte and contexte['verrouille']:
-                succursale = contexte['succursale']
-                domaine_v = contexte['domaine']
-            vente = VenteService.creer(
-                succursale=succursale,
-                domaine=domaine_v,
-                utilisateur=request.user,
-                client=formulaire.cleaned_data.get('client', ''),
-                type_paiement=formulaire.cleaned_data['type_paiement'],
-                remise=remise,
-            )
-            messages.success(request, f'Vente {vente.numero} créée. Ajoutez les articles.')
+            try:
+                vente = VenteService.soumettre(
+                    succursale=succursale,
+                    domaine=domaine,
+                    utilisateur=request.user,
+                    client=formulaire.cleaned_data.get('client', ''),
+                    type_paiement=formulaire.cleaned_data['type_paiement'],
+                    montant_recu=formulaire.cleaned_data.get('montant_recu') or 0,
+                    remise=remise,
+                    lignes=formset.lignes_cleaned(),
+                    par=request.user,
+                )
+            except ValidationError as exc:
+                messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+                return redirect('boutique:vente_nouvelle')
+            if vente.statut == Vente.Statut.PENDING_VALIDATION:
+                messages.success(request, 'Vente créée et soumise à validation.')
+            else:
+                messages.success(request, 'Vente créée avec succès.')
             return redirect('boutique:vente_detail', pk=vente.pk)
     return render(
         request,
         'boutique/vente_form.html',
-        {'form': formulaire},
+        {'form': formulaire, 'formset': formset, 'succursale': succursale, 'domaine': domaine},
+    )
+
+
+@require_permission('boutique.validate_vente')
+def ventes_a_valider(request):
+    """Ventes en attente de validation responsable (PENDING_VALIDATION)."""
+    peri = _perimetre(request.user)
+    ventes_qs = (
+        Vente.objects.select_related('utilisateur', 'succursale')
+        .filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+            statut=Vente.Statut.PENDING_VALIDATION,
+        )
+        .annotate(nb_lignes=Count('lignes'))
+    )
+    page_obj = _paginer(request, ventes_qs.order_by('date_vente'))
+    return render(
+        request,
+        'boutique/ventes_a_valider.html',
+        {'ventes': page_obj.object_list, 'page_obj': page_obj},
     )
 
 
@@ -511,66 +543,16 @@ def vente_detail(request, pk):
         pk=pk,
     )
     lignes = vente.lignes.select_related('variante', 'variante__article', 'mouvement')
-    formset = None
-    encaissement_form = None
-    if vente.statut == Vente.Statut.BROUILLON:
-        formset = VenteLigneFormSet(
-            request.POST if request.method == 'POST' else None,
-            instance=vente,
-            succursale=vente.succursale_id,
-            domaine=vente.domaine_id,
-        )
-        encaissement_form = EncaissementForm(
-            request.POST if request.method == 'POST' else None,
-            instance=vente,
-        )
-        if request.method == 'POST':
-            action = request.POST.get('action', '')
-            if formset.is_valid() and encaissement_form.is_valid():
-                with transaction.atomic():
-                    formset.save()
-                    encaissement_form.save()
-                    vente.recalculer()
-                if action == 'valider':
-                    ruptures = vente.analyser_stock()
-                    if ruptures:
-                        messages.error(
-                            request,
-                            'Stock insuffisant pour une ou plusieurs variantes : '
-                            + ', '.join(
-                                f'{r["article"].code} (dispo {r["stock"]})'
-                                for r in ruptures
-                            ),
-                        )
-                        return redirect('boutique:vente_detail', pk=vente.pk)
-                    try:
-                        VenteService.valider(vente, par=request.user)
-                    except ValidationError as exc:
-                        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-                        return redirect('boutique:vente_detail', pk=vente.pk)
-                    messages.success(request, 'Vente enregistrée avec succès.')
-                    return redirect(
-                        reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1'
-                    )
-                messages.success(request, 'Articles et montant reçu enregistrés.')
-                return redirect('boutique:vente_detail', pk=vente.pk)
-            messages.error(
-                request, 'Impossible d\'enregistrer la vente. Veuillez vérifier les informations saisies.')
     return render(
         request,
         'boutique/vente_detail.html',
-        {
-            'vente': vente,
-            'formset': formset,
-            'lignes': lignes,
-            'encaissement_form': encaissement_form,
-        },
+        {'vente': vente, 'lignes': lignes},
     )
 
 
 @require_permission('boutique.validate_vente')
 @require_POST
-def vente_valider(request, pk):
+def vente_approuver(request, pk):
     peri = _perimetre(request.user)
     vente = get_object_or_404(
         Vente.objects.filter(
@@ -579,21 +561,13 @@ def vente_valider(request, pk):
         ),
         pk=pk,
     )
-    ruptures = vente.analyser_stock()
-    if ruptures:
-        messages.error(
-            request,
-            'Stock insuffisant pour une ou plusieurs variantes : '
-            + ', '.join(f'{r["article"].code} (dispo {r["stock"]})' for r in ruptures),
-        )
-        return redirect('boutique:vente_detail', pk=vente.pk)
     try:
-        VenteService.valider(vente, par=request.user)
+        VenteService.approuver(vente, par=request.user)
+        messages.success(request, f'Vente {vente.numero} approuvée. Le stock a été diminué.')
+        return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        return redirect('boutique:vente_detail', pk=vente.pk)
-    messages.success(request, f'Vente {vente.numero} validée. Le stock a été diminué.')
-    return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
+    return redirect('boutique:vente_detail', pk=vente.pk)
 
 
 @require_permission('boutique.cancel_vente')

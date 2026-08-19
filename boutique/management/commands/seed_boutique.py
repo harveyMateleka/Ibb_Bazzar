@@ -90,10 +90,11 @@ class Command(BaseCommand):
 
     def _nettoyer(self):
         self.stdout.write(self.style.WARNING('Purge des données boutique...'))
+        BonEntreeBoutique.objects.all().delete()
         Vente.objects.all().delete()
         InventaireBoutique.objects.all().delete()
         MouvementStockBoutique.objects.all().delete()
-        ArticleBoutique.objects.all().delete()  # cascade sur StockBoutique
+        ArticleBoutique.objects.all().delete()  # cascade sur StockBoutique/Variante
         SousCategorieBoutique.objects.all().delete()
         CategorieBoutique.objects.all().delete()
         UniteBoutique.objects.all().delete()

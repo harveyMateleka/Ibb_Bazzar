@@ -27,6 +27,7 @@ from .models import (
     UniteBoutique,
     VarianteArticle,
     Vente,
+    VenteLigne,
 )
 from .services import (
     BonEntreeService,
@@ -428,33 +429,119 @@ class TestAlerteStockBoutique(BoutiqueBase):
 
 
 class TestPermissionsEtRemises(BoutiqueBase):
+    def _post_vente(self, data_extra):
+        data = {
+            'client': 'Client test', 'type_paiement': 'ESPECES',
+            'montant_recu': '100', 'remise': '0',
+            'lignes-TOTAL_FORMS': '1', 'lignes-INITIAL_FORMS': '0',
+            'lignes-MIN_NUM_FORMS': '1', 'lignes-MAX_NUM_FORMS': '1000',
+            'lignes-0-variante': str(self.var_noir_m.pk),
+            'lignes-0-quantite': '1', 'lignes-0-prix_unitaire': '15',
+            'lignes-0-remise': '0',
+        }
+        data.update(data_extra)
+        return self.client.post(reverse('boutique:vente_nouvelle'), data)
+
     def test_remise_refusee_sans_permission(self):
+        self._entrer(self.var_noir_m, 5)
         self.client.force_login(self.caissier)
-        resp = self.client.post(
-            reverse('boutique:vente_nouvelle'),
-            {'client': 'Client test', 'type_paiement': 'ESPECES',
-             'montant_recu': '0', 'remise': '10'},
-        )
+        resp = self._post_vente({'remise': '10'})
         self.assertEqual(Vente.objects.count(), 0)
-        self.assertContains(resp, 'remise')
+        self.assertContains(resp, 'remise')  # message d'erreur affiché
 
     def test_remise_autorisee_avec_permission(self):
+        self._entrer(self.var_noir_m, 5)
         self.client.force_login(self.responsable)
-        resp = self.client.post(
-            reverse('boutique:vente_nouvelle'),
-            {'client': 'Client test', 'type_paiement': 'ESPECES',
-             'montant_recu': '0', 'remise': '10'},
-        )
+        resp = self._post_vente({'remise': '10'})
         self.assertEqual(resp.status_code, 302)
         vente = Vente.objects.first()
         self.assertEqual(vente.remise, 10)
 
-    def test_validation_sans_permission_forbidden(self):
+    def test_approbation_sans_permission_forbidden(self):
         vente = self._vente(user=self.caissier)
         self.client.force_login(self.caissier)
         resp = self.client.post(
-            reverse('boutique:vente_valider', kwargs={'pk': vente.pk}))
+            reverse('boutique:vente_approuver', kwargs={'pk': vente.pk}))
         self.assertEqual(resp.status_code, 403)
+
+
+class TestVenteWorkflow(BoutiqueBase):
+    """Workflow unique : soumettre → VALIDEE (sorties) ou PENDING_VALIDATION."""
+
+    def _soumettre(self, lignes, montant_recu=999999, remise=0, client='Workflow'):
+        return VenteService.soumettre(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable,
+            client=client, montant_recu=montant_recu, remise=remise,
+            lignes=lignes, par=self.responsable)
+
+    def test_soumettre_prix_sous_reference_pending(self):
+        """Prix min ≤ prix < référence → PENDING_VALIDATION, AUCUNE sortie."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13, 0)])  # 12 ≤ 13 < 15
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 10)
+        self.assertFalse(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='SORTIE').exists())
+
+    def test_soumettre_prix_egal_reference_validee(self):
+        """Prix == référence → VALIDEE + sorties immédiates."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 15, 0)])
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
+        self.assertTrue(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='SORTIE').exists())
+
+    def test_soumettre_prix_sous_minimum_refuse(self):
+        """Prix < minimum → refus, aucune vente créée (transaction annulée)."""
+        self._entrer(self.var_noir_m, 10)
+        with self.assertRaises(ValidationError):
+            self._soumettre([(self.var_noir_m, 2, 10, 0)])
+        self.assertFalse(Vente.objects.filter(client='Workflow').exists())
+
+    def test_soumettre_prix_superieur_reference_refuse(self):
+        """Prix > référence → refus, aucune vente créée."""
+        self._entrer(self.var_noir_m, 10)
+        with self.assertRaises(ValidationError):
+            self._soumettre([(self.var_noir_m, 2, 20, 0)])
+        self.assertFalse(Vente.objects.filter(client='Workflow').exists())
+
+    def test_soumettre_transaction_annulee_si_une_ligne_erronnee(self):
+        """Une ligne bloquante annule toute la vente (aucune ligne créée)."""
+        self._entrer(self.var_noir_m, 10)
+        self._entrer(self.var_noir_l, 10)
+        with self.assertRaises(ValidationError):
+            self._soumettre([(self.var_noir_m, 2, 15, 0), (self.var_noir_l, 1, 10, 0)])
+        self.assertFalse(Vente.objects.filter(client='Workflow').exists())
+        self.assertEqual(VenteLigne.objects.count(), 0)
+
+    def test_approuver_vente_pending(self):
+        """Approuver une PENDING_VALIDATION crée les sorties et passe VALIDEE."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13, 0)])
+        self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
+        VenteService.approuver(vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
+        self.assertTrue(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='SORTIE').exists())
+
+    def test_approuver_deja_validee_refuse(self):
+        """Une vente déjà approuvée ne peut pas être ré-approuvée (anti-double)."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 15, 0)])
+        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        with self.assertRaises(ValidationError):
+            VenteService.approuver(vente, par=self.responsable)
 
 
 class TestPerimetreBoutique(BoutiqueBase):

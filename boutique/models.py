@@ -658,11 +658,12 @@ class AlerteStockBoutique(models.Model):
 
 
 class Vente(models.Model):
-    """Vente boutique : la validation produit un MouvementStockBoutique SORTIE
-    sur le stock de chaque variante vendue."""
+    """Vente boutique. Workflow : soumission unique → VALIDEE (mouvements SORTIE
+    immédiats) ou PENDING_VALIDATION (validation responsable) → VALIDEE."""
 
     class Statut(models.TextChoices):
         BROUILLON = 'BROUILLON', 'Brouillon'
+        PENDING_VALIDATION = 'PENDING_VALIDATION', 'En attente de validation'
         VALIDEE = 'VALIDEE', 'Validée'
         ANNULEE = 'ANNULEE', 'Annulée'
 
@@ -699,7 +700,7 @@ class Vente(models.Model):
         'paiement', max_length=15, choices=Paiement.choices, default=Paiement.ESPECES)
     montant_recu = models.DecimalField('montant reçu', max_digits=12, decimal_places=2, default=Decimal('0'))
     statut = models.CharField(
-        'statut', max_length=12, choices=Statut.choices, default=Statut.BROUILLON)
+        'statut', max_length=20, choices=Statut.choices, default=Statut.BROUILLON)
     sous_total = models.DecimalField('sous-total', max_digits=12, decimal_places=2, default=Decimal('0'))
     remise = models.DecimalField('remise', max_digits=12, decimal_places=2, default=Decimal('0'))
     total = models.DecimalField('total', max_digits=12, decimal_places=2, default=Decimal('0'))
@@ -770,52 +771,42 @@ class Vente(models.Model):
                 })
         return ruptures
 
-    def valider(self):
-        if self.statut == self.Statut.VALIDEE:
-            raise ValidationError('Cette vente est déjà validée.')
-        lignes = list(self.lignes.select_related('variante', 'variante__article'))
-        if not lignes:
-            raise ValidationError('Ajoutez au moins une ligne de produit avant de valider.')
-        with transaction.atomic():
-            for ligne in lignes:
-                var = ligne.variante
-                if var.prix_minimum and ligne.prix_unitaire < var.prix_minimum:
-                    raise ValidationError(
-                        f'{var.article.code} : le prix de vente de {ligne.prix_unitaire} FC est '
-                        f'inférieur au prix minimum autorisé de {var.prix_minimum} FC.'
-                    )
-                if var.prix_maximum and ligne.prix_unitaire > var.prix_maximum:
-                    raise ValidationError(
-                        f'{var.article.code} : le prix de vente de {ligne.prix_unitaire} FC est '
-                        f'supérieur au prix maximum autorisé de {var.prix_maximum} FC.'
-                    )
-                stock = StockBoutique.obtenir(var, self.succursale, self.domaine)
-                mouvement = MouvementStockBoutique(
-                    variante=var,
-                    stock=stock,
-                    type=MouvementStockBoutique.Type.SORTIE,
-                    quantite=ligne.quantite,
-                    motif=f'Vente {self.numero}',
-                    date_mouvement=self.date_vente,
-                    utilisateur=self.utilisateur,
-                )
+    def _appliquer_sorties(self):
+        """Crée les mouvements SORTIE et décrémente le stock de chaque variante.
+
+        Anti-double : une ligne déjà pourvue d'un mouvement est ignorée.
+        Lève une ValidationError (message clair) si le stock est insuffisant.
+        """
+        for ligne in self.lignes.select_related('variante', 'variante__article'):
+            if ligne.mouvement_id:
+                continue
+            var = ligne.variante
+            stock = StockBoutique.obtenir(var, self.succursale, self.domaine)
+            mouvement = MouvementStockBoutique(
+                variante=var,
+                stock=stock,
+                type=MouvementStockBoutique.Type.SORTIE,
+                quantite=ligne.quantite,
+                motif=f'Vente {self.numero}',
+                date_mouvement=self.date_vente,
+                utilisateur=self.utilisateur,
+            )
+            try:
                 mouvement.valider()
-                ligne.mouvement = mouvement
-                ligne.save(update_fields=['mouvement'])
-            if self.montant_recu < self.total:
+            except ValidationError as exc:
+                message = exc.messages[0] if hasattr(exc, 'messages') else str(exc)
                 raise ValidationError(
-                    f'Le montant reçu ({self.montant_recu}) est inférieur au total '
-                    f'({self.total}). Le paiement est incohérent : saisissez un '
-                    'montant reçu supérieur ou égal au total.'
+                    f'Stock insuffisant pour la variante {var.article.code} '
+                    f'({var.label}). {message}'
                 )
-            self.statut = self.Statut.VALIDEE
-            self.date_validation = timezone.now()
-            self.save(update_fields=['statut', 'date_validation'])
+            ligne.mouvement = mouvement
+            ligne.save(update_fields=['mouvement'])
 
     def annuler(self):
-        if self.statut != self.Statut.BROUILLON:
+        if self.statut in (self.Statut.VALIDEE, self.Statut.ANNULEE):
             raise ValidationError(
-                'Seul un brouillon peut être annulé. Pour une vente validée, prévoir un retour.'
+                'Cette vente ne peut pas être annulée (statut actuel : '
+                f'{self.get_statut_display()}). Pour une vente validée, prévoir un retour.'
             )
         self.statut = self.Statut.ANNULEE
         self.save(update_fields=['statut'])

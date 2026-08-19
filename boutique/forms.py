@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django import forms
-from django.forms import inlineformset_factory
+from django.forms import formset_factory, inlineformset_factory
 
 from core.permissions import appliquer_contexte
 
@@ -112,23 +112,25 @@ class StockEntreeForm(forms.Form):
 
 
 class VenteForm(forms.ModelForm):
-    """Étape 1 d'une vente : informations générales."""
+    """Interface unique de vente : entête (client, paiement, remise, montant reçu).
+
+    Succursale et domaine sont déterminés côté backend (contexte utilisateur),
+    jamais demandés ni acceptés depuis l'input."""
 
     class Meta:
         model = Vente
-        fields = ['client', 'succursale', 'domaine', 'type_paiement', 'remise']
+        fields = ['client', 'type_paiement', 'remise', 'montant_recu']
         widgets = {
             'client': forms.TextInput(attrs={'class': 'input', 'placeholder': 'Nom du client'}),
+            'type_paiement': forms.Select(attrs={'class': 'input'}),
+            'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'input'}),
         }
 
-    def __init__(self, *args, succursales=None, domaines=None, contexte=None, request_user=None, **kwargs):
+    def __init__(self, *args, request_user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['client'].required = True
-        if succursales is not None:
-            self.fields['succursale'].queryset = succursales
-        if domaines is not None:
-            self.fields['domaine'].queryset = domaines
-        appliquer_contexte(self, contexte)
+        self.fields['remise'].required = False
+        self.fields['montant_recu'].required = False
         if not request_user or not request_user.has_perm('boutique.apply_remise'):
             self.fields['remise'].widget.attrs['readonly'] = True
             self.fields['remise'].help_text = 'Remise réservée aux profils autorisés.'
@@ -159,11 +161,13 @@ class VarianteArticleSelect(forms.Select):
 class VenteLigneForm(forms.ModelForm):
     class Meta:
         model = VenteLigne
-        fields = ['variante', 'quantite', 'prix_unitaire']
+        fields = ['variante', 'quantite', 'prix_unitaire', 'remise']
         widgets = {
             'quantite': forms.NumberInput(attrs={'min': 1, 'class': 'input'}),
             'prix_unitaire': forms.NumberInput(
                 attrs={'step': '0.01', 'min': '0', 'class': 'input', 'data-prix-ligne': '1'}),
+            'remise': forms.NumberInput(
+                attrs={'step': '0.01', 'min': '0', 'class': 'input', 'data-remise-ligne': '1'}),
         }
 
     def __init__(self, *args, succursale=None, domaine=None, **kwargs):
@@ -177,6 +181,7 @@ class VenteLigneForm(forms.ModelForm):
         self.fields['variante'].required = False
         self.fields['quantite'].required = False
         self.fields['prix_unitaire'].required = False
+        self.fields['remise'].required = False
         prix_par_variante = {
             v.pk: (str(v.prix_unitaire), str(v.prix_minimum), str(v.prix_maximum))
             for v in variantes
@@ -201,9 +206,15 @@ class VenteLigneForm(forms.ModelForm):
                 prix = variante.prix_unitaire
                 cleaned['prix_unitaire'] = prix
             if variante.prix_minimum and prix < variante.prix_minimum:
-                self.add_error('prix_unitaire', f'Le prix ({prix}) est inférieur au prix minimum ({variante.prix_minimum}) de {variante.article.code}.')
-            if variante.prix_maximum and prix > variante.prix_maximum:
-                self.add_error('prix_unitaire', f'Le prix ({prix}) est supérieur au prix maximum ({variante.prix_maximum}) de {variante.article.code}.')
+                self.add_error(
+                    'prix_unitaire',
+                    f'Cette variante ne peut pas être vendue en dessous de son prix '
+                    f'minimum autorisé ({variante.prix_minimum}).')
+            if prix > variante.prix_unitaire:
+                self.add_error(
+                    'prix_unitaire',
+                    f'Le prix de vente de {variante.article.code} ({variante.label}) '
+                    f'est supérieur au prix de référence autorisé ({variante.prix_unitaire}).')
         return cleaned
 
 
@@ -230,23 +241,44 @@ VenteLigneFormSet = inlineformset_factory(
 )
 
 
-class EncaissementForm(forms.ModelForm):
-    """Montant reçu d'une vente (étape 2)."""
+class BaseLigneVenteSaisieFormSet(forms.BaseFormSet):
+    """Formset autonome des lignes de vente (saisie dans l'interface unique)."""
 
-    class Meta:
-        model = Vente
-        fields = ['montant_recu']
-        widgets = {
-            'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'input'}),
-        }
-
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, succursale=None, domaine=None, **kwargs):
+        self.succursale = succursale
+        self.domaine = domaine
         super().__init__(*args, **kwargs)
-        self.fields['montant_recu'].required = False
 
-    def clean_montant_recu(self):
-        value = self.cleaned_data.get('montant_recu')
-        return value if value is not None else Decimal('0')
+    def _construct_form(self, i, **kwargs):
+        kwargs['succursale'] = self.succursale
+        kwargs['domaine'] = self.domaine
+        return super()._construct_form(i, **kwargs)
+
+    def lignes_cleaned(self):
+        """Lignes (variante, quantite, prix_unitaire, remise) à soumettre."""
+        lignes = []
+        for form in self.forms:
+            if form.cleaned_data.get('DELETE'):
+                continue
+            variante = form.cleaned_data.get('variante')
+            quantite = form.cleaned_data.get('quantite')
+            if variante and quantite:
+                lignes.append((
+                    variante,
+                    quantite,
+                    form.cleaned_data.get('prix_unitaire') or variante.prix_unitaire,
+                    form.cleaned_data.get('remise') or 0,
+                ))
+        return lignes
+
+
+LigneVenteSaisieFormSet = formset_factory(
+    VenteLigneForm,
+    formset=BaseLigneVenteSaisieFormSet,
+    extra=1,
+    can_delete=True,
+    min_num=1,
+)
 
 
 class InventaireForm(forms.ModelForm):

@@ -6,24 +6,228 @@
     <p class="eyebrow">Vente</p>
     <h1>Nouvelle vente</h1>
   </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">← Retour</a>
+  </div>
 </div>
 
-<section class="panel form-panel">
-  <form method="post" class="form-grid">
-    {% csrf_token %}
-    {{ form.non_field_errors }}
-    {% for field in form %}
-    <div class="field">
-      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-      {{ field }}
-      {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
-      {{ field.errors }}
+<form method="post" id="form-vente">
+  {% csrf_token %}
+
+  <section class="panel">
+    <h2>Informations de la vente</h2>
+    <div class="form-grid">
+      {% for field in form %}
+      <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+      <div class="field">
+        <label>Succursale</label>
+        <input class="input" value="{{ succursale }}" readonly>
+      </div>
+      <div class="field">
+        <label>Domaine</label>
+        <input class="input" value="{{ domaine }}" readonly>
+      </div>
     </div>
-    {% endfor %}
+  </section>
+
+  <section class="panel">
+    <h2>Articles</h2>
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Variante</th>
+            <th>Qté</th>
+            <th>Prix unitaire</th>
+            <th>Remise</th>
+            <th>Montant</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="lignes-panier">
+          {% for form in formset %}
+          <tr class="ligne-vente">
+            <td>
+              {{ form.variante }}
+              <p class="help">Prix normal : <strong data-affiche-prix-normal>—</strong>
+                · Prix minimum : <strong data-affiche-prix-min>—</strong>
+                {{ form.variante.errors }}</p>
+            </td>
+            <td>{{ form.quantite }}{{ form.quantite.errors }}</td>
+            <td>{{ form.prix_unitaire }}{{ form.prix_unitaire.errors }}</td>
+            <td>{{ form.remise }}{{ form.remise.errors }}</td>
+            <td><span class="montant-ligne">0</span></td>
+            <td>
+              <span style="display:none">{{ form.DELETE }}</span>
+              <button type="button" class="btn btn-danger btn-supprimer-ligne" title="Retirer la ligne">🗑</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     <div class="actions">
-      <button type="submit" class="btn btn-primary">Créer la vente</button>
-      <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">Annuler</a>
+      <button type="button" id="btn-ajouter-ligne" class="btn btn-ghost">+ Ajouter une ligne</button>
     </div>
-  </form>
-</section>
+  </section>
+
+  <section class="panel">
+    <h2>Totaux</h2>
+    <dl class="detail-grid">
+      <dt>Sous-total</dt><dd id="panier-sous-total">0</dd>
+      <dt>Remise totale</dt><dd id="panier-remise-totale">0</dd>
+      <dt>Total</dt><dd><strong id="panier-total">0</strong></dd>
+      <dt>Montant reçu</dt><dd id="panier-montant-recu">0</dd>
+      <dt>Monnaie</dt><dd id="panier-monnaie">0</dd>
+    </dl>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Créer et soumettre</button>
+    </div>
+  </section>
+</form>
+
+<script>
+  (function () {
+    var form = document.getElementById("form-vente");
+    if (!form) return;
+    var tbody = document.getElementById("lignes-panier");
+    var btnAjouter = document.getElementById("btn-ajouter-ligne");
+    var totalField = form.querySelector("[name='lignes-TOTAL_FORMS']");
+    var elSousTotal = document.getElementById("panier-sous-total");
+    var elRemiseTotale = document.getElementById("panier-remise-totale");
+    var elTotal = document.getElementById("panier-total");
+    var elMontantRecu = document.getElementById("panier-montant-recu");
+    var elMonnaie = document.getElementById("panier-monnaie");
+    var montantRecuInput = document.getElementById("id_montant_recu");
+    var remiseHeaderInput = document.getElementById("id_remise");
+
+    function indexDe(ligne) {
+      var select = ligne.querySelector("select");
+      var name = select && select.getAttribute("name") || "";
+      var m = name.match(/^lignes-(\d+)-/);
+      return m ? m[1] : "0";
+    }
+
+    function majPrix(select) {
+      var ligne = select.closest(".ligne-vente");
+      if (!ligne) return;
+      var affNormal = ligne.querySelector("[data-affiche-prix-normal]");
+      var affMin = ligne.querySelector("[data-affiche-prix-min]");
+      var inputPrix = ligne.querySelector("input[data-prix-ligne]");
+      var opt = select.selectedOptions[0];
+      if (!opt || !opt.dataset.prixNormal) {
+        if (affNormal) affNormal.textContent = "—";
+        if (affMin) affMin.textContent = "—";
+        return;
+      }
+      if (affNormal) affNormal.textContent = opt.dataset.prixNormal;
+      if (affMin) affMin.textContent = opt.dataset.prixMin;
+      if (inputPrix) inputPrix.value = opt.dataset.prixNormal;
+      calculerTotaux();
+    }
+
+    function calculerTotaux() {
+      var sousTotal = 0;
+      Array.prototype.forEach.call(tbody.querySelectorAll(".ligne-vente"), function (ligne) {
+        if (ligne.style.display === "none") return;
+        var q = ligne.querySelector("input[name$='-quantite']");
+        var p = ligne.querySelector("input[name$='-prix_unitaire']");
+        var r = ligne.querySelector("input[name$='-remise']");
+        var qte = q ? (parseFloat(q.value) || 0) : 0;
+        var prix = p ? (parseFloat(p.value) || 0) : 0;
+        var rem = r ? (parseFloat(r.value) || 0) : 0;
+        var montant = qte * prix - rem;
+        var span = ligne.querySelector(".montant-ligne");
+        if (span) span.textContent = montant.toLocaleString("fr-FR");
+        sousTotal += montant;
+      });
+      if (elSousTotal) elSousTotal.textContent = sousTotal.toLocaleString("fr-FR");
+      var remiseTotale = remiseHeaderInput ? (parseFloat(remiseHeaderInput.value) || 0) : 0;
+      if (elRemiseTotale) elRemiseTotale.textContent = remiseTotale.toLocaleString("fr-FR");
+      var total = Math.max(sousTotal - remiseTotale, 0);
+      if (elTotal) elTotal.textContent = total.toLocaleString("fr-FR");
+      var recu = montantRecuInput ? (parseFloat(montantRecuInput.value) || 0) : 0;
+      if (elMontantRecu) elMontantRecu.textContent = recu.toLocaleString("fr-FR");
+      if (elMonnaie) {
+        var diff = recu - total;
+        elMonnaie.textContent = diff.toLocaleString("fr-FR");
+        elMonnaie.classList.toggle("text-danger", diff < 0);
+      }
+    }
+
+    function ajouterLigne() {
+      var lignes = tbody.querySelectorAll(".ligne-vente");
+      var modele = lignes[lignes.length - 1];
+      if (!modele) return;
+      var clone = modele.cloneNode(true);
+      var ancien = indexDe(modele);
+      var nouveau = parseInt(totalField.value, 10) || 0;
+
+      clone.querySelectorAll("input, select").forEach(function (champ) {
+        var name = champ.getAttribute("name");
+        if (name) champ.setAttribute("name", name.replace("lignes-" + ancien + "-", "lignes-" + nouveau + "-"));
+        var id = champ.getAttribute("id");
+        if (id) champ.setAttribute("id", id.replace("id_lignes-" + ancien + "-", "id_lignes-" + nouveau + "-"));
+        if (champ.type === "hidden") champ.value = "";
+      });
+      clone.querySelectorAll("label").forEach(function (label) {
+        var pour = label.getAttribute("for");
+        if (pour) label.setAttribute("for", pour.replace("id_lignes-" + ancien + "-", "id_lignes-" + nouveau + "-"));
+      });
+      var select = clone.querySelector("select");
+      if (select) select.value = "";
+      var del = clone.querySelector("input[name$='-DELETE']");
+      if (del) del.checked = false;
+      clone.style.display = "";
+      var spans = clone.querySelectorAll("[data-affiche-prix-normal], [data-affiche-prix-min]");
+      Array.prototype.forEach.call(spans, function (s) { s.textContent = "—"; });
+      var montant = clone.querySelector(".montant-ligne");
+      if (montant) montant.textContent = "0";
+      totalField.value = nouveau + 1;
+      tbody.appendChild(clone);
+      var nouveauSelect = clone.querySelector("select");
+      if (nouveauSelect) nouveauSelect.focus();
+      calculerTotaux();
+    }
+
+    function supprimerLigne(btn) {
+      var ligne = btn.closest(".ligne-vente");
+      if (!ligne) return;
+      var del = ligne.querySelector("input[name$='-DELETE']");
+      var select = ligne.querySelector("select");
+      if (!select || !select.value) {
+        ligne.remove();
+        totalField.value = (parseInt(totalField.value, 10) || 1) - 1;
+      } else {
+        if (del) del.checked = true;
+        ligne.style.display = "none";
+      }
+      calculerTotaux();
+    }
+
+    form.addEventListener("change", function (event) {
+      if (event.target && event.target.matches("select[data-article-ligne]")) majPrix(event.target);
+      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name$='-remise'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
+    });
+    form.addEventListener("input", function (event) {
+      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name$='-remise'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
+    });
+    if (btnAjouter) btnAjouter.addEventListener("click", ajouterLigne);
+    if (tbody) tbody.addEventListener("click", function (event) {
+      var btn = event.target.closest(".btn-supprimer-ligne");
+      if (btn) supprimerLigne(btn);
+    });
+
+    Array.prototype.forEach.call(tbody.querySelectorAll("select[data-article-ligne]"), majPrix);
+    calculerTotaux();
+  })();
+</script>
 {% endblock %}

@@ -1,0 +1,48 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Ventes</p>
+    <h1>Ventes à valider</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>N°</th>
+          <th>Date</th>
+          <th>Client</th>
+          <th>Succursale</th>
+          <th>Utilisateur</th>
+          <th>Total</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in ventes %}
+        <tr>
+          <td>{{ v.numero }}</td>
+          <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
+          <td>{{ v.client|default:"—" }}</td>
+          <td>{{ v.succursale }}</td>
+          <td>{{ v.utilisateur }}</td>
+          <td>{{ v.total }}</td>
+          <td>{{ v.get_statut_display }}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'boutique:vente_detail' v.pk %}">Voir</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8">Aucune vente en attente de validation.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

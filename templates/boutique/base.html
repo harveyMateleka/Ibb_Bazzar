@@ -12,7 +12,10 @@
       {% if perms.boutique.validate_entree %}
       <a href="{% url 'boutique:entrees_validation' %}" {% if 'validation' in request.resolver_match.url_name %}class="is-active"{% endif %}>Entrées à valider</a>
       {% endif %}
-      <a href="{% url 'boutique:ventes' %}" {% if 'vente' in request.resolver_match.url_name %}class="is-active"{% endif %}>Ventes</a>
+      <a href="{% url 'boutique:ventes' %}" {% if 'vente' in request.resolver_match.url_name and request.resolver_match.url_name != 'ventes_a_valider' %}class="is-active"{% endif %}>Ventes</a>
+      {% if perms.boutique.validate_vente %}
+      <a href="{% url 'boutique:ventes_a_valider' %}" {% if request.resolver_match.url_name == 'ventes_a_valider' %}class="is-active"{% endif %}>Ventes à valider</a>
+      {% endif %}
       <a href="{% url 'boutique:inventaires' %}" {% if 'inventaire' in request.resolver_match.url_name %}class="is-active"{% endif %}>Inventaires</a>
       <a href="{% url 'boutique:mouvements' %}" {% if request.resolver_match.url_name == 'mouvements' %}class="is-active"{% endif %}>Historique</a>
       <a href="{% url 'boutique:alertes' %}" {% if request.resolver_match.url_name == 'alertes' %}class="is-active"{% endif %}>Alertes</a>
