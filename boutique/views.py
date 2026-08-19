@@ -152,10 +152,21 @@ def articles(request):
             Q(code__icontains=q) | Q(designation__icontains=q)
         )
     page_obj = _paginer(request, articles_qs.order_by('code'))
+    articles_page = page_obj.object_list
+    # Variantes par article (texte) pour la colonne « Variantes ».
+    variantes_qs = VarianteArticle.objects.filter(
+        article_id__in=articles_page.values('id')).order_by('code_variante')
+    variantes_par_article = {}
+    for v in variantes_qs:
+        variantes_par_article.setdefault(v.article_id, []).append(v.label)
+    articles = [
+        {'article': a, 'variantes': variantes_par_article.get(a.pk, [])}
+        for a in articles_page
+    ]
     return render(
         request,
         'boutique/articles.html',
-        {'articles': page_obj.object_list, 'page_obj': page_obj, 'q': q},
+        {'articles': articles, 'page_obj': page_obj, 'q': q},
     )
 
 
@@ -483,6 +494,45 @@ def ventes(request):
         request,
         'boutique/ventes.html',
         {'ventes': page_obj.object_list, 'page_obj': page_obj, 'q': q},
+    )
+
+
+@require_permission('boutique.view_vente')
+def ventes_report(request):
+    """Rapport imprimable des ventes (par défaut : les ventes du jour)."""
+    peri = _perimetre(request.user)
+    qs = Vente.objects.select_related('utilisateur', 'succursale').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    ).exclude(statut=Vente.Statut.ANNULEE)
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    if not date_debut and not date_fin:
+        aujourdhui = timezone.localdate().isoformat()
+        date_debut = aujourdhui
+        date_fin = aujourdhui
+    if date_debut:
+        qs = qs.filter(date_vente__date__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date_vente__date__lte=date_fin)
+    qs = qs.order_by('date_vente', 'id')
+    nb_ventes = qs.count()
+    total_montant = qs.aggregate(t=Sum('total'))['t'] or 0
+    total_recu = qs.aggregate(t=Sum('montant_recu'))['t'] or 0
+    return render(
+        request,
+        'boutique/ventes_report.html',
+        {
+            'ventes': qs,
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+            'nb_ventes': nb_ventes,
+            'total_montant': total_montant,
+            'total_recu': total_recu,
+            'monnaie': max(total_recu - total_montant, 0),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
     )
 
 

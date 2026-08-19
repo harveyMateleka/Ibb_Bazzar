@@ -9,6 +9,9 @@
   {% if perms.boutique.create_vente %}
   <a class="btn btn-primary" href="{% url 'boutique:vente_nouvelle' %}">Nouvelle vente</a>
   {% endif %}
+  {% if perms.boutique.view_vente %}
+  <a class="btn btn-ghost" href="{% url 'boutique:ventes_report' %}">Imprimer les ventes du jour</a>
+  {% endif %}
 </div>
 
 <form method="get" class="filters">

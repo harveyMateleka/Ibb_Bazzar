@@ -31,16 +31,20 @@
         </tr>
       </thead>
       <tbody>
-        {% for a in articles %}
+        {% for item in articles %}
+        {% with a=item.article %}
         <tr>
           <td>{{ a.code }}</td>
           <td>{{ a.designation }}</td>
-          <td>{{ a.nb_variantes }}</td>
+          <td>
+            {% for label in item.variantes %}{{ label }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+          </td>
           <td>{{ a.stock_total }}</td>
           <td class="actions">
             <a class="btn btn-ghost" href="{% url 'boutique:article_detail' a.pk %}">Voir les variantes</a>
           </td>
         </tr>
+        {% endwith %}
         {% empty %}
         <tr><td colspan="5">Aucun article boutique dans votre périmètre.</td></tr>
         {% endfor %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Rapport des ventes · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">← Retour aux ventes</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<div class="bon-doc">
+  <div class="bon-head">
+    <h1>Rapport des ventes — Boutique</h1>
+    <p class="bon-meta">
+      Période : du <strong>{{ date_debut }}</strong> au <strong>{{ date_fin }}</strong>
+    </p>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+    <p class="bon-meta"><strong>{{ nb_ventes }}</strong> vente(s)</p>
+  </div>
+
+  <table class="bon-table">
+    <thead>
+      <tr>
+        <th>N°</th>
+        <th>Date</th>
+        <th>Client</th>
+        <th>Paiement</th>
+        <th>Utilisateur</th>
+        <th>Total</th>
+        <th>Montant reçu</th>
+        <th>Statut</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in ventes %}
+      <tr>
+        <td>{{ v.numero }}</td>
+        <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
+        <td>{{ v.client|default:"—" }}</td>
+        <td>{{ v.get_type_paiement_display }}</td>
+        <td>{{ v.utilisateur }}</td>
+        <td>{{ v.total }}</td>
+        <td>{{ v.montant_recu }}</td>
+        <td>{{ v.get_statut_display }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Aucune vente sur cette période.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="bon-sign">
+    <p>Total ventes : <strong>{{ nb_ventes }}</strong></p>
+    <p>Montant total : <strong>{{ total_montant }}</strong></p>
+    <p>Montant reçu : <strong>{{ total_recu }}</strong></p>
+    <p>Monnaie : <strong>{{ monnaie }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

@@ -20,6 +20,7 @@ urlpatterns = [
     path('alertes/', views.alertes, name='alertes'),
     path('ventes/', views.ventes, name='ventes'),
     path('ventes/nouvelle/', views.vente_nouvelle, name='vente_nouvelle'),
+    path('ventes/rapport/', views.ventes_report, name='ventes_report'),
     path('ventes/validation/', views.ventes_a_valider, name='ventes_a_valider'),
     path('ventes/<int:pk>/', views.vente_detail, name='vente_detail'),
     path('ventes/<int:pk>/approuver/', views.vente_approuver, name='vente_approuver'),
