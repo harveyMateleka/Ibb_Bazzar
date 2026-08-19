@@ -301,17 +301,30 @@ class TestBonEntreeBoutique(BoutiqueBase):
         with self.assertRaises(ValidationError):
             BonEntreeService.valider(bon=bon, par=self.responsable)
 
-    def test_validation_reutilise_variante_existante(self):
-        """Valider une entrée dont la variante existe déjà réutilise la variante
-        (aucune erreur d'unicité, aucun doublon)."""
+    def test_validation_refuse_si_variante_existante(self):
+        """Valider une entrée dont la variante est apparue entre-temps est refusé
+        avec une erreur (pas de réutilisation silencieuse, pas de stock créé)."""
         nb_avant = VarianteArticle.objects.filter(article=self.art_tshirt).count()
-        # La variante Noir/M/HOMME existe déjà (fixture `var_noir_m`).
-        bon = self._bon(couleur='Noir')
-        BonEntreeService.valider(bon=bon, par=self.responsable)
+        bon = self._bon(couleur='Vert')  # brouillon créé (Vert n'existe pas encore)
+        # La variante Vert/M/HOMME est créée entre-temps.
+        VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Vert', taille='M', genre='HOMME',
+            par=self.responsable)
+        with self.assertRaises(ValidationError):
+            BonEntreeService.valider(bon=bon, par=self.responsable)
         self.assertEqual(
-            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb_avant)
-        self.assertEqual(
-            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 25)
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb_avant + 1)
+        self.assertFalse(
+            StockBoutique.objects.filter(variante__article=self.art_tshirt).exists())
+
+    def test_creation_refuse_si_variante_existante(self):
+        """Le formulaire d'entrée refuse de soumettre un brouillon si la variante
+        existe déjà."""
+        with self.assertRaises(ValidationError):
+            BonEntreeService.creer(
+                article=self.art_tshirt, succursale=self.succ_a, domaine=self.domaine,
+                quantite=25, cree_par=self.responsable,
+                couleur='Noir', taille='M', genre='HOMME')
 
     def test_liste_entrees_necessite_permission(self):
         """Sans validate_entree (caissier), la liste des entrées est refusée (403)."""

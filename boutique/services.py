@@ -81,6 +81,63 @@ class VarianteService:
                 )
         return variante, cree
 
+    @staticmethod
+    def creer_strict(*, article, couleur='', taille='', genre='',
+                     categorie=None, sous_categorie=None, unite=None,
+                     marque='', matiere='', modele='', rayon='', etagere='',
+                     emplacement='', prix_achat=0, prix_unitaire=0,
+                     prix_minimum=0, prix_maximum=0, seuil_alerte=0,
+                     par=None):
+        """Crée une variante si elle n'existe PAS ; sinon lève une ValidationError.
+
+        Utilisé par l'entrée en stock (pas de réutilisation silencieuse).
+        `get_or_create` gère la course concurrente (IntegrityError → re-get) ;
+        si la variante existe, on la refuse avec un message clair.
+        """
+        defaults = {
+            'categorie': categorie,
+            'sous_categorie': sous_categorie,
+            'unite': unite,
+            'marque': marque,
+            'matiere': matiere,
+            'modele': modele,
+            'rayon': rayon,
+            'etagere': etagere,
+            'emplacement': emplacement,
+            'prix_achat': prix_achat or 0,
+            'prix_unitaire': prix_unitaire or 0,
+            'prix_minimum': prix_minimum or 0,
+            'prix_maximum': prix_maximum or 0,
+            'seuil_alerte': seuil_alerte or 0,
+        }
+        with transaction.atomic():
+            variante, cree = VarianteArticle.objects.get_or_create(
+                article=article,
+                couleur=couleur,
+                taille=taille,
+                genre=genre,
+                defaults=defaults,
+            )
+            if not cree:
+                raise ValidationError(
+                    f'La variante {couleur}/{taille}/{genre} existe déjà pour '
+                    f'{article.code}. Elle ne peut pas être soumise pour validation.'
+                )
+            AuditService.auditer(
+                utilisateur=par,
+                succursale=article.succursale,
+                module='BOUTIQUE',
+                action='variante.create',
+                objet_type='VarianteArticle',
+                objet_id=variante.pk,
+                nouvelle_valeur={
+                    'article': article.code,
+                    'code_variante': variante.code_variante,
+                    'couleur': couleur, 'taille': taille, 'genre': genre,
+                },
+            )
+        return variante
+
 
 class BonEntreeService:
     """Entrée en stock en deux temps : enregistrement (brouillon) puis validation.
@@ -91,6 +148,14 @@ class BonEntreeService:
               categorie=None, sous_categorie=None, unite=None, genre='', taille='',
               couleur='', marque='', modele='', rayon='', etagere='', emplacement='',
               prix_achat=0, prix_unitaire=0, prix_minimum=0, seuil_alerte=0):
+        # Refus immédiat : la variante existe déjà → pas de brouillon soumis.
+        if VarianteArticle.objects.filter(
+            article=article, couleur=couleur, taille=taille, genre=genre,
+        ).exists():
+            raise ValidationError(
+                f'La variante {couleur}/{taille}/{genre} existe déjà pour '
+                f'{article.code}. Elle ne peut pas être soumise pour validation.'
+            )
         with transaction.atomic():
             bon = BonEntreeBoutique.objects.create(
                 numero=BonEntreeBoutique.prochain_numero(),
@@ -133,7 +198,8 @@ class BonEntreeService:
         if not par:
             raise ValidationError('Le validateur est obligatoire.')
         with transaction.atomic():
-            variante, cree = VarianteService.creer_ou_trouver(
+            # Refus si la variante existe déjà (lève une ValidationError).
+            variante = VarianteService.creer_strict(
                 article=bon.article,
                 categorie=bon.categorie,
                 sous_categorie=bon.sous_categorie,

@@ -298,7 +298,8 @@ def entree(request):
             )
         except ValidationError as exc:
             messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        return redirect('boutique:entrees_validation')
+        # Le créateur (magasinier) n'a pas la liste de validation : retour au stock.
+        return redirect('boutique:stocks')
     return render(
         request,
         'boutique/entree_form.html',
