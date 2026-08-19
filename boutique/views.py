@@ -580,6 +580,7 @@ def vente_detail(request, pk):
 @require_permission('boutique.validate_vente')
 @require_POST
 def vente_approuver(request, pk):
+    """Décision du responsable sur une vente : BROUILLON → valider ; PENDING_VALIDATION → approuver."""
     peri = _perimetre(request.user)
     vente = get_object_or_404(
         Vente.objects.filter(
@@ -589,9 +590,19 @@ def vente_approuver(request, pk):
         pk=pk,
     )
     try:
-        VenteService.approuver(vente, par=request.user)
-        messages.success(request, f'Vente {vente.numero} approuvée. Le stock a été diminué.')
-        return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
+        if vente.statut == Vente.Statut.BROUILLON:
+            VenteService.valider(vente, par=request.user)
+        elif vente.statut == Vente.Statut.PENDING_VALIDATION:
+            VenteService.approuver(vente, par=request.user)
+        else:
+            raise ValidationError(
+                f'Cette vente ne peut pas être traitée (statut actuel : '
+                f'{vente.get_statut_display()}).')
+        vente.refresh_from_db()
+        if vente.statut == Vente.Statut.VALIDEE:
+            messages.success(request, f'Vente {vente.numero} validée. Le stock a été diminué.')
+            return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
+        messages.success(request, f'Vente {vente.numero} soumise à validation.')
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
     return redirect('boutique:vente_detail', pk=vente.pk)
