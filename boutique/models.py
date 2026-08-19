@@ -162,6 +162,36 @@ class VarianteArticle(models.Model):
         MIXTE = 'MIXTE', 'Mixte'
         ENFANT = 'ENFANT', 'Enfant'
 
+    class Taille(models.TextChoices):
+        XS = 'XS', 'XS'
+        S = 'S', 'S'
+        M = 'M', 'M'
+        L = 'L', 'L'
+        XL = 'XL', 'XL'
+        XXL = 'XXL', 'XXL'
+        T32 = '32', '32'
+        T34 = '34', '34'
+        T36 = '36', '36'
+        T38 = '38', '38'
+        T40 = '40', '40'
+        T42 = '42', '42'
+        U = 'U', 'U'
+
+    class Couleur(models.TextChoices):
+        NOIR = 'Noir', 'Noir'
+        BLANC = 'Blanc', 'Blanc'
+        BLEU = 'Bleu', 'Bleu'
+        ROUGE = 'Rouge', 'Rouge'
+        VERT = 'Vert', 'Vert'
+        JAUNE = 'Jaune', 'Jaune'
+        GRIS = 'Gris', 'Gris'
+        MARRON = 'Marron', 'Marron'
+        ORANGE = 'Orange', 'Orange'
+        ROSE = 'Rose', 'Rose'
+        VIOLET = 'Violet', 'Violet'
+        BEIGE = 'Beige', 'Beige'
+        MULTI = 'Multi', 'Multi'
+
     article = models.ForeignKey(
         ArticleBoutique,
         on_delete=models.CASCADE,
@@ -197,10 +227,10 @@ class VarianteArticle(models.Model):
         blank=True,
     )
 
-    # Caractéristiques (champs simples, pas de tables dédiées)
+    # Caractéristiques (valeurs contrôlées pour la cohérence)
     genre = models.CharField('genre', max_length=10, choices=Genre.choices, blank=True)
-    taille = models.CharField('taille', max_length=20, blank=True)
-    couleur = models.CharField('couleur', max_length=30, blank=True)
+    taille = models.CharField('taille', max_length=20, choices=Taille.choices, blank=True)
+    couleur = models.CharField('couleur', max_length=30, choices=Couleur.choices, blank=True)
     marque = models.CharField('marque', max_length=50, blank=True)
     matiere = models.CharField('matière', max_length=50, blank=True)
     modele = models.CharField('modèle', max_length=50, blank=True)
@@ -253,7 +283,20 @@ class VarianteArticle(models.Model):
 
     @classmethod
     def prochain_code(cls, article):
-        return f'{article.code}-V{cls.objects.filter(article=article).count() + 1}'
+        """Code variante séquentiel : ARTICLE-V<n> (sans réutiliser un n supprimé)."""
+        prefixe = f'{article.code}-V'
+        dernier = (
+            cls.objects.filter(article=article, code_variante__startswith=prefixe)
+            .order_by('-code_variante')
+            .first()
+        )
+        if dernier:
+            suffixe = dernier.code_variante.rsplit('-V', 1)[-1]
+            try:
+                return f'{prefixe}{int(suffixe) + 1}'
+            except ValueError:
+                pass
+        return f'{prefixe}1'
 
     def save(self, *args, **kwargs):
         if not self.code_variante and self.article_id:
@@ -302,8 +345,10 @@ class BonEntreeBoutique(models.Model):
         related_name='bons_entree', verbose_name='unité')
     genre = models.CharField('genre', max_length=10,
                              choices=VarianteArticle.Genre.choices, blank=True)
-    taille = models.CharField('taille', max_length=20, blank=True)
-    couleur = models.CharField('couleur', max_length=30, blank=True)
+    taille = models.CharField('taille', max_length=20,
+                              choices=VarianteArticle.Taille.choices, blank=True)
+    couleur = models.CharField('couleur', max_length=30,
+                               choices=VarianteArticle.Couleur.choices, blank=True)
     marque = models.CharField('marque', max_length=50, blank=True)
     modele = models.CharField('modèle', max_length=50, blank=True)
     rayon = models.CharField('rayon', max_length=50, blank=True)

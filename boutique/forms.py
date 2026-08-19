@@ -26,11 +26,32 @@ class ArticleBoutiqueForm(forms.ModelForm):
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.contexte = contexte
         if succursales is not None:
             self.fields['succursale'].queryset = succursales
         if domaines is not None:
             self.fields['domaine'].queryset = domaines
         appliquer_contexte(self, contexte)
+
+    def clean(self):
+        cleaned = super().clean()
+        code = cleaned.get('code')
+        if not code:
+            return cleaned
+        # Succursale/domaine du contexte (champs verrouillés = non soumis).
+        succursale = cleaned.get('succursale') or (self.contexte or {}).get('succursale')
+        domaine = cleaned.get('domaine') or (self.contexte or {}).get('domaine')
+        if succursale:
+            qs = ArticleBoutique.objects.filter(code=code, succursale=succursale, domaine=domaine)
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error(
+                    'code',
+                    f'Le code {code} existe déjà pour un article de cette succursale. '
+                    'Choisissez un autre code.',
+                )
+        return cleaned
 
 
 class StockEntreeForm(forms.Form):
@@ -45,10 +66,12 @@ class StockEntreeForm(forms.Form):
     genre = forms.ChoiceField(label='Genre', required=False,
                               choices=VarianteArticle.Genre.choices,
                               widget=forms.Select(attrs={'class': 'input'}))
-    taille = forms.CharField(label='Taille', required=False, max_length=20,
-                             widget=forms.TextInput(attrs={'class': 'input'}))
-    couleur = forms.CharField(label='Couleur', required=False, max_length=30,
-                              widget=forms.TextInput(attrs={'class': 'input'}))
+    taille = forms.ChoiceField(label='Taille', required=False,
+                               choices=VarianteArticle.Taille.choices,
+                               widget=forms.Select(attrs={'class': 'input'}))
+    couleur = forms.ChoiceField(label='Couleur', required=False,
+                                choices=VarianteArticle.Couleur.choices,
+                                widget=forms.Select(attrs={'class': 'input'}))
     marque = forms.CharField(label='Marque', required=False, max_length=50,
                              widget=forms.TextInput(attrs={'class': 'input'}))
     modele = forms.CharField(label='Modèle', required=False, max_length=50,

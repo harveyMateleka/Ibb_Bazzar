@@ -167,6 +167,28 @@ class TestArticleEtVariante(BoutiqueBase):
         self.assertEqual(v.pk, self.var_noir_m.pk)
         self.assertEqual(VarianteArticle.objects.filter(article=self.art_tshirt).count(), 2)
 
+    def test_code_variante_sequentiel(self):
+        """Le code variante est généré automatiquement et séquentiel (V1, V2, V3…)."""
+        v3, _ = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Bleu', taille='M', genre='HOMME',
+            par=self.responsable)
+        v4, _ = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Rouge', taille='M', genre='HOMME',
+            par=self.responsable)
+        self.assertEqual(v3.code_variante, 'TSHIRT-V3')
+        self.assertEqual(v4.code_variante, 'TSHIRT-V4')
+
+    def test_code_article_duplique_refuse(self):
+        """Créer un article avec un code déjà pris (même succursale) est refusé."""
+        self.client.force_login(self.responsable)
+        resp = self.client.post(
+            reverse('boutique:article_nouveau'),
+            {'code': 'TSHIRT', 'designation': 'Doublon', 'devise': 'FC'},
+        )
+        self.assertEqual(
+            ArticleBoutique.objects.filter(code='TSHIRT', succursale=self.succ_a).count(), 1)
+        self.assertContains(resp, 'existe déjà')
+
     def test_sortie_stock_insuffisant_refusee(self):
         self._entrer(self.var_noir_m, 5)
         with self.assertRaises(ValidationError):
