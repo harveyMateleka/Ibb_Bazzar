@@ -323,30 +323,32 @@ class TestBonEntreeBoutique(BoutiqueBase):
         with self.assertRaises(ValidationError):
             BonEntreeService.valider(bon=bon, par=self.responsable)
 
-    def test_validation_refuse_si_variante_existante(self):
-        """Valider une entrée dont la variante est apparue entre-temps est refusé
-        avec une erreur (pas de réutilisation silencieuse, pas de stock créé)."""
+    def test_entree_variante_existante_reeapprovisionnement(self):
+        """Nouvelle entrée sur une variante existante = réapprovisionnement autorisé :
+        brouillon créé, aucune deuxième variante."""
         nb_avant = VarianteArticle.objects.filter(article=self.art_tshirt).count()
-        bon = self._bon(couleur='Vert')  # brouillon créé (Vert n'existe pas encore)
-        # La variante Vert/M/HOMME est créée entre-temps.
-        VarianteService.creer_ou_trouver(
-            article=self.art_tshirt, couleur='Vert', taille='M', genre='HOMME',
-            par=self.responsable)
-        with self.assertRaises(ValidationError):
-            BonEntreeService.valider(bon=bon, par=self.responsable)
+        bon = self._bon(couleur='Noir')  # la variante Noir/M existe (var_noir_m)
+        self.assertEqual(bon.statut, BonEntreeBoutique.Statut.BROUILLON)
         self.assertEqual(
-            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb_avant + 1)
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb_avant)
         self.assertFalse(
-            StockBoutique.objects.filter(variante__article=self.art_tshirt).exists())
+            StockBoutique.objects.filter(variante=self.var_noir_m).exists())
 
-    def test_creation_refuse_si_variante_existante(self):
-        """Le formulaire d'entrée refuse de soumettre un brouillon si la variante
-        existe déjà."""
-        with self.assertRaises(ValidationError):
-            BonEntreeService.creer(
-                article=self.art_tshirt, succursale=self.succ_a, domaine=self.domaine,
-                quantite=25, cree_par=self.responsable,
-                couleur='Noir', taille='M', genre='HOMME')
+    def test_validation_reeapprovisionne_variante_existante(self):
+        """Valider une entrée dont la variante existe réutilise la variante, augmente
+        son stock et crée un mouvement d'entrée — sans jamais créer de doublon."""
+        nb_avant = VarianteArticle.objects.filter(article=self.art_tshirt).count()
+        bon = self._bon(couleur='Noir')  # variante Noir/M existe (var_noir_m)
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        bon.refresh_from_db()
+        self.assertEqual(bon.statut, BonEntreeBoutique.Statut.VALIDE)
+        self.assertEqual(
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb_avant)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 25)
+        self.assertTrue(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='ENTREE').exists())
 
     def test_liste_entrees_necessite_permission(self):
         """Sans validate_entree (caissier), la liste des entrées est refusée (403)."""
