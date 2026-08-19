@@ -11,6 +11,7 @@ from .models import (
     SousCategorieBoutique,
     StockBoutique,
     UniteBoutique,
+    VarianteArticle,
     Vente,
     VenteLigne,
 )
@@ -42,38 +43,45 @@ class FournisseurBoutiqueAdmin(admin.ModelAdmin):
 
 @admin.register(ArticleBoutique)
 class ArticleBoutiqueAdmin(admin.ModelAdmin):
-    list_display = ['code', 'designation', 'taille', 'couleur', 'categorie',
-                    'prix_unitaire', 'prix_minimum', 'prix_maximum',
-                    'succursale', 'en_vente']
-    list_filter = ['categorie', 'genre', 'statut', 'en_vente', 'succursale']
-    search_fields = ['code', 'reference', 'designation']
+    list_display = ['code', 'designation', 'succursale', 'domaine']
+    list_filter = ['succursale', 'domaine']
+    search_fields = ['code', 'designation']
+
+
+@admin.register(VarianteArticle)
+class VarianteArticleAdmin(admin.ModelAdmin):
+    list_display = ['code_variante', 'article', 'couleur', 'taille', 'genre',
+                    'prix_unitaire', 'prix_minimum', 'prix_maximum', 'seuil_alerte', 'statut']
+    list_filter = ['genre', 'statut', 'categorie', 'en_vente']
+    search_fields = ['code_variante', 'article__code', 'article__designation']
+    readonly_fields = ['code_variante']
 
 
 @admin.register(StockBoutique)
 class StockBoutiqueAdmin(admin.ModelAdmin):
-    list_display = ['article', 'succursale', 'domaine', 'quantite', 'seuil_alerte']
+    list_display = ['variante', 'succursale', 'domaine', 'quantite']
     list_filter = ['succursale', 'domaine']
-    search_fields = ['article__code', 'article__designation']
+    search_fields = ['variante__article__code', 'variante__article__designation']
 
 
 @admin.register(MouvementStockBoutique)
 class MouvementStockBoutiqueAdmin(admin.ModelAdmin):
-    list_display = ['date_mouvement', 'article', 'type', 'quantite',
+    list_display = ['date_mouvement', 'variante', 'type', 'quantite',
                     'stock_avant', 'stock_apres', 'utilisateur', 'motif']
     list_filter = ['type', 'succursale', 'domaine']
-    search_fields = ['article__code', 'reference', 'motif']
+    search_fields = ['variante__article__code', 'reference', 'motif']
 
 
 @admin.register(AlerteStockBoutique)
 class AlerteStockBoutiqueAdmin(admin.ModelAdmin):
-    list_display = ['date_creation', 'article', 'type', 'seuil',
+    list_display = ['date_creation', 'variante', 'type', 'seuil',
                     'quantite_actuelle', 'statut']
     list_filter = ['type', 'statut']
 
 
 @admin.register(VenteLigne)
 class VenteLigneAdmin(admin.ModelAdmin):
-    list_display = ['vente', 'article', 'quantite', 'prix_unitaire', 'total']
+    list_display = ['vente', 'variante', 'quantite', 'prix_unitaire', 'total']
 
 
 @admin.register(Vente)
@@ -94,6 +102,6 @@ class InventaireBoutiqueAdmin(admin.ModelAdmin):
 
 @admin.register(LigneInventaireBoutique)
 class LigneInventaireBoutiqueAdmin(admin.ModelAdmin):
-    list_display = ['inventaire', 'article', 'stock_systeme', 'stock_physique', 'ecart']
+    list_display = ['inventaire', 'variante', 'stock_systeme', 'stock_physique', 'ecart']
     list_filter = ['inventaire__statut']
-    search_fields = ['article__code']
+    search_fields = ['variante__article__code']

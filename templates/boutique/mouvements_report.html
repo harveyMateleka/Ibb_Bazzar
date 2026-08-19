@@ -42,7 +42,7 @@
       {% for m in mouvements %}
       <tr>
         <td>{{ m.date_mouvement|date:"d/m/Y H:i" }}</td>
-        <td>{{ m.article.code }}</td>
+        <td>{{ m.variante.article.code }}</td>
         <td>{{ m.get_type_display }}</td>
         <td>{{ m.quantite }}</td>
         <td>{{ m.stock_avant|default:"—" }}</td>

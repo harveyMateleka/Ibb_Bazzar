@@ -42,11 +42,11 @@
       <tbody>
         {% for stock in stocks %}
         <tr class="{{ stock.classe_stock }}">
-          <td>{{ stock.article.code }}</td>
-          <td>{{ stock.article.designation }}</td>
-          <td>{% with a=stock.article %}{{ a.taille }}/{{ a.couleur }}{% if a.type %} ({{ a.type }}){% endif %}{% endwith %}</td>
-          <td>{{ stock.article.categorie }}</td>
-          <td>{{ stock.article.prix_unitaire }}</td>
+          <td>{{ stock.variante.article.code }}</td>
+          <td>{{ stock.variante.article.designation }}</td>
+          <td>{{ stock.variante.label }}</td>
+          <td>{{ stock.variante.categorie }}</td>
+          <td>{{ stock.variante.prix_unitaire }}</td>
           <td>{{ stock.quantite }}</td>
           <td>{{ stock.seuil_alerte }}</td>
           <td>{{ stock.niveau_stock }}</td>
@@ -75,7 +75,7 @@
       <tbody>
         {% for alerte in alertes %}
         <tr class="{{ alerte.classe_stock }}">
-          <td>{{ alerte.article.code }}</td>
+          <td>{{ alerte.variante.article.code }}</td>
           <td>{{ alerte.niveau_stock }}</td>
           <td>{{ alerte.quantite_actuelle }}</td>
           <td>{{ alerte.seuil }}</td>

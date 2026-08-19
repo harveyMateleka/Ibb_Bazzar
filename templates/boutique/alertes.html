@@ -23,7 +23,7 @@
       <tbody>
         {% for alerte in alertes %}
         <tr class="{{ alerte.classe_stock }}">
-          <td>{{ alerte.article.code }} — {{ alerte.article.designation }}</td>
+          <td>{{ alerte.variante.article.code }} — {{ alerte.variante.article.designation }}</td>
           <td>{{ alerte.niveau_stock }}</td>
           <td>{{ alerte.quantite_actuelle }}</td>
           <td>{{ alerte.seuil }}</td>

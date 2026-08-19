@@ -55,10 +55,10 @@
           <tr class="ligne-vente">
             <td>
               {{ form.id }}
-              {{ form.article }}
+              {{ form.variante }}
               <p class="help">Prix normal : <strong data-affiche-prix-normal>—</strong>
                 · Prix minimum : <strong data-affiche-prix-min>—</strong>
-                {{ form.article.errors }}</p>
+                {{ form.variante.errors }}</p>
             </td>
             <td>{{ form.quantite }}{{ form.quantite.errors }}</td>
             <td>{{ form.prix_unitaire }}{{ form.prix_unitaire.errors }}</td>
@@ -239,7 +239,7 @@
       <tbody>
         {% for ligne in lignes %}
         <tr>
-          <td>{{ ligne.article }}</td>
+          <td>{{ ligne.variante.article.code }} — {{ ligne.variante.label }}</td>
           <td>{{ ligne.quantite }}</td>
           <td>{{ ligne.prix_unitaire }}</td>
           <td>{{ ligne.total }}</td>

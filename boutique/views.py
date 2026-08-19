@@ -1,10 +1,8 @@
 """Module Boutique — vues fonctions (FBV).
 
-Le module est rattaché au domaine d'activité BOUTIQUE : le périmètre d'accès
-est restreint aux succursales où l'utilisateur est affecté pour ce domaine.
-
-La Boutique est indépendante de l'Approvisionnement : son stock, ses
-mouvements, ses alertes et ses inventaires lui sont propres.
+Architecture : Article → VarianteArticle → StockBoutique → MouvementStockBoutique.
+Périmètre = succursales affectées au domaine BOUTIQUE ; succursale/domaine
+auto + readonly dans les formulaires via `contexte_actif()` / `appliquer_contexte`.
 """
 
 from django.contrib import messages
@@ -27,6 +25,7 @@ from .forms import (
     InventaireForm,
     LigneInventaireFormSet,
     StockEntreeForm,
+    VarianteArticleForm,
     VenteForm,
     VenteLigneFormSet,
 )
@@ -37,9 +36,15 @@ from .models import (
     InventaireBoutique,
     MouvementStockBoutique,
     StockBoutique,
+    VarianteArticle,
     Vente,
 )
-from .services import InventaireBoutiqueService, StockBoutiqueService, VenteService
+from .services import (
+    InventaireBoutiqueService,
+    StockBoutiqueService,
+    VarianteService,
+    VenteService,
+)
 
 
 def _perimetre(user):
@@ -55,11 +60,16 @@ def _perimetre(user):
 
 
 def _articles_perimetre(peri):
-    return ArticleBoutique.objects.select_related(
-        'categorie', 'sous_categorie', 'unite'
-    ).filter(
+    return ArticleBoutique.objects.filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
+    )
+
+
+def _variantes_perimetre(peri):
+    return VarianteArticle.objects.select_related('article', 'categorie', 'unite').filter(
+        article__succursale_id__in=peri['succursales_ids'],
+        article__domaine_id=peri['domaine_id'],
     )
 
 
@@ -67,15 +77,44 @@ def _paginer(request, qs, par_page=25):
     return Paginator(qs, par_page).get_page(request.GET.get('page'))
 
 
+def _filtrer_mouvements(request, peri):
+    qs = MouvementStockBoutique.objects.select_related(
+        'variante', 'variante__article', 'utilisateur').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    )
+    filtres = {
+        'type': request.GET.get('type', ''),
+        'q': request.GET.get('q', ''),
+        'date_debut': request.GET.get('date_debut', ''),
+        'date_fin': request.GET.get('date_fin', ''),
+    }
+    if filtres['type']:
+        qs = qs.filter(type=filtres['type'])
+    if filtres['q']:
+        qs = qs.filter(
+            Q(variante__article__code__icontains=filtres['q'])
+            | Q(variante__article__designation__icontains=filtres['q'])
+            | Q(variante__couleur__icontains=filtres['q'])
+            | Q(reference__icontains=filtres['q'])
+            | Q(motif__icontains=filtres['q'])
+        )
+    if filtres['date_debut']:
+        qs = qs.filter(date_mouvement__date__gte=filtres['date_debut'])
+    if filtres['date_fin']:
+        qs = qs.filter(date_mouvement__date__lte=filtres['date_fin'])
+    return qs, filtres
+
+
 @require_permission('boutique.view_boutique')
 def tableau_de_bord(request):
     peri = _perimetre(request.user)
     articles = _articles_perimetre(peri)
-    stocks = StockBoutique.objects.select_related('article').filter(
+    stocks = StockBoutique.objects.select_related('variante', 'variante__article').filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
-    alertes = AlerteStockBoutique.objects.select_related('stock__article').filter(
+    alertes = AlerteStockBoutique.objects.select_related('stock__variante').filter(
         stock__succursale_id__in=peri['succursales_ids'],
         stock__domaine_id=peri['domaine_id'],
         statut=AlerteStockBoutique.Statut.ACTIVE,
@@ -111,25 +150,13 @@ def articles(request):
     q = request.GET.get('q', '')
     if q:
         articles_qs = articles_qs.filter(
-            Q(code__icontains=q)
-            | Q(designation__icontains=q)
-            | Q(reference__icontains=q)
+            Q(code__icontains=q) | Q(designation__icontains=q)
         )
     page_obj = _paginer(request, articles_qs.order_by('code'))
-    stocks = StockBoutique.objects.filter(
-        article_id__in=page_obj.object_list.values('id'),
-        succursale_id__in=peri['succursales_ids'],
-        domaine_id=peri['domaine_id'],
-    )
-    stocks_par_article = {s.article_id: s for s in stocks}
-    liste = [
-        {'article': a, 'stock': stocks_par_article.get(a.pk)}
-        for a in page_obj.object_list
-    ]
     return render(
         request,
         'boutique/articles.html',
-        {'articles': liste, 'page_obj': page_obj, 'q': q},
+        {'articles': page_obj.object_list, 'page_obj': page_obj, 'q': q},
     )
 
 
@@ -163,8 +190,8 @@ def article_nouveau(request):
             objet_id=article.pk,
             nouvelle_valeur={'code': article.code, 'designation': article.designation},
         )
-        messages.success(request, f'Article {article.code} créé. Pensez à faire une entrée en stock.')
-        return redirect('boutique:articles')
+        messages.success(request, f'Article {article.code} créé. Ajoutez une variante via l’entrée en stock.')
+        return redirect('boutique:article_detail', pk=article.pk)
     return render(
         request,
         'boutique/article_form.html',
@@ -175,22 +202,65 @@ def article_nouveau(request):
 @require_permission('boutique.view_stock')
 def article_detail(request, pk):
     peri = _perimetre(request.user)
-    article = get_object_or_404(
-        ArticleBoutique.objects.select_related('categorie', 'sous_categorie', 'unite').filter(
-            succursale_id__in=peri['succursales_ids'],
-            domaine_id=peri['domaine_id'],
-        ),
-        pk=pk,
-    )
-    stock = StockBoutique.objects.filter(
-        article=article,
+    article = get_object_or_404(_articles_perimetre(peri), pk=pk)
+    variantes_qs = article.variantes.select_related('categorie', 'unite')
+    stocks = StockBoutique.objects.filter(
+        variante__article=article,
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
-    ).first()
+    )
+    stocks_par_variante = {s.variante_id: s for s in stocks}
+    variantes = [
+        {'variante': v, 'stock': stocks_par_variante.get(v.pk)}
+        for v in variantes_qs
+    ]
     return render(
         request,
         'boutique/article_detail.html',
-        {'article': article, 'stock': stock},
+        {'article': article, 'variantes': variantes},
+    )
+
+
+@require_permission('boutique.adjust_stock')
+def variante_nouvelle(request):
+    peri = _perimetre(request.user)
+    formulaire = VarianteArticleForm(
+        request.POST if request.method == 'POST' else None,
+        articles=_articles_perimetre(peri),
+    )
+    if request.method == 'POST' and formulaire.is_valid():
+        donnees = formulaire.cleaned_data
+        variante, cree = VarianteService.creer_ou_trouver(
+            article=donnees['article'],
+            categorie=donnees.get('categorie'),
+            sous_categorie=donnees.get('sous_categorie'),
+            unite=donnees.get('unite'),
+            genre=donnees.get('genre', ''),
+            taille=donnees.get('taille', ''),
+            couleur=donnees.get('couleur', ''),
+            marque=donnees.get('marque', ''),
+            matiere=donnees.get('matiere', ''),
+            modele=donnees.get('modele', ''),
+            rayon=donnees.get('rayon', ''),
+            etagere=donnees.get('etagere', ''),
+            emplacement=donnees.get('emplacement', ''),
+            prix_achat=donnees.get('prix_achat', 0),
+            prix_unitaire=donnees.get('prix_unitaire', 0),
+            prix_minimum=donnees.get('prix_minimum', 0),
+            prix_maximum=donnees.get('prix_maximum', 0),
+            seuil_alerte=donnees.get('seuil_alerte', 0),
+            par=request.user,
+        )
+        messages.success(
+            request,
+            f'Variante {variante.code_variante} créée.'
+            if cree else f'Variante {variante.code_variante} déjà existante, réutilisée.'
+        )
+        return redirect('boutique:article_detail', pk=donnees['article'].pk)
+    return render(
+        request,
+        'boutique/variante_form.html',
+        {'form': formulaire},
     )
 
 
@@ -198,7 +268,7 @@ def article_detail(request, pk):
 def stocks(request):
     peri = _perimetre(request.user)
     stocks_qs = StockBoutique.objects.select_related(
-        'article', 'article__categorie', 'article__unite'
+        'variante', 'variante__article', 'variante__categorie', 'variante__unite'
     ).filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
@@ -207,18 +277,23 @@ def stocks(request):
     etat = request.GET.get('etat', '')
     if q:
         stocks_qs = stocks_qs.filter(
-            Q(article__code__icontains=q) | Q(article__designation__icontains=q)
+            Q(variante__article__code__icontains=q)
+            | Q(variante__article__designation__icontains=q)
         )
     if etat == 'rupture':
         stocks_qs = stocks_qs.filter(quantite__lte=0)
     elif etat == 'alerte':
-        stocks_qs = stocks_qs.filter(seuil_alerte__gt=0, quantite__lte=F('seuil_alerte'))
+        stocks_qs = stocks_qs.filter(variante__seuil_alerte__gt=0, quantite__lte=F('variante__seuil_alerte'))
     elif etat == 'vigilance':
         stocks_qs = stocks_qs.filter(
-            seuil_alerte__gt=0, seuil_alerte__lt=F('quantite'), quantite__lte=F('seuil_alerte') + 10)
+            variante__seuil_alerte__gt=0,
+            variante__seuil_alerte__lt=F('quantite'),
+            quantite__lte=F('variante__seuil_alerte') + 10,
+        )
     elif etat == 'disponible':
-        stocks_qs = stocks_qs.exclude(seuil_alerte__gt=0, quantite__lte=F('seuil_alerte'))
-    page_obj = _paginer(request, stocks_qs.order_by('article__code'))
+        stocks_qs = stocks_qs.exclude(
+            variante__seuil_alerte__gt=0, quantite__lte=F('variante__seuil_alerte'))
+    page_obj = _paginer(request, stocks_qs.order_by('variante__article__code'))
     return render(
         request,
         'boutique/stocks.html',
@@ -229,33 +304,48 @@ def stocks(request):
 @require_permission('boutique.adjust_stock')
 def entree(request):
     peri = _perimetre(request.user)
-    articles = _articles_perimetre(peri)
     formulaire = StockEntreeForm(
         request.POST if request.method == 'POST' else None,
-        articles=articles,
+        articles=_articles_perimetre(peri),
     )
     if request.method == 'POST' and formulaire.is_valid():
-        article = formulaire.cleaned_data['article']
-        quantite = formulaire.cleaned_data['quantite']
-        seuil = formulaire.cleaned_data.get('seuil_alerte')
+        d = formulaire.cleaned_data
+        article = d['article']
         try:
-            if seuil is not None:
-                stock = StockBoutique.obtenir(article, article.succursale, article.domaine)
-                stock.seuil_alerte = seuil
-                stock.save(update_fields=['seuil_alerte'])
-            StockBoutiqueService.entrer(
+            variante, cree = VarianteService.creer_ou_trouver(
                 article=article,
-                succursale=article.succursale,
-                domaine=article.domaine,
-                quantite=quantite,
-                utilisateur=request.user,
-                reference=formulaire.cleaned_data.get('reference', ''),
-                motif=formulaire.cleaned_data.get('motif', ''),
+                categorie=d.get('categorie'),
+                unite=d.get('unite'),
+                genre=d.get('genre', ''),
+                taille=d.get('taille', ''),
+                couleur=d.get('couleur', ''),
+                marque=d.get('marque', ''),
+                modele=d.get('modele', ''),
+                rayon=d.get('rayon', ''),
+                etagere=d.get('etagere', ''),
+                emplacement=d.get('emplacement', ''),
+                prix_achat=d.get('prix_achat', 0),
+                prix_unitaire=d.get('prix_unitaire', 0),
+                prix_minimum=d.get('prix_minimum', 0),
+                prix_maximum=d.get('prix_maximum', 0),
+                seuil_alerte=d.get('seuil_alerte', 0),
+                par=request.user,
             )
-            messages.success(request, f'Entrée de {quantite} pour {article.code} enregistrée.')
+            StockBoutiqueService.entrer(
+                variante=variante,
+                quantite=d['quantite'],
+                utilisateur=request.user,
+                reference=d.get('reference', ''),
+                motif=d.get('motif', ''),
+            )
+            messages.success(
+                request,
+                f'Entrée de {d["quantite"]} pour {variante.code_variante} '
+                f'({"créée" if cree else "variante existante"}).',
+            )
         except ValidationError as exc:
             messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        return redirect('boutique:entree')
+        return redirect('boutique:stocks')
     return render(
         request,
         'boutique/entree_form.html',
@@ -263,40 +353,11 @@ def entree(request):
     )
 
 
-def _filtrer_mouvements(request, peri):
-    """Mouvements du périmètre, filtrés par type, recherche et période."""
-    qs = MouvementStockBoutique.objects.select_related('article', 'utilisateur').filter(
-        succursale_id__in=peri['succursales_ids'],
-        domaine_id=peri['domaine_id'],
-    )
-    filtres = {
-        'type': request.GET.get('type', ''),
-        'q': request.GET.get('q', ''),
-        'date_debut': request.GET.get('date_debut', ''),
-        'date_fin': request.GET.get('date_fin', ''),
-    }
-    if filtres['type']:
-        qs = qs.filter(type=filtres['type'])
-    if filtres['q']:
-        qs = qs.filter(
-            Q(article__code__icontains=filtres['q'])
-            | Q(article__designation__icontains=filtres['q'])
-            | Q(reference__icontains=filtres['q'])
-            | Q(motif__icontains=filtres['q'])
-        )
-    if filtres['date_debut']:
-        qs = qs.filter(date_mouvement__date__gte=filtres['date_debut'])
-    if filtres['date_fin']:
-        qs = qs.filter(date_mouvement__date__lte=filtres['date_fin'])
-    return qs, filtres
-
-
 @require_permission('boutique.view_stock')
 def mouvements(request):
     peri = _perimetre(request.user)
     qs, filtres = _filtrer_mouvements(request, peri)
-    paginator = Paginator(qs, 25)
-    page = paginator.get_page(request.GET.get('page'))
+    page = _paginer(request, qs)
     return render(
         request,
         'boutique/historique.html',
@@ -313,8 +374,6 @@ def mouvements(request):
 
 @require_permission('boutique.view_stock')
 def mouvements_report(request):
-    """Rapport imprimable : toutes les lignes de mouvement correspondant aux
-    filtres (type, recherche, période début/fin), avec totaux par type."""
     peri = _perimetre(request.user)
     qs, filtres = _filtrer_mouvements(request, peri)
     total_entrees = qs.filter(type=MouvementStockBoutique.Type.ENTREE).aggregate(
@@ -343,7 +402,7 @@ def mouvements_report(request):
 @require_permission('boutique.view_stock')
 def alertes(request):
     peri = _perimetre(request.user)
-    alertes_qs = AlerteStockBoutique.objects.select_related('stock__article').filter(
+    alertes_qs = AlerteStockBoutique.objects.select_related('stock__variante').filter(
         stock__succursale_id__in=peri['succursales_ids'],
         stock__domaine_id=peri['domaine_id'],
         statut=AlerteStockBoutique.Statut.ACTIVE,
@@ -399,7 +458,6 @@ def vente_nouvelle(request):
         else:
             succursale = formulaire.cleaned_data.get('succursale')
             domaine_v = formulaire.cleaned_data.get('domaine')
-            # Succursale/domaine imposés depuis le périmètre (champs verrouillés).
             if contexte and contexte['verrouille']:
                 succursale = contexte['succursale']
                 domaine_v = contexte['domaine']
@@ -430,7 +488,7 @@ def vente_detail(request, pk):
         ),
         pk=pk,
     )
-    lignes = vente.lignes.select_related('article', 'mouvement')
+    lignes = vente.lignes.select_related('variante', 'variante__article', 'mouvement')
     formset = None
     encaissement_form = None
     if vente.statut == Vente.Statut.BROUILLON:
@@ -456,7 +514,7 @@ def vente_detail(request, pk):
                     if ruptures:
                         messages.error(
                             request,
-                            'Stock insuffisant pour un ou plusieurs articles : '
+                            'Stock insuffisant pour une ou plusieurs variantes : '
                             + ', '.join(
                                 f'{r["article"].code} (dispo {r["stock"]})'
                                 for r in ruptures
@@ -466,8 +524,7 @@ def vente_detail(request, pk):
                     try:
                         VenteService.valider(vente, par=request.user)
                     except ValidationError as exc:
-                        messages.error(
-                            request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+                        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
                         return redirect('boutique:vente_detail', pk=vente.pk)
                     messages.success(request, 'Vente enregistrée avec succès.')
                     return redirect(
@@ -504,7 +561,7 @@ def vente_valider(request, pk):
     if ruptures:
         messages.error(
             request,
-            'Stock insuffisant pour un ou plusieurs articles : '
+            'Stock insuffisant pour une ou plusieurs variantes : '
             + ', '.join(f'{r["article"].code} (dispo {r["stock"]})' for r in ruptures),
         )
         return redirect('boutique:vente_detail', pk=vente.pk)
@@ -513,9 +570,7 @@ def vente_valider(request, pk):
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
         return redirect('boutique:vente_detail', pk=vente.pk)
-    messages.success(
-        request, f'Vente {vente.numero} validée. Le stock a été diminué.'
-    )
+    messages.success(request, f'Vente {vente.numero} validée. Le stock a été diminué.')
     return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
 
 
@@ -553,7 +608,7 @@ def vente_imprimer(request, pk):
         'boutique/vente_impression.html',
         {
             'vente': vente,
-            'lignes': vente.lignes.select_related('article'),
+            'lignes': vente.lignes.select_related('variante', 'variante__article'),
         },
     )
 
@@ -631,19 +686,20 @@ def inventaire_detail(request, pk):
         ),
         pk=pk,
     )
-    lignes_qs = inventaire.lignes.select_related('article', 'article__categorie', 'mouvement')
+    lignes_qs = inventaire.lignes.select_related(
+        'variante', 'variante__article', 'variante__categorie', 'mouvement')
 
-    # Filtres (affichage / rapport de lignes — lisible même sur beaucoup d'articles).
     q = request.GET.get('q', '')
     categorie = request.GET.get('categorie', '')
     ecart = request.GET.get('ecart', '')
     motif = request.GET.get('motif', '')
     if q:
         lignes_qs = lignes_qs.filter(
-            Q(article__code__icontains=q) | Q(article__designation__icontains=q)
+            Q(variante__article__code__icontains=q)
+            | Q(variante__article__designation__icontains=q)
         )
     if categorie:
-        lignes_qs = lignes_qs.filter(article__categorie_id=categorie)
+        lignes_qs = lignes_qs.filter(variante__categorie_id=categorie)
     if ecart == 'avec':
         lignes_qs = lignes_qs.exclude(stock_systeme=F('stock_physique'))
     elif ecart == 'sans':
@@ -654,8 +710,6 @@ def inventaire_detail(request, pk):
     formset = None
     page_obj = None
     if inventaire.statut == InventaireBoutique.Statut.BROUILLON:
-        # Le tableau est le formulaire : TOUTES les lignes sont éditées d'un coup
-        # (un formulaire ne peut pas être paginé), ce qui permet le comptage.
         formset = LigneInventaireFormSet(
             request.POST if request.method == 'POST' else None,
             instance=inventaire,
@@ -666,13 +720,11 @@ def inventaire_detail(request, pk):
             return redirect('boutique:inventaire_detail', pk=inventaire.pk)
         lignes = lignes_qs
     else:
-        # Vue validée : lignes en lecture seule, paginées et filtrables.
-        page_obj = _paginer(request, lignes_qs.order_by('article__code'))
+        page_obj = _paginer(request, lignes_qs.order_by('variante__article__code'))
         lignes = page_obj.object_list
 
     categories = CategorieBoutique.objects.filter(
-        pk__in=lignes_qs.values('article__categorie')
-    )
+        pk__in=lignes_qs.values('variante__categorie'))
     return render(
         request,
         'boutique/inventaire_detail.html',
@@ -707,7 +759,7 @@ def inventaire_valider(request, pk):
         messages.success(
             request,
             f'Inventaire {inventaire.numero} validé avec succès. '
-            f'{nb_ajustes} article(s) présentent un écart et ont été ajustés.',
+            f'{nb_ajustes} variante(s) présentent un écart et ont été ajustées.',
         )
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))

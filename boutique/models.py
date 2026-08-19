@@ -1,14 +1,16 @@
-"""Module Boutique — module métier totalement indépendant de l'Approvisionnement.
+"""Module Boutique — architecture Article → Variante → Stock → Mouvement.
 
-Chaque notion a sa responsabilité :
-  ArticleBoutique   décrit le produit (pas de stock),
-  StockBoutique     conserve la quantité courante (une ligne par article+contexte),
-  MouvementStockBoutique trace chaque variation (journal),
-  AlerteStockBoutique signale les situations de stock à surveiller,
-  Vente / VenteLigne représente l'opération commerciale,
-  InventaireBoutique compare le stock théorique au stock physique.
+Niveaux de responsabilité :
+  ArticleBoutique     article générique / parent (identification seule),
+  VarianteArticle     version concrète du produit (caractéristiques + prix + seuil),
+  StockBoutique       quantité courante d'une variante (par contexte),
+  MouvementStockBoutique journal de chaque variation d'une variante,
+  AlerteStockBoutique signalé au niveau du stock de la variante,
+  Vente / VenteLigne  opération commerciale référençant des variantes,
+  InventaireBoutique  comparaison théorique / physique au niveau de la variante.
 
-Aucune vente boutique ne modifie le stock du module Approvisionnement.
+Le stock global d'un Article n'est qu'une agrégation des stocks de ses variantes.
+Aucune vente boutique ne touche le stock du module Approvisionnement.
 """
 
 from decimal import Decimal
@@ -93,69 +95,14 @@ class FournisseurBoutique(models.Model):
 
 
 class ArticleBoutique(models.Model):
-    """Produit de la boutique. Représente l'article, PAS son stock.
+    """Article générique / parent : uniquement les informations d'identification.
 
-    La création d'un article n'est pas une entrée en stock : le stock est créé
-    et alimenté via `StockBoutique` / `MouvementStockBoutique`.
+    Toute caractéristique de produit, prix ou stock vit au niveau des
+    `VarianteArticle` / `StockBoutique`.
     """
 
-    class Statut(models.TextChoices):
-        ACTIF = 'ACTIF', 'Actif'
-        INACTIF = 'INACTIF', 'Inactif'
-
-    class Genre(models.TextChoices):
-        HOMME = 'HOMME', 'Homme'
-        FEMME = 'FEMME', 'Femme'
-        MIXTE = 'MIXTE', 'Mixte'
-        ENFANT = 'ENFANT', 'Enfant'
-
-    # Identification
     code = models.CharField('code', max_length=50)
-    reference = models.CharField('référence / SKU', max_length=50, blank=True)
     designation = models.CharField('désignation', max_length=200)
-    description = models.TextField('description', blank=True)
-    type = models.CharField('type', max_length=50, blank=True)
-
-    # Classification (référentiels)
-    categorie = models.ForeignKey(
-        CategorieBoutique,
-        on_delete=models.PROTECT,
-        related_name='articles',
-        verbose_name='catégorie',
-        null=True,
-        blank=True,
-    )
-    sous_categorie = models.ForeignKey(
-        SousCategorieBoutique,
-        on_delete=models.PROTECT,
-        related_name='articles',
-        verbose_name='sous-catégorie',
-        null=True,
-        blank=True,
-    )
-    unite = models.ForeignKey(
-        UniteBoutique,
-        on_delete=models.PROTECT,
-        related_name='articles',
-        verbose_name='unité',
-        null=True,
-        blank=True,
-    )
-
-    # Caractéristiques (champs simples, pas de tables dédiées)
-    genre = models.CharField('genre', max_length=10, choices=Genre.choices, blank=True)
-    taille = models.CharField('taille', max_length=20, blank=True)
-    couleur = models.CharField('couleur', max_length=30, blank=True)
-    marque = models.CharField('marque', max_length=50, blank=True)
-    matiere = models.CharField('matière', max_length=50, blank=True)
-    modele = models.CharField('modèle', max_length=50, blank=True)
-
-    # Localisation physique (champs simples)
-    rayon = models.CharField('rayon', max_length=50, blank=True)
-    etagere = models.CharField('étagère', max_length=50, blank=True)
-    emplacement = models.CharField('emplacement', max_length=50, blank=True)
-
-    # Contexte centralisé
     succursale = models.ForeignKey(
         'core.Succursale',
         on_delete=models.PROTECT,
@@ -170,32 +117,6 @@ class ArticleBoutique(models.Model):
         null=True,
         blank=True,
     )
-
-    # Tarifs — règle : prix_minimum ≤ prix_unitaire ≤ prix_maximum
-    prix_achat = models.DecimalField('prix d’achat', max_digits=12, decimal_places=2, default=Decimal('0'))
-    prix_unitaire = models.DecimalField('prix de vente', max_digits=12, decimal_places=2, default=Decimal('0'))
-    prix_minimum = models.DecimalField(
-        'prix minimum',
-        max_digits=12,
-        decimal_places=2,
-        default=Decimal('0'),
-        help_text='Prix plancher : aucune vente en dessous de ce prix.',
-    )
-    prix_maximum = models.DecimalField(
-        'prix maximum',
-        max_digits=12,
-        decimal_places=2,
-        default=Decimal('0'),
-        help_text='Prix plafond : aucune vente au-dessus de ce prix.',
-    )
-
-    statut = models.CharField(
-        'statut',
-        max_length=10,
-        choices=Statut.choices,
-        default=Statut.ACTIF,
-    )
-    en_vente = models.BooleanField('en vente', default=True)
     date_creation = models.DateTimeField('créé le', default=timezone.now)
     date_modification = models.DateTimeField('modifié le', auto_now=True)
 
@@ -206,10 +127,112 @@ class ArticleBoutique(models.Model):
         unique_together = [('code', 'succursale', 'domaine')]
 
     def __str__(self):
-        variantes = ' / '.join(p for p in (self.taille, self.couleur) if p)
-        return f'{self.code} — {self.designation}' + (
-            f' ({variantes})' if variantes else ''
+        return f'{self.code} — {self.designation}'
+
+    @property
+    def stock_total(self):
+        """Stock total = agrégation des stocks de toutes les variantes."""
+        return sum(
+            s.quantite
+            for s in StockBoutique.objects.filter(variante__article=self)
         )
+
+    @property
+    def nb_variantes(self):
+        return self.variantes.count()
+
+
+class VarianteArticle(models.Model):
+    """Version concrète et identifiable d'un article (ex. Noir / M / Homme)."""
+
+    class Statut(models.TextChoices):
+        ACTIF = 'ACTIF', 'Actif'
+        INACTIF = 'INACTIF', 'Inactif'
+
+    class Genre(models.TextChoices):
+        HOMME = 'HOMME', 'Homme'
+        FEMME = 'FEMME', 'Femme'
+        MIXTE = 'MIXTE', 'Mixte'
+        ENFANT = 'ENFANT', 'Enfant'
+
+    article = models.ForeignKey(
+        ArticleBoutique,
+        on_delete=models.CASCADE,
+        related_name='variantes',
+        verbose_name='article',
+    )
+    code_variante = models.CharField('code variante', max_length=50, blank=True,
+                                     editable=False)
+
+    # Classification (référentiels)
+    categorie = models.ForeignKey(
+        CategorieBoutique,
+        on_delete=models.PROTECT,
+        related_name='variantes',
+        verbose_name='catégorie',
+        null=True,
+        blank=True,
+    )
+    sous_categorie = models.ForeignKey(
+        SousCategorieBoutique,
+        on_delete=models.PROTECT,
+        related_name='variantes',
+        verbose_name='sous-catégorie',
+        null=True,
+        blank=True,
+    )
+    unite = models.ForeignKey(
+        UniteBoutique,
+        on_delete=models.PROTECT,
+        related_name='variantes',
+        verbose_name='unité',
+        null=True,
+        blank=True,
+    )
+
+    # Caractéristiques (champs simples, pas de tables dédiées)
+    genre = models.CharField('genre', max_length=10, choices=Genre.choices, blank=True)
+    taille = models.CharField('taille', max_length=20, blank=True)
+    couleur = models.CharField('couleur', max_length=30, blank=True)
+    marque = models.CharField('marque', max_length=50, blank=True)
+    matiere = models.CharField('matière', max_length=50, blank=True)
+    modele = models.CharField('modèle', max_length=50, blank=True)
+    rayon = models.CharField('rayon', max_length=50, blank=True)
+    etagere = models.CharField('étagère', max_length=50, blank=True)
+    emplacement = models.CharField('emplacement', max_length=50, blank=True)
+
+    # Tarifs — règle : prix_minimum ≤ prix_unitaire ≤ prix_maximum
+    prix_achat = models.DecimalField('prix d’achat', max_digits=12, decimal_places=2, default=Decimal('0'))
+    prix_unitaire = models.DecimalField('prix de vente', max_digits=12, decimal_places=2, default=Decimal('0'))
+    prix_minimum = models.DecimalField(
+        'prix minimum', max_digits=12, decimal_places=2, default=Decimal('0'),
+        help_text='Prix plancher : aucune vente en dessous de ce prix.')
+    prix_maximum = models.DecimalField(
+        'prix maximum', max_digits=12, decimal_places=2, default=Decimal('0'),
+        help_text='Prix plafond : aucune vente au-dessus de ce prix.')
+
+    seuil_alerte = models.PositiveIntegerField('seuil d’alerte', default=0)
+
+    statut = models.CharField(
+        'statut', max_length=10, choices=Statut.choices, default=Statut.ACTIF)
+    en_vente = models.BooleanField('en vente', default=True)
+    date_creation = models.DateTimeField('créée le', default=timezone.now)
+    date_modification = models.DateTimeField('modifiée le', auto_now=True)
+
+    class Meta:
+        verbose_name = 'variante d’article'
+        verbose_name_plural = 'variantes d’articles'
+        ordering = ['code_variante']
+        # Identité métier d'une variante : pas de doublon pour un même article.
+        unique_together = [('article', 'couleur', 'taille', 'genre')]
+
+    def __str__(self):
+        return f'{self.article.code} — {self.label}'
+
+    @property
+    def label(self):
+        parties = [p for p in (self.couleur, self.taille, self.get_genre_display()) if p]
+        return ' / '.join(parties) if parties else self.code_variante
 
     @property
     def prix_vente(self):
@@ -221,19 +244,24 @@ class ArticleBoutique(models.Model):
         """Alias de lecture (rétrocompatibilité) → prix_minimum."""
         return self.prix_minimum
 
+    @classmethod
+    def prochain_code(cls, article):
+        return f'{article.code}-V{cls.objects.filter(article=article).count() + 1}'
+
+    def save(self, *args, **kwargs):
+        if not self.code_variante and self.article_id:
+            self.code_variante = self.prochain_code(self.article)
+        super().save(*args, **kwargs)
+
 
 class StockBoutique(models.Model):
-    """État actuel du stock : une ligne par (article, succursale, domaine).
+    """État actuel du stock d'une variante (une ligne par variante + contexte)."""
 
-    Jamais de nouvelle ligne à chaque entrée : les opérations historiques sont
-    conservées dans `MouvementStockBoutique`.
-    """
-
-    article = models.ForeignKey(
-        ArticleBoutique,
+    variante = models.ForeignKey(
+        VarianteArticle,
         on_delete=models.CASCADE,
         related_name='stocks',
-        verbose_name='article',
+        verbose_name='variante',
     )
     succursale = models.ForeignKey(
         'core.Succursale',
@@ -250,38 +278,40 @@ class StockBoutique(models.Model):
         blank=True,
     )
     quantite = models.IntegerField('quantité', default=0)
-    seuil_alerte = models.PositiveIntegerField('seuil d’alerte', default=0)
 
     class Meta:
         verbose_name = 'stock boutique'
         verbose_name_plural = 'stocks boutique'
-        ordering = ['article__code']
-        unique_together = [('article', 'succursale', 'domaine')]
+        ordering = ['variante__article__code']
+        unique_together = [('variante', 'succursale', 'domaine')]
         permissions = [
             ('view_stock', 'Peut consulter le stock boutique'),
             ('adjust_stock', 'Peut ajuster le stock boutique'),
         ]
 
     def __str__(self):
-        return f'{self.article.code} — {self.quantite}'
+        return f'{self.variante.article.code} — {self.quantite}'
 
     @classmethod
-    def obtenir(cls, article, succursale, domaine):
-        """Ligne de stock unique du contexte (get_or_create).
+    def obtenir(cls, variante, succursale, domaine):
+        """Ligne de stock unique de la variante (get_or_create).
 
-        À n'utiliser que dans les chemins d'ÉCRITURE (services, validation de
-        vente, ajustement d'inventaire). Les lectures utilisent
-        `StockBoutique.objects.filter(...).first()` (None → quantité 0).
+        À n'utiliser que dans les chemins d'ÉCRITURE. Les lectures utilisent
+        `filter().first()` (None → quantité 0).
         """
         stock, _ = cls.objects.get_or_create(
-            article=article,
+            variante=variante,
             succursale=succursale,
             domaine=domaine,
             defaults={'quantite': 0},
         )
         return stock
 
-    # État du stock (miroir des propriétés de l'Article approvisionnement)
+    # État du stock de la variante (seuil porté par la variante)
+    @property
+    def seuil_alerte(self):
+        return self.variante.seuil_alerte
+
     @property
     def en_rupture(self):
         return self.quantite <= 0
@@ -318,7 +348,7 @@ class StockBoutique(models.Model):
 
 
 class MouvementStockBoutique(models.Model):
-    """Journal de toutes les variations de stock boutique."""
+    """Journal de toutes les variations de stock d'une variante."""
 
     class Type(models.TextChoices):
         ENTREE = 'ENTREE', 'Entrée'
@@ -328,11 +358,11 @@ class MouvementStockBoutique(models.Model):
         CASSE = 'CASSE', 'Casse'
         PERTE = 'PERTE', 'Perte'
 
-    article = models.ForeignKey(
-        ArticleBoutique,
+    variante = models.ForeignKey(
+        VarianteArticle,
         on_delete=models.PROTECT,
         related_name='mouvements_stock',
-        verbose_name='article',
+        verbose_name='variante',
     )
     stock = models.ForeignKey(
         StockBoutique,
@@ -378,7 +408,7 @@ class MouvementStockBoutique(models.Model):
         ordering = ['-date_mouvement']
 
     def __str__(self):
-        return f'{self.get_type_display()} {self.article.code} × {self.quantite}'
+        return f'{self.get_type_display()} {self.variante.article.code} × {self.quantite}'
 
     def _delta(self):
         if self.type in (self.Type.SORTIE, self.Type.RETOUR, self.Type.CASSE, self.Type.PERTE):
@@ -386,22 +416,20 @@ class MouvementStockBoutique(models.Model):
         return self.quantite  # ENTREE positive ; AJUSTEMENT peut être négatif
 
     def valider(self):
-        """Applique le mouvement au stock : verrouillage, contrôle, mise à jour,
-        journalisation et synchronisation des alertes.
+        """Applique le mouvement au stock de la variante : verrouillage, contrôle,
+        mise à jour, journalisation et synchronisation des alertes.
 
-        Doit être appelé DANS une transaction `transaction.atomic()` extérieure
-        (service, `Vente.valider`, `LigneInventaireBoutique.creer_ajustement`).
-        """
+        Doit être appelé DANS une transaction `transaction.atomic()` extérieure."""
         if self.stock_id is None:
             raise ValidationError('Un mouvement doit être rattaché à une ligne de stock.')
         stock = StockBoutique.objects.select_for_update().get(pk=self.stock_id)
         self.succursale_id = stock.succursale_id
         self.domaine_id = stock.domaine_id
-        self.article_id = stock.article_id
+        self.variante_id = stock.variante_id
         delta = self._delta()
         if delta < 0 and (stock.quantite <= 0 or -delta > stock.quantite):
             raise ValidationError(
-                f'{stock.article.code} : stock à 0 ou insuffisant. '
+                f'{stock.variante.article.code} : stock à 0 ou insuffisant. '
                 f'Stock disponible : {stock.quantite}.'
             )
         self.stock_avant = stock.quantite
@@ -413,7 +441,7 @@ class MouvementStockBoutique(models.Model):
 
 
 class AlerteStockBoutique(models.Model):
-    """Alerte générée par le niveau de stock (une ACTIVE par stock + type)."""
+    """Alerte générée par le stock d'une variante (une ACTIVE par stock + type)."""
 
     class Type(models.TextChoices):
         STOCK_FAIBLE = 'STOCK_FAIBLE', 'Stock faible'
@@ -429,21 +457,17 @@ class AlerteStockBoutique(models.Model):
         related_name='alertes',
         verbose_name='stock',
     )
-    article = models.ForeignKey(
-        ArticleBoutique,
+    variante = models.ForeignKey(
+        VarianteArticle,
         on_delete=models.CASCADE,
         related_name='alertes_stock',
-        verbose_name='article',
+        verbose_name='variante',
     )
     type = models.CharField('type', max_length=12, choices=Type.choices)
     seuil = models.PositiveIntegerField('seuil')
     quantite_actuelle = models.IntegerField('quantité actuelle')
     statut = models.CharField(
-        'statut',
-        max_length=10,
-        choices=Statut.choices,
-        default=Statut.ACTIVE,
-    )
+        'statut', max_length=10, choices=Statut.choices, default=Statut.ACTIVE)
     date_creation = models.DateTimeField('créée le', default=timezone.now)
     date_resolution = models.DateTimeField('résolue le', null=True, blank=True)
 
@@ -453,7 +477,7 @@ class AlerteStockBoutique(models.Model):
         ordering = ['-date_creation']
 
     def __str__(self):
-        return f'{self.get_type_display()} {self.article.code} (stock {self.quantite_actuelle} / seuil {self.seuil})'
+        return f'{self.get_type_display()} {self.variante.article.code} (stock {self.quantite_actuelle} / seuil {self.seuil})'
 
     @property
     def classe_stock(self):
@@ -465,11 +489,12 @@ class AlerteStockBoutique(models.Model):
 
     @classmethod
     def synchroniser(cls, stock):
-        """Une seule alerte ACTIVE par (stock, type) ; résout quand le stock
-        remonte au-dessus du seuil. `date_creation` n'est jamais écrasée."""
+        """L'alerte s'évalue sur le stock de la variante : une ACTIVE par
+        (stock, type) ; résolution quand le stock remonte au-dessus du seuil."""
+        seuil = stock.variante.seuil_alerte
         if stock.quantite <= 0:
             type_ = cls.Type.RUPTURE
-        elif stock.seuil_alerte and stock.quantite <= stock.seuil_alerte:
+        elif seuil and stock.quantite <= seuil:
             type_ = cls.Type.STOCK_FAIBLE
         else:
             cls.objects.filter(stock=stock, statut=cls.Statut.ACTIVE).update(
@@ -482,15 +507,16 @@ class AlerteStockBoutique(models.Model):
             type=type_,
             statut=cls.Statut.ACTIVE,
             defaults={
-                'article': stock.article,
-                'seuil': stock.seuil_alerte,
+                'variante': stock.variante,
+                'seuil': seuil,
                 'quantite_actuelle': stock.quantite,
             },
         )
 
 
 class Vente(models.Model):
-    """Vente boutique : la validation produit un MouvementStockBoutique SORTIE."""
+    """Vente boutique : la validation produit un MouvementStockBoutique SORTIE
+    sur le stock de chaque variante vendue."""
 
     class Statut(models.TextChoices):
         BROUILLON = 'BROUILLON', 'Brouillon'
@@ -527,18 +553,10 @@ class Vente(models.Model):
     )
     date_vente = models.DateTimeField('date', default=timezone.now)
     type_paiement = models.CharField(
-        'paiement',
-        max_length=15,
-        choices=Paiement.choices,
-        default=Paiement.ESPECES,
-    )
+        'paiement', max_length=15, choices=Paiement.choices, default=Paiement.ESPECES)
     montant_recu = models.DecimalField('montant reçu', max_digits=12, decimal_places=2, default=Decimal('0'))
     statut = models.CharField(
-        'statut',
-        max_length=12,
-        choices=Statut.choices,
-        default=Statut.BROUILLON,
-    )
+        'statut', max_length=12, choices=Statut.choices, default=Statut.BROUILLON)
     sous_total = models.DecimalField('sous-total', max_digits=12, decimal_places=2, default=Decimal('0'))
     remise = models.DecimalField('remise', max_digits=12, decimal_places=2, default=Decimal('0'))
     total = models.DecimalField('total', max_digits=12, decimal_places=2, default=Decimal('0'))
@@ -578,11 +596,9 @@ class Vente(models.Model):
 
     @property
     def ecart_paiement(self):
-        """Différence signée montant reçu − total (négative = paiement insuffisant)."""
         return self.montant_recu - self.total
 
     def recalculer(self):
-        """Recalcule sous-total, total et éventuellement la remise à partir des lignes."""
         sous_total = sum(
             (ligne.total for ligne in self.lignes.all()),
             start=Decimal('0'),
@@ -593,50 +609,46 @@ class Vente(models.Model):
         self.save(update_fields=['sous_total', 'total'])
 
     def analyser_stock(self):
-        """Pré-validation : lignes dont la quantité dépasse le stock disponible.
-
-        Lecture seule (aucune ligne de stock créée)."""
+        """Pré-validation : lignes dont la quantité dépasse le stock de la variante."""
         ruptures = []
-        for ligne in self.lignes.select_related('article'):
+        for ligne in self.lignes.select_related('variante', 'variante__article'):
             stock = StockBoutique.objects.filter(
-                article_id=ligne.article_id,
+                variante_id=ligne.variante_id,
                 succursale_id=self.succursale_id,
                 domaine_id=self.domaine_id,
             ).first()
             dispo = stock.quantite if stock else 0
             if dispo <= 0 or ligne.quantite > dispo:
-                ruptures.append(
-                    {
-                        'article': ligne.article,
-                        'quantite': ligne.quantite,
-                        'stock': dispo,
-                    }
-                )
+                ruptures.append({
+                    'variante': ligne.variante,
+                    'article': ligne.variante.article,
+                    'quantite': ligne.quantite,
+                    'stock': dispo,
+                })
         return ruptures
 
     def valider(self):
         if self.statut == self.Statut.VALIDEE:
             raise ValidationError('Cette vente est déjà validée.')
-        lignes = list(self.lignes.select_related('article'))
+        lignes = list(self.lignes.select_related('variante', 'variante__article'))
         if not lignes:
             raise ValidationError('Ajoutez au moins une ligne de produit avant de valider.')
         with transaction.atomic():
             for ligne in lignes:
-                art = ligne.article
-                # Contrôle des prix côté backend (source de vérité).
-                if art.prix_minimum and ligne.prix_unitaire < art.prix_minimum:
+                var = ligne.variante
+                if var.prix_minimum and ligne.prix_unitaire < var.prix_minimum:
                     raise ValidationError(
-                        f'{art.code} : le prix de vente de {ligne.prix_unitaire} FC est '
-                        f'inférieur au prix minimum autorisé de {art.prix_minimum} FC.'
+                        f'{var.article.code} : le prix de vente de {ligne.prix_unitaire} FC est '
+                        f'inférieur au prix minimum autorisé de {var.prix_minimum} FC.'
                     )
-                if art.prix_maximum and ligne.prix_unitaire > art.prix_maximum:
+                if var.prix_maximum and ligne.prix_unitaire > var.prix_maximum:
                     raise ValidationError(
-                        f'{art.code} : le prix de vente de {ligne.prix_unitaire} FC est '
-                        f'supérieur au prix maximum autorisé de {art.prix_maximum} FC.'
+                        f'{var.article.code} : le prix de vente de {ligne.prix_unitaire} FC est '
+                        f'supérieur au prix maximum autorisé de {var.prix_maximum} FC.'
                     )
-                stock = StockBoutique.obtenir(art, self.succursale, self.domaine)
+                stock = StockBoutique.obtenir(var, self.succursale, self.domaine)
                 mouvement = MouvementStockBoutique(
-                    article=art,
+                    variante=var,
                     stock=stock,
                     type=MouvementStockBoutique.Type.SORTIE,
                     quantite=ligne.quantite,
@@ -647,7 +659,6 @@ class Vente(models.Model):
                 mouvement.valider()
                 ligne.mouvement = mouvement
                 ligne.save(update_fields=['mouvement'])
-            # Contrôle de cohérence du paiement : montant reçu ≥ total.
             if self.montant_recu < self.total:
                 raise ValidationError(
                     f'Le montant reçu ({self.montant_recu}) est inférieur au total '
@@ -661,27 +672,22 @@ class Vente(models.Model):
     def annuler(self):
         if self.statut != self.Statut.BROUILLON:
             raise ValidationError(
-                'Seul un brouillon peut être annulé. '
-                'Pour une vente validée, prévoir un retour.'
+                'Seul un brouillon peut être annulé. Pour une vente validée, prévoir un retour.'
             )
         self.statut = self.Statut.ANNULEE
         self.save(update_fields=['statut'])
 
 
 class VenteLigne(models.Model):
-    """Ligne de vente : conserve le prix réellement appliqué au moment de la vente."""
+    """Ligne de vente : référence une variante et conserve le prix appliqué."""
 
     vente = models.ForeignKey(
-        Vente,
-        on_delete=models.CASCADE,
-        related_name='lignes',
-        verbose_name='vente',
-    )
-    article = models.ForeignKey(
-        ArticleBoutique,
+        Vente, on_delete=models.CASCADE, related_name='lignes', verbose_name='vente')
+    variante = models.ForeignKey(
+        VarianteArticle,
         on_delete=models.PROTECT,
         related_name='lignes_vente',
-        verbose_name='article',
+        verbose_name='variante',
     )
     quantite = models.PositiveIntegerField('quantité')
     prix_unitaire = models.DecimalField('prix unitaire', max_digits=12, decimal_places=2, default=Decimal('0'))
@@ -701,7 +707,7 @@ class VenteLigne(models.Model):
         verbose_name_plural = 'lignes de vente'
 
     def __str__(self):
-        return f'{self.vente.numero} — {self.article.code} × {self.quantite}'
+        return f'{self.vente.numero} — {self.variante.article.code} × {self.quantite}'
 
     def save(self, *args, **kwargs):
         self.total = (self.prix_unitaire * self.quantite) - self.remise
@@ -722,38 +728,20 @@ class InventaireBoutique(models.Model):
     numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
     date_inventaire = models.DateField('date', default=timezone.now)
     succursale = models.ForeignKey(
-        'core.Succursale',
-        on_delete=models.PROTECT,
-        related_name='inventaires_boutique',
-        verbose_name='succursale',
-    )
+        'core.Succursale', on_delete=models.PROTECT,
+        related_name='inventaires_boutique', verbose_name='succursale')
     domaine = models.ForeignKey(
-        'core.Domaine',
-        on_delete=models.PROTECT,
-        related_name='inventaires_boutique',
-        verbose_name='domaine d’activité',
-        null=True,
-        blank=True,
-    )
+        'core.Domaine', on_delete=models.PROTECT,
+        related_name='inventaires_boutique', verbose_name='domaine d’activité',
+        null=True, blank=True)
     responsable = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name='inventaires_boutique',
-        verbose_name='responsable',
-    )
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='inventaires_boutique', verbose_name='responsable')
     commentaire = models.TextField('commentaire', blank=True)
     portee = models.CharField(
-        'portée',
-        max_length=12,
-        choices=Portee.choices,
-        default=Portee.COMPLET,
-    )
+        'portée', max_length=12, choices=Portee.choices, default=Portee.COMPLET)
     statut = models.CharField(
-        'statut',
-        max_length=12,
-        choices=Statut.choices,
-        default=Statut.BROUILLON,
-    )
+        'statut', max_length=12, choices=Statut.choices, default=Statut.BROUILLON)
     date_validation = models.DateTimeField('date de validation', null=True, blank=True)
 
     class Meta:
@@ -780,7 +768,7 @@ class InventaireBoutique(models.Model):
     def valider(self):
         if self.statut == self.Statut.VALIDE:
             raise ValidationError('Cet inventaire est déjà validé.')
-        lignes = list(self.lignes.select_related('article'))
+        lignes = list(self.lignes.select_related('variante', 'variante__article'))
         if not lignes:
             raise ValidationError('Impossible de valider un inventaire sans ligne.')
         with transaction.atomic():
@@ -792,61 +780,50 @@ class InventaireBoutique(models.Model):
 
 
 class LigneInventaireBoutique(models.Model):
-    """Ligne d'inventaire : stock théorique vs stock physique + écart."""
+    """Ligne d'inventaire au niveau de la variante : théorique vs physique + écart."""
 
     inventaire = models.ForeignKey(
-        InventaireBoutique,
-        on_delete=models.CASCADE,
-        related_name='lignes',
-        verbose_name='inventaire',
-    )
-    article = models.ForeignKey(
-        ArticleBoutique,
-        on_delete=models.PROTECT,
-        related_name='lignes_inventaire',
-        verbose_name='article',
-    )
+        InventaireBoutique, on_delete=models.CASCADE,
+        related_name='lignes', verbose_name='inventaire')
+    variante = models.ForeignKey(
+        VarianteArticle, on_delete=models.PROTECT,
+        related_name='lignes_inventaire', verbose_name='variante')
     stock_systeme = models.IntegerField('stock système')
     stock_physique = models.IntegerField('stock physique')
     motif = models.CharField('motif', max_length=200, blank=True)
     mouvement = models.OneToOneField(
-        MouvementStockBoutique,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='ligne_inventaire',
-        verbose_name='mouvement d’ajustement',
-    )
+        MouvementStockBoutique, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='ligne_inventaire',
+        verbose_name='mouvement d’ajustement')
 
     class Meta:
         verbose_name = 'ligne d’inventaire boutique'
         verbose_name_plural = 'lignes d’inventaire boutique'
-        unique_together = [('inventaire', 'article')]
+        unique_together = [('inventaire', 'variante')]
 
     def __str__(self):
-        return f'{self.article.code} ({self.ecart:+d})'
+        return f'{self.variante.article.code} ({self.ecart:+d})'
 
     @property
     def ecart(self):
         return self.stock_physique - self.stock_systeme
 
     def creer_ajustement(self, utilisateur):
-        """Crée un mouvement AJUSTEMENT (quantité = écart) et corrige le stock."""
         ecart = self.ecart
         if ecart == 0:
             return None
         if not self.motif:
             raise ValidationError(
-                f'Un motif est obligatoire pour ajuster {self.article.code} '
+                f'Un motif est obligatoire pour ajuster {self.variante.article.code} '
                 f'(écart {ecart:+d}).'
             )
         stock = StockBoutique.obtenir(
-            self.article,
+            self.variante,
             self.inventaire.succursale,
             self.inventaire.domaine,
         )
         mouvement = MouvementStockBoutique(
-            article=self.article,
+            variante=self.variante,
             stock=stock,
             type=MouvementStockBoutique.Type.AJUSTEMENT,
             quantite=ecart,

@@ -8,27 +8,56 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'boutique:articles' %}">← Retour</a>
+    {% if perms.boutique.adjust_stock %}
+    <a class="btn btn-primary" href="{% url 'boutique:entree' %}">Entrée en stock</a>
+    {% endif %}
   </div>
 </div>
 
 <section class="panel">
   <dl class="detail-grid">
-    <dt>Référence / SKU</dt><dd>{{ article.reference|default:"—" }}</dd>
-    <dt>Catégorie</dt><dd>{{ article.categorie|default:"—" }}</dd>
-    <dt>Sous-catégorie</dt><dd>{{ article.sous_categorie|default:"—" }}</dd>
-    <dt>Unité</dt><dd>{{ article.unite|default:"—" }}</dd>
-    <dt>Genre</dt><dd>{{ article.get_genre_display|default:"—" }}</dd>
-    <dt>Variante</dt><dd>{{ article.taille }}/{{ article.couleur }}{% if article.type %} ({{ article.type }}){% endif %}</dd>
-    <dt>Marque / Matière / Modèle</dt><dd>{{ article.marque }}{% if article.matiere %} · {{ article.matiere }}{% endif %}{% if article.modele %} · {{ article.modele }}{% endif %}</dd>
-    <dt>Localisation</dt><dd>Rayon {{ article.rayon|default:"—" }} · Étagère {{ article.etagere|default:"—" }} · {{ article.emplacement|default:"—" }}</dd>
+    <dt>Code</dt><dd>{{ article.code }}</dd>
+    <dt>Désignation</dt><dd>{{ article.designation }}</dd>
     <dt>Succursale</dt><dd>{{ article.succursale }}</dd>
     <dt>Domaine</dt><dd>{{ article.domaine|default:"—" }}</dd>
-    <dt>Prix d'achat</dt><dd>{{ article.prix_achat }}</dd>
-    <dt>Prix de vente</dt><dd>{{ article.prix_unitaire }}</dd>
-    <dt>Prix minimum</dt><dd>{{ article.prix_minimum }}</dd>
-    <dt>Prix maximum</dt><dd>{{ article.prix_maximum }}</dd>
-    <dt>Statut</dt><dd>{{ article.get_statut_display }}</dd>
-    <dt>Stock actuel</dt><dd>{% if stock %}{{ stock.quantite }} (seuil {{ stock.seuil_alerte }}){% else %}0{% endif %}</dd>
+    <dt>Nombre de variantes</dt><dd>{{ variantes|length }}</dd>
+    <dt>Stock total</dt><dd><strong>{{ article.stock_total }}</strong></dd>
   </dl>
+</section>
+
+<section class="panel">
+  <h2>Variantes</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code variante</th>
+          <th>Variante</th>
+          <th>Catégorie</th>
+          <th>Prix vente</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Niveau</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in variantes %}
+        {% with v=item.variante stock=item.stock %}
+        <tr class="{{ stock.classe_stock }}">
+          <td>{{ v.code_variante }}</td>
+          <td>{{ v.label }}</td>
+          <td>{{ v.categorie|default:"—" }}</td>
+          <td>{{ v.prix_unitaire }}</td>
+          <td>{{ stock.quantite|default:"0" }}</td>
+          <td>{{ stock.seuil_alerte|default:"0" }}</td>
+          <td>{{ stock.niveau_stock }}</td>
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr><td colspan="7">Aucune variante. Créez-en une via l'entrée en stock.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

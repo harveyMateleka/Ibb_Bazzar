@@ -1,4 +1,8 @@
-"""Services métier Boutique — transactions + audit (module 'BOUTIQUE')."""
+"""Services métier Boutique — Article → Variante → Stock → Mouvement.
+
+Toute opération de stock porte sur une `VarianteArticle` ; le stock et le
+mouvement sont créés/mis à jour dans une même transaction avec verrouillage.
+"""
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -11,22 +15,85 @@ from .models import (
     LigneInventaireBoutique,
     MouvementStockBoutique,
     StockBoutique,
+    VarianteArticle,
     Vente,
     VenteLigne,
 )
 
 
-class StockBoutiqueService:
-    """Opérations sur le stock boutique : toute variation = mouvement + stock,
-    dans une même transaction avec verrouillage de la ligne de stock."""
+class VarianteService:
+    """Création (avec anti-doublon) d'une variante d'article."""
 
     @staticmethod
-    def _executer(*, article, succursale, domaine, type_, quantite,
-                  utilisateur, reference='', motif='', action_audit):
+    def creer_ou_trouver(*, article, couleur='', taille='', genre='',
+                         categorie=None, sous_categorie=None, unite=None,
+                         marque='', matiere='', modele='', rayon='', etagere='',
+                         emplacement='', prix_achat=0, prix_unitaire=0,
+                         prix_minimum=0, prix_maximum=0, seuil_alerte=0,
+                         par=None, **kwargs):
+        """Retourne (variante, cree). Vérifie l'unicité article/couleur/taille/genre."""
+        variante = VarianteArticle.objects.filter(
+            article=article, couleur=couleur, taille=taille, genre=genre,
+        ).first()
+        if variante:
+            return variante, False
+        # Champs numériques jamais nuls (NULL interdit en base).
+        prix_achat = prix_achat or 0
+        prix_unitaire = prix_unitaire or 0
+        prix_minimum = prix_minimum or 0
+        prix_maximum = prix_maximum or 0
+        seuil_alerte = seuil_alerte or 0
         with transaction.atomic():
-            stock = StockBoutique.obtenir(article, succursale, domaine)
-            mouvement = MouvementStockBoutique(
+            variante = VarianteArticle.objects.create(
                 article=article,
+                couleur=couleur,
+                taille=taille,
+                genre=genre,
+                categorie=categorie,
+                sous_categorie=sous_categorie,
+                unite=unite,
+                marque=marque,
+                matiere=matiere,
+                modele=modele,
+                rayon=rayon,
+                etagere=etagere,
+                emplacement=emplacement,
+                prix_achat=prix_achat,
+                prix_unitaire=prix_unitaire,
+                prix_minimum=prix_minimum,
+                prix_maximum=prix_maximum,
+                seuil_alerte=seuil_alerte,
+            )
+            AuditService.auditer(
+                utilisateur=par,
+                succursale=article.succursale,
+                module='BOUTIQUE',
+                action='variante.create',
+                objet_type='VarianteArticle',
+                objet_id=variante.pk,
+                nouvelle_valeur={
+                    'article': article.code,
+                    'code_variante': variante.code_variante,
+                    'couleur': couleur, 'taille': taille, 'genre': genre,
+                },
+            )
+        return variante, True
+
+
+class StockBoutiqueService:
+    """Opérations sur le stock d'une variante : mouvement + stock, atomiques."""
+
+    @staticmethod
+    def _contexte(variante):
+        return variante.article.succursale, variante.article.domaine
+
+    @staticmethod
+    def _executer(*, variante, type_, quantite, utilisateur, reference='', motif='', action_audit):
+        succursale, domaine = StockBoutiqueService._contexte(variante)
+        with transaction.atomic():
+            stock = StockBoutique.obtenir(variante, succursale, domaine)
+            mouvement = MouvementStockBoutique(
+                variante=variante,
                 stock=stock,
                 type=type_,
                 quantite=quantite,
@@ -43,47 +110,41 @@ class StockBoutiqueService:
                 objet_type='StockBoutique',
                 objet_id=stock.pk,
                 ancienne_valeur={'quantite': mouvement.stock_avant},
-                nouvelle_valeur={'quantite': mouvement.stock_apres, 'article': article.code},
+                nouvelle_valeur={'quantite': mouvement.stock_apres, 'variante': variante.code_variante},
                 motif=motif,
             )
             return mouvement
 
     @staticmethod
-    def entrer(*, article, succursale, domaine, quantite, utilisateur, reference='', motif=''):
+    def entrer(*, variante, quantite, utilisateur, reference='', motif=''):
         if quantite <= 0:
             raise ValidationError('La quantité d’une entrée doit être positive.')
         return StockBoutiqueService._executer(
-            article=article, succursale=succursale, domaine=domaine,
-            type_=MouvementStockBoutique.Type.ENTREE, quantite=quantite,
-            utilisateur=utilisateur, reference=reference, motif=motif,
-            action_audit='stock.entree',
-        )
+            variante=variante, type_=MouvementStockBoutique.Type.ENTREE,
+            quantite=quantite, utilisateur=utilisateur,
+            reference=reference, motif=motif, action_audit='stock.entree')
 
     @staticmethod
-    def sortir(*, article, succursale, domaine, quantite, utilisateur, reference='', motif=''):
+    def sortir(*, variante, quantite, utilisateur, reference='', motif=''):
         if quantite <= 0:
             raise ValidationError('La quantité d’une sortie doit être positive.')
         return StockBoutiqueService._executer(
-            article=article, succursale=succursale, domaine=domaine,
-            type_=MouvementStockBoutique.Type.SORTIE, quantite=quantite,
-            utilisateur=utilisateur, reference=reference, motif=motif,
-            action_audit='stock.sortie',
-        )
+            variante=variante, type_=MouvementStockBoutique.Type.SORTIE,
+            quantite=quantite, utilisateur=utilisateur,
+            reference=reference, motif=motif, action_audit='stock.sortie')
 
     @staticmethod
-    def ajuster(*, article, succursale, domaine, quantite, utilisateur, reference='', motif=''):
+    def ajuster(*, variante, quantite, utilisateur, reference='', motif=''):
         if quantite == 0:
             raise ValidationError('Un ajustement ne peut pas être nul.')
         return StockBoutiqueService._executer(
-            article=article, succursale=succursale, domaine=domaine,
-            type_=MouvementStockBoutique.Type.AJUSTEMENT, quantite=quantite,
-            utilisateur=utilisateur, reference=reference, motif=motif,
-            action_audit='stock.ajustement',
-        )
+            variante=variante, type_=MouvementStockBoutique.Type.AJUSTEMENT,
+            quantite=quantite, utilisateur=utilisateur,
+            reference=reference, motif=motif, action_audit='stock.ajustement')
 
 
 class VenteService:
-    """Cycle de vie d'une vente (création → validation → stock boutique)."""
+    """Cycle de vie d'une vente (création → validation → stock des variantes)."""
 
     @staticmethod
     def creer(*, succursale, domaine, utilisateur, client='', type_paiement='ESPECES', montant_recu=0, remise=0):
@@ -110,11 +171,11 @@ class VenteService:
         return vente
 
     @staticmethod
-    def ajouter_ligne(vente, article, quantite, prix_unitaire, remise=0, par=None):
+    def ajouter_ligne(vente, variante, quantite, prix_unitaire, remise=0, par=None):
         with transaction.atomic():
             ligne = VenteLigne.objects.create(
                 vente=vente,
-                article=article,
+                variante=variante,
                 quantite=quantite,
                 prix_unitaire=prix_unitaire,
                 remise=remise,
@@ -125,7 +186,7 @@ class VenteService:
     @staticmethod
     def valider(vente, par=None):
         with transaction.atomic():
-            vente.valider()  # lève une ValidationError si stock insuffisant / prix hors bornes
+            vente.valider()
             AuditService.auditer(
                 utilisateur=par or vente.utilisateur,
                 succursale=vente.succursale,
@@ -154,7 +215,7 @@ class VenteService:
 
 
 class InventaireBoutiqueService:
-    """Cycle de vie d'un inventaire boutique (création → validation → ajustements)."""
+    """Cycle de vie d'un inventaire boutique (lignes par variante)."""
 
     @staticmethod
     def creer(*, date_inventaire, succursale, domaine, utilisateur, commentaire='',
@@ -170,17 +231,19 @@ class InventaireBoutiqueService:
                 portee=portee,
             )
             if portee == 'UN_ARTICLE':
-                articles = [article] if article else []
+                variantes = list(VarianteArticle.objects.filter(article=article))
             else:
-                articles = list(ArticleBoutique.objects.filter(
-                    succursale=succursale, domaine=domaine))
-            for art in articles:
+                variantes = list(VarianteArticle.objects.filter(
+                    article__succursale=succursale,
+                    article__domaine=domaine,
+                ))
+            for variante in variantes:
                 stock = StockBoutique.objects.filter(
-                    article=art, succursale=succursale, domaine=domaine).first()
+                    variante=variante, succursale=succursale, domaine=domaine).first()
                 quantite = stock.quantite if stock else 0
                 LigneInventaireBoutique.objects.create(
                     inventaire=inventaire,
-                    article=art,
+                    variante=variante,
                     stock_systeme=quantite,
                     stock_physique=quantite,
                 )

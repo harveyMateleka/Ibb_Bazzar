@@ -6,13 +6,16 @@
     <p class="eyebrow">Stock</p>
     <h1>Articles boutique</h1>
   </div>
-  {% if perms.boutique.adjust_stock %}
-  <a class="btn btn-primary" href="{% url 'boutique:article_nouveau' %}">Nouvel article</a>
-  {% endif %}
+  <div class="actions">
+    {% if perms.boutique.adjust_stock %}
+    <a class="btn btn-ghost" href="{% url 'boutique:variante_nouvelle' %}">Nouvelle variante</a>
+    <a class="btn btn-primary" href="{% url 'boutique:article_nouveau' %}">Nouvel article</a>
+    {% endif %}
+  </div>
 </div>
 
 <form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation, référence...">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation...">
   <button type="submit" class="btn btn-primary">Rechercher</button>
 </form>
 
@@ -23,32 +26,24 @@
         <tr>
           <th>Code</th>
           <th>Désignation</th>
-          <th>Variante</th>
-          <th>Prix vente</th>
-          <th>Stock</th>
-          <th>Seuil</th>
-          <th>Niveau</th>
+          <th>Variantes</th>
+          <th>Stock total</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for item in articles %}
-        {% with a=item.article stock=item.stock %}
-        <tr class="{{ stock.classe_stock }}">
+        {% for a in articles %}
+        <tr>
           <td>{{ a.code }}</td>
           <td>{{ a.designation }}</td>
-          <td>{{ a.taille }}/{{ a.couleur }}{% if a.type %} ({{ a.type }}){% endif %}</td>
-          <td>{{ a.prix_unitaire }}</td>
-          <td>{{ stock.quantite|default:"0" }}</td>
-          <td>{{ stock.seuil_alerte|default:"0" }}</td>
-          <td>{{ stock.niveau_stock }}</td>
+          <td>{{ a.nb_variantes }}</td>
+          <td>{{ a.stock_total }}</td>
           <td class="actions">
-            <a class="btn btn-ghost" href="{% url 'boutique:article_detail' a.pk %}">Voir</a>
+            <a class="btn btn-ghost" href="{% url 'boutique:article_detail' a.pk %}">Voir les variantes</a>
           </td>
         </tr>
-        {% endwith %}
         {% empty %}
-        <tr><td colspan="8">Aucun article boutique dans votre périmètre.</td></tr>
+        <tr><td colspan="5">Aucun article boutique dans votre périmètre.</td></tr>
         {% endfor %}
       </tbody>
     </table>

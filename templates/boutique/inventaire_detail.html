@@ -53,7 +53,7 @@
         <tbody>
           {% for form in formset %}
           <tr class="ligne-inventaire">
-            <td>{{ form.id }}{{ form.instance.article.code }} — {{ form.instance.article.designation }}</td>
+            <td>{{ form.id }}{{ form.instance.variante.article.code }} — {{ form.instance.variante.article.designation }}</td>
             <td class="stock-systeme">{{ form.instance.stock_systeme }}</td>
             <td>{{ form.stock_physique }}{{ form.stock_physique.errors }}</td>
             <td class="ecart">{{ form.instance.ecart }}</td>
@@ -126,7 +126,7 @@
       <tbody>
         {% for ligne in lignes %}
         <tr>
-          <td>{{ ligne.article.code }} — {{ ligne.article.designation }}</td>
+          <td>{{ ligne.variante.article.code }} — {{ ligne.variante.article.designation }}</td>
           <td>{{ ligne.stock_systeme }}</td>
           <td>{{ ligne.stock_physique }}</td>
           <td>{{ ligne.ecart }}</td>

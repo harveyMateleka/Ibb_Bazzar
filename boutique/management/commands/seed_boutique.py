@@ -25,11 +25,13 @@ from boutique.models import (
     SousCategorieBoutique,
     StockBoutique,
     UniteBoutique,
+    VarianteArticle,
     Vente,
 )
 from boutique.services import (
     InventaireBoutiqueService,
     StockBoutiqueService,
+    VarianteService,
     VenteService,
 )
 from core.models import Domaine, Role, Succursale
@@ -68,6 +70,7 @@ class Command(BaseCommand):
 
         self._creer_referentiels()
         self._creer_articles()
+        self._creer_variantes()
         self._creer_stock()
         self._creer_ventes()
         self._creer_inventaire()
@@ -149,94 +152,103 @@ class Command(BaseCommand):
                       'adresse': 'Kinshasa, Gombe'},
         )
 
-    # --- Articles ----------------------------------------------------------
+    # --- Articles & variantes ----------------------------------------------
 
     def _creer_articles(self):
-        # code, désignation, sous-cat, genre, taille, couleur, marque,
-        # prix_achat, prix_vente, prix_min, prix_max, rayon, étagère
-        donnees = [
-            ('TSHIRT-N-M', 'T-shirt IBBS noir', 'TSH', 'HOMME', 'M', 'Noir', 'IBBS',
-             12000, 20000, 17000, 25000, 'Homme', 'A1'),
-            ('TSHIRT-N-L', 'T-shirt IBBS noir', 'TSH', 'HOMME', 'L', 'Noir', 'IBBS',
-             12000, 20000, 17000, 25000, 'Homme', 'A1'),
-            ('TSHIRT-B-M', 'T-shirt IBBS bleu', 'TSH', 'HOMME', 'M', 'Bleu', 'IBBS',
-             12000, 20000, 17000, 25000, 'Homme', 'A2'),
-            ('TSHIRT-B-L', 'T-shirt IBBS bleu', 'TSH', 'HOMME', 'L', 'Bleu', 'IBBS',
-             12000, 20000, 17000, 25000, 'Homme', 'A2'),
-            ('TSHIRT-R-M', 'T-shirt IBBS rouge', 'TSH', 'HOMME', 'M', 'Rouge', 'IBBS',
-             12000, 20000, 17000, 25000, 'Homme', 'A3'),
-            ('JEAN-B-32', 'Jean bleu taille 32', 'JEA', 'HOMME', '32', 'Bleu', 'IBBS',
-             25000, 35000, 30000, 45000, 'Homme', 'B1'),
-            ('CHEMISE-W-M', 'Chemise blanche manches longues', 'CHE', 'HOMME', 'M', 'Blanche', 'IBBS',
-             20000, 30000, 26000, 40000, 'Homme', 'B2'),
-            ('PANT-N-S', 'Pantalon noir', 'PAN', 'HOMME', 'S', 'Noir', 'IBBS',
-             18000, 28000, 24000, 35000, 'Homme', 'B3'),
-            ('CASQ-N-U', 'Casquette IBBS noire', 'CAS', 'MIXTE', 'U', 'Noir', 'IBBS',
-             5000, 10000, 8000, 15000, 'Accessoires', 'C1'),
-        ]
-        for code, designation, sous, genre, taille, couleur, marque, \
-                pa, pv, pmin, pmax, rayon, etagere in donnees:
+        """Articles parents (identification seule)."""
+        for code, designation, sous in [
+            ('TSHIRT', 'T-shirt IBBS', 'TSH'),
+            ('JEAN', 'Jean IBBS', 'JEA'),
+            ('CHEMISE', 'Chemise IBBS', 'CHE'),
+            ('PANT', 'Pantalon IBBS', 'PAN'),
+            ('CASQ', 'Casquette IBBS', 'CAS'),
+        ]:
             ArticleBoutique.objects.get_or_create(
                 code=code,
                 succursale=self.succ,
                 domaine=self.domaine,
-                defaults=dict(
-                    designation=designation,
-                    categorie=self.cat_vet if sous != 'CAS' else self.cat_acc,
-                    sous_categorie=self.sous_cats[sous],
-                    unite=self.unite_pce,
-                    genre=genre,
-                    taille=taille,
-                    couleur=couleur,
-                    marque=marque,
-                    rayon=rayon,
-                    etagere=etagere,
-                    prix_achat=pa,
-                    prix_unitaire=pv,
-                    prix_minimum=pmin,
-                    prix_maximum=pmax,
-                ),
+                defaults={'designation': designation},
             )
-        self.stdout.write(f'  {ArticleBoutique.objects.count()} article(s) prêts.')
+        self.stdout.write(f'  {ArticleBoutique.objects.count()} article(s) parent(s) prêts.')
+
+    def _variante(self, code_article, couleur, taille, genre, sous,
+                  pa, pv, pmin, pmax, seuil=0, rayon='', etagere=''):
+        """Crée (ou réutilise) une variante d'un article parent."""
+        article = ArticleBoutique.objects.get(
+            code=code_article, succursale=self.succ, domaine=self.domaine)
+        variante, cree = VarianteService.creer_ou_trouver(
+            article=article,
+            categorie=self.cat_vet if sous != 'CAS' else self.cat_acc,
+            sous_categorie=self.sous_cats[sous],
+            unite=self.unite_pce,
+            genre=genre,
+            taille=taille,
+            couleur=couleur,
+            marque='IBBS',
+            rayon=rayon,
+            etagere=etagere,
+            prix_achat=pa,
+            prix_unitaire=pv,
+            prix_minimum=pmin,
+            prix_maximum=pmax,
+            seuil_alerte=seuil,
+            par=self.responsable,
+        )
+        return variante
+
+    def _creer_variantes(self):
+        # (article, couleur, taille, genre, sous-cat, pa, pv, pmin, pmax, seuil)
+        donnees = [
+            ('TSHIRT', 'Noir', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A1'),
+            ('TSHIRT', 'Noir', 'L', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A1'),
+            ('TSHIRT', 'Bleu', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A2'),
+            ('TSHIRT', 'Bleu', 'L', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A2'),
+            ('TSHIRT', 'Rouge', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A3'),
+            ('JEAN', 'Bleu', '32', 'HOMME', 'JEA', 25000, 35000, 30000, 45000, 5, 'Homme', 'B1'),
+            ('CHEMISE', 'Blanche', 'M', 'HOMME', 'CHE', 20000, 30000, 26000, 40000, 5, 'Homme', 'B2'),
+            ('PANT', 'Noir', 'S', 'HOMME', 'PAN', 18000, 28000, 24000, 35000, 10, 'Homme', 'B3'),
+            ('CASQ', 'Noir', 'U', 'MIXTE', 'CAS', 5000, 10000, 8000, 15000, 3, 'Accessoires', 'C1'),
+        ]
+        for code_article, couleur, taille, genre, sous, pa, pv, pmin, pmax, seuil, rayon, etagere in donnees:
+            self._variante(code_article, couleur, taille, genre, sous,
+                           pa, pv, pmin, pmax, seuil, rayon, etagere)
+        self.stdout.write(f'  {VarianteArticle.objects.count()} variante(s) prêtes.')
 
     # --- Stock -------------------------------------------------------------
 
-    def _entrer(self, code, quantite, seuil=0):
-        article = ArticleBoutique.objects.get(code=code, succursale=self.succ, domaine=self.domaine)
-        stock = StockBoutique.obtenir(article, self.succ, self.domaine)
-        if stock.quantite != 0:
+    def _entrer(self, variante, quantite):
+        stock = StockBoutique.objects.filter(variante=variante, succursale=self.succ).first()
+        if stock and stock.quantite != 0:
             return  # déjà approvisionné (seed idempotent)
-        if seuil:
-            stock.seuil_alerte = seuil
-            stock.save(update_fields=['seuil_alerte'])
         StockBoutiqueService.entrer(
-            article=article, succursale=self.succ, domaine=self.domaine,
-            quantite=quantite, utilisateur=self.responsable, motif='Entrée initiale (seed)',
+            variante=variante, quantite=quantite,
+            utilisateur=self.responsable, motif='Entrée initiale (seed)',
         )
 
+    def _variante_par(self, code_article, couleur, taille, genre):
+        return VarianteArticle.objects.get(
+            article__code=code_article, article__succursale=self.succ,
+            couleur=couleur, taille=taille, genre=genre)
+
     def _creer_stock(self):
-        self._entrer('TSHIRT-N-M', 25, seuil=10)
-        self._entrer('TSHIRT-N-L', 18, seuil=10)
-        self._entrer('TSHIRT-B-M', 8, seuil=10)    # → alerte STOCK_FAIBLE
-        self._entrer('TSHIRT-B-L', 30, seuil=10)
-        self._entrer('JEAN-B-32', 12, seuil=5)
-        self._entrer('CHEMISE-W-M', 20, seuil=5)
-        self._entrer('PANT-N-S', 5, seuil=10)       # → alerte STOCK_FAIBLE
-        self._entrer('CASQ-N-U', 15, seuil=3)
+        self._entrer(self._variante_par('TSHIRT', 'Noir', 'M', 'HOMME'), 25)
+        self._entrer(self._variante_par('TSHIRT', 'Noir', 'L', 'HOMME'), 18)
+        self._entrer(self._variante_par('TSHIRT', 'Bleu', 'M', 'HOMME'), 8)   # → STOCK_FAIBLE
+        self._entrer(self._variante_par('TSHIRT', 'Bleu', 'L', 'HOMME'), 30)
+        self._entrer(self._variante_par('JEAN', 'Bleu', '32', 'HOMME'), 12)
+        self._entrer(self._variante_par('CHEMISE', 'Blanche', 'M', 'HOMME'), 20)
+        self._entrer(self._variante_par('PANT', 'Noir', 'S', 'HOMME'), 5)    # → STOCK_FAIBLE
+        self._entrer(self._variante_par('CASQ', 'Noir', 'U', 'MIXTE'), 15)
         # Rupture volontaire : entrée 5 puis sortie 5 → stock 0 → alerte RUPTURE
-        stock_r = StockBoutique.objects.filter(
-            article__code='TSHIRT-R-M', succursale=self.succ).first()
+        v_rouge = self._variante_par('TSHIRT', 'Rouge', 'M', 'HOMME')
+        stock_r = StockBoutique.objects.filter(variante=v_rouge, succursale=self.succ).first()
         if stock_r is None or stock_r.quantite == 0:
             StockBoutiqueService.entrer(
-                article=ArticleBoutique.objects.get(code='TSHIRT-R-M', succursale=self.succ),
-                succursale=self.succ, domaine=self.domaine,
-                quantite=5, utilisateur=self.responsable, motif='Entrée initiale (seed)',
-            )
+                variante=v_rouge, quantite=5,
+                utilisateur=self.responsable, motif='Entrée initiale (seed)')
             StockBoutiqueService.sortir(
-                article=ArticleBoutique.objects.get(code='TSHIRT-R-M', succursale=self.succ),
-                succursale=self.succ, domaine=self.domaine,
-                quantite=5, utilisateur=self.responsable, motif='Casse démonstration',
-            )
+                variante=v_rouge, quantite=5,
+                utilisateur=self.responsable, motif='Casse démonstration')
         self.stdout.write(f'  {MouvementStockBoutique.objects.count()} mouvement(s) de stock.')
 
     # --- Ventes ------------------------------------------------------------
@@ -250,11 +262,9 @@ class Command(BaseCommand):
             succursale=self.succ, domaine=self.domaine, utilisateur=self.caissier,
             client='Jean Kalala', type_paiement='MOBILE_MONEY', montant_recu=75000)
         VenteService.ajouter_ligne(
-            v1, ArticleBoutique.objects.get(code='TSHIRT-N-M', succursale=self.succ),
-            2, 20000)
+            v1, self._variante_par('TSHIRT', 'Noir', 'M', 'HOMME'), 2, 20000)
         VenteService.ajouter_ligne(
-            v1, ArticleBoutique.objects.get(code='JEAN-B-32', succursale=self.succ),
-            1, 35000)
+            v1, self._variante_par('JEAN', 'Bleu', '32', 'HOMME'), 1, 35000)
         VenteService.valider(v1, par=self.responsable)
         self.stdout.write(f'  vente validée : {v1.numero} (client {v1.client}, total {v1.total}).')
 
@@ -263,8 +273,7 @@ class Command(BaseCommand):
             succursale=self.succ, domaine=self.domaine, utilisateur=self.caissier,
             client='Marie Tshala')
         VenteService.ajouter_ligne(
-            v2, ArticleBoutique.objects.get(code='TSHIRT-B-L', succursale=self.succ),
-            1, 20000)
+            v2, self._variante_par('TSHIRT', 'Bleu', 'L', 'HOMME'), 1, 20000)
         self.stdout.write(f'  vente brouillon : {v2.numero} (client {v2.client}).')
 
         # Vente validée avec remise (responsable)
@@ -272,8 +281,7 @@ class Command(BaseCommand):
             succursale=self.succ, domaine=self.domaine, utilisateur=self.responsable,
             remise=5000, client='Patrick Mbuyi', type_paiement='ESPECES', montant_recu=100000)
         VenteService.ajouter_ligne(
-            v3, ArticleBoutique.objects.get(code='CHEMISE-W-M', succursale=self.succ),
-            3, 30000)
+            v3, self._variante_par('CHEMISE', 'Blanche', 'M', 'HOMME'), 3, 30000)
         VenteService.valider(v3, par=self.responsable)
         self.stdout.write(f'  vente avec remise : {v3.numero} (client {v3.client}, total {v3.total}).')
 
