@@ -22,7 +22,7 @@ class ArticleBoutiqueForm(forms.ModelForm):
 
     class Meta:
         model = ArticleBoutique
-        fields = ['code', 'designation', 'succursale', 'domaine']
+        fields = ['code', 'designation', 'devise', 'succursale', 'domaine']
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -68,14 +68,9 @@ class StockEntreeForm(forms.Form):
     prix_achat = forms.DecimalField(label='Prix d’achat', required=False, max_digits=12, decimal_places=2)
     prix_unitaire = forms.DecimalField(label='Prix unitaire', required=False, max_digits=12, decimal_places=2)
     prix_minimum = forms.DecimalField(label='Prix minimum', required=False, max_digits=12, decimal_places=2)
-    prix_maximum = forms.DecimalField(label='Prix maximum', required=False, max_digits=12, decimal_places=2)
     seuil_alerte = forms.IntegerField(label='Seuil d’alerte', required=False, min_value=0)
     quantite = forms.IntegerField(label='Quantité', min_value=1,
                                   widget=forms.NumberInput(attrs={'min': 1}))
-    reference = forms.CharField(label='Référence', required=False, max_length=100,
-                                widget=forms.TextInput(attrs={'class': 'input'}))
-    motif = forms.CharField(label='Motif', required=False, max_length=200,
-                            widget=forms.TextInput(attrs={'class': 'input'}))
 
     def __init__(self, *args, articles=None, categories=None, unites=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -88,12 +83,8 @@ class StockEntreeForm(forms.Form):
         cleaned = super().clean()
         prix = cleaned.get('prix_unitaire')
         mini = cleaned.get('prix_minimum')
-        maxi = cleaned.get('prix_maximum')
-        if prix is not None:
-            if mini and prix < mini:
-                self.add_error('prix_unitaire', f'Le prix de vente ({prix}) est inférieur au prix minimum ({mini}).')
-            if maxi and prix > maxi:
-                self.add_error('prix_unitaire', f'Le prix de vente ({prix}) est supérieur au prix maximum ({maxi}).')
+        if prix is not None and mini and prix < mini:
+            self.add_error('prix_unitaire', f'Le prix de vente ({prix}) est inférieur au prix minimum ({mini}).')
         return cleaned
 
 

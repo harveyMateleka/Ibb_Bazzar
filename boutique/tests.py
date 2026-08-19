@@ -17,6 +17,7 @@ from core.services import UserService
 from .models import (
     AlerteStockBoutique,
     ArticleBoutique,
+    BonEntreeBoutique,
     CategorieBoutique,
     FournisseurBoutique,
     InventaireBoutique,
@@ -28,6 +29,7 @@ from .models import (
     Vente,
 )
 from .services import (
+    BonEntreeService,
     InventaireBoutiqueService,
     StockBoutiqueService,
     VarianteService,
@@ -261,6 +263,49 @@ class TestVenteService(BoutiqueBase):
         self.assertEqual(ArticleAppro.objects.count(), 0)
         self.assertEqual(
             StockBoutique.objects.get(variante=self.var_noir_m).quantite, 57)
+
+
+class TestBonEntreeBoutique(BoutiqueBase):
+    def _bon(self, couleur='Vert', quantite=25):
+        return BonEntreeService.creer(
+            article=self.art_tshirt, succursale=self.succ_a, domaine=self.domaine,
+            quantite=quantite, cree_par=self.responsable,
+            couleur=couleur, taille='M', genre='HOMME',
+            prix_unitaire=20, prix_minimum=17, seuil_alerte=5)
+
+    def test_entree_enregistre_brouillon_sans_stock(self):
+        """L'enregistrement crée un brouillon : ni variante, ni stock immédiat."""
+        bon = self._bon()
+        self.assertEqual(bon.statut, BonEntreeBoutique.Statut.BROUILLON)
+        self.assertFalse(
+            VarianteArticle.objects.filter(article=self.art_tshirt, couleur='Vert').exists())
+        self.assertEqual(
+            StockBoutique.objects.filter(variante__article=self.art_tshirt).count(), 0)
+
+    def test_validation_cree_variante_stock_et_mouvement(self):
+        """La validation crée la variante, le stock et le mouvement d'entrée."""
+        bon = self._bon()
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        bon.refresh_from_db()
+        self.assertEqual(bon.statut, BonEntreeBoutique.Statut.VALIDE)
+        self.assertEqual(bon.valide_par, self.responsable)
+        self.assertIsNotNone(bon.date_validation)
+        var = VarianteArticle.objects.get(article=self.art_tshirt, couleur='Vert', taille='M')
+        self.assertEqual(StockBoutique.objects.get(variante=var).quantite, 25)
+        self.assertTrue(
+            MouvementStockBoutique.objects.filter(variante=var, type='ENTREE').exists())
+
+    def test_validation_refusee_deux_fois(self):
+        bon = self._bon()
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        with self.assertRaises(ValidationError):
+            BonEntreeService.valider(bon=bon, par=self.responsable)
+
+    def test_liste_entrees_necessite_permission(self):
+        """Sans validate_entree (caissier), la liste des entrées est refusée (403)."""
+        self.client.force_login(self.caissier)
+        resp = self.client.get(reverse('boutique:entrees_validation'))
+        self.assertEqual(resp.status_code, 403)
 
 
 class TestInventaireBoutique(BoutiqueBase):

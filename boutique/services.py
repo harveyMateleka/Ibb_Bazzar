@@ -6,11 +6,13 @@ mouvement sont créés/mis à jour dans une même transaction avec verrouillage.
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from core.services import AuditService
 
 from .models import (
     ArticleBoutique,
+    BonEntreeBoutique,
     InventaireBoutique,
     LigneInventaireBoutique,
     MouvementStockBoutique,
@@ -78,6 +80,98 @@ class VarianteService:
                 },
             )
         return variante, True
+
+
+class BonEntreeService:
+    """Entrée en stock en deux temps : enregistrement (brouillon) puis validation.
+    La variante, le stock et le mouvement ne sont créés qu'à la validation."""
+
+    @staticmethod
+    def creer(*, article, succursale, domaine, quantite, cree_par,
+              categorie=None, sous_categorie=None, unite=None, genre='', taille='',
+              couleur='', marque='', modele='', rayon='', etagere='', emplacement='',
+              prix_achat=0, prix_unitaire=0, prix_minimum=0, seuil_alerte=0):
+        with transaction.atomic():
+            bon = BonEntreeBoutique.objects.create(
+                numero=BonEntreeBoutique.prochain_numero(),
+                article=article,
+                succursale=succursale,
+                domaine=domaine,
+                categorie=categorie,
+                sous_categorie=sous_categorie,
+                unite=unite,
+                genre=genre,
+                taille=taille,
+                couleur=couleur,
+                marque=marque,
+                modele=modele,
+                rayon=rayon,
+                etagere=etagere,
+                emplacement=emplacement,
+                prix_achat=prix_achat or 0,
+                prix_unitaire=prix_unitaire or 0,
+                prix_minimum=prix_minimum or 0,
+                seuil_alerte=seuil_alerte or 0,
+                quantite=quantite,
+                cree_par=cree_par,
+            )
+            AuditService.auditer(
+                utilisateur=cree_par,
+                succursale=succursale,
+                module='BOUTIQUE',
+                action='stock.entree.create',
+                objet_type='BonEntreeBoutique',
+                objet_id=bon.pk,
+                nouvelle_valeur={'numero': bon.numero, 'article': article.code, 'quantite': quantite},
+            )
+            return bon
+
+    @staticmethod
+    def valider(*, bon, par):
+        if bon.statut == BonEntreeBoutique.Statut.VALIDE:
+            raise ValidationError('Cette entrée est déjà validée.')
+        if not par:
+            raise ValidationError('Le validateur est obligatoire.')
+        with transaction.atomic():
+            variante, cree = VarianteService.creer_ou_trouver(
+                article=bon.article,
+                categorie=bon.categorie,
+                sous_categorie=bon.sous_categorie,
+                unite=bon.unite,
+                genre=bon.genre,
+                taille=bon.taille,
+                couleur=bon.couleur,
+                marque=bon.marque,
+                modele=bon.modele,
+                rayon=bon.rayon,
+                etagere=bon.etagere,
+                emplacement=bon.emplacement,
+                prix_achat=bon.prix_achat,
+                prix_unitaire=bon.prix_unitaire,
+                prix_minimum=bon.prix_minimum,
+                seuil_alerte=bon.seuil_alerte,
+                par=par,
+            )
+            StockBoutiqueService.entrer(
+                variante=variante,
+                quantite=bon.quantite,
+                utilisateur=par,
+                motif=f'Validation {bon.numero}',
+            )
+            bon.statut = BonEntreeBoutique.Statut.VALIDE
+            bon.valide_par = par
+            bon.date_validation = timezone.now()
+            bon.save(update_fields=['statut', 'valide_par', 'date_validation'])
+            AuditService.auditer(
+                utilisateur=par,
+                succursale=bon.succursale,
+                module='BOUTIQUE',
+                action='stock.entree.validate',
+                objet_type='BonEntreeBoutique',
+                objet_id=bon.pk,
+                nouvelle_valeur={'numero': bon.numero, 'variante': variante.code_variante},
+            )
+            return bon
 
 
 class StockBoutiqueService:

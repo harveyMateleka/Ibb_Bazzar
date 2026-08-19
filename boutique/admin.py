@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     AlerteStockBoutique,
     ArticleBoutique,
+    BonEntreeBoutique,
     CategorieBoutique,
     FournisseurBoutique,
     InventaireBoutique,
@@ -46,6 +47,15 @@ class ArticleBoutiqueAdmin(admin.ModelAdmin):
     list_display = ['code', 'designation', 'succursale', 'domaine']
     list_filter = ['succursale', 'domaine']
     search_fields = ['code', 'designation']
+
+
+@admin.register(BonEntreeBoutique)
+class BonEntreeBoutiqueAdmin(admin.ModelAdmin):
+    list_display = ['numero', 'article', 'couleur', 'taille', 'genre',
+                    'quantite', 'prix_unitaire', 'statut', 'cree_par', 'date_creation']
+    list_filter = ['statut', 'succursale']
+    search_fields = ['numero', 'article__code']
+    readonly_fields = ['numero', 'date_creation', 'date_validation']
 
 
 @admin.register(VarianteArticle)

@@ -31,6 +31,7 @@ from .forms import (
 from .models import (
     AlerteStockBoutique,
     ArticleBoutique,
+    BonEntreeBoutique,
     CategorieBoutique,
     InventaireBoutique,
     MouvementStockBoutique,
@@ -39,6 +40,7 @@ from .models import (
     Vente,
 )
 from .services import (
+    BonEntreeService,
     InventaireBoutiqueService,
     StockBoutiqueService,
     VarianteService,
@@ -189,7 +191,7 @@ def article_nouveau(request):
             objet_id=article.pk,
             nouvelle_valeur={'code': article.code, 'designation': article.designation},
         )
-        messages.success(request, f'Article {article.code} créé. Ajoutez une variante via l’entrée en stock.')
+        messages.success(request, f'Arrivage {article.code} enregistré. Ajoutez les produits via l’entrée en stock.')
         return redirect('boutique:article_detail', pk=article.pk)
     return render(
         request,
@@ -268,8 +270,12 @@ def entree(request):
         d = formulaire.cleaned_data
         article = d['article']
         try:
-            variante, cree = VarianteService.creer_ou_trouver(
+            bon = BonEntreeService.creer(
                 article=article,
+                succursale=article.succursale,
+                domaine=article.domaine,
+                quantite=d['quantite'],
+                cree_par=request.user,
                 categorie=d.get('categorie'),
                 unite=d.get('unite'),
                 genre=d.get('genre', ''),
@@ -283,30 +289,89 @@ def entree(request):
                 prix_achat=d.get('prix_achat', 0),
                 prix_unitaire=d.get('prix_unitaire', 0),
                 prix_minimum=d.get('prix_minimum', 0),
-                prix_maximum=d.get('prix_maximum', 0),
                 seuil_alerte=d.get('seuil_alerte', 0),
-                par=request.user,
-            )
-            StockBoutiqueService.entrer(
-                variante=variante,
-                quantite=d['quantite'],
-                utilisateur=request.user,
-                reference=d.get('reference', ''),
-                motif=d.get('motif', ''),
             )
             messages.success(
                 request,
-                f'Entrée de {d["quantite"]} pour {variante.code_variante} '
-                f'({"créée" if cree else "variante existante"}).',
+                f'Entrée {bon.numero} enregistrée en brouillon. '
+                'Elle sera créée après validation par le responsable.',
             )
         except ValidationError as exc:
             messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        return redirect('boutique:stocks')
+        return redirect('boutique:entrees_validation')
     return render(
         request,
         'boutique/entree_form.html',
         {'form': formulaire},
     )
+
+
+@require_permission('boutique.validate_entree')
+def entrees_validation(request):
+    """Liste des entrées de stock : les brouillons à valider par le responsable."""
+    peri = _perimetre(request.user)
+    bons = BonEntreeBoutique.objects.select_related('article', 'cree_par', 'succursale').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    )
+    q = request.GET.get('q', '')
+    statut = request.GET.get('statut', '')
+    if q:
+        bons = bons.filter(Q(numero__icontains=q) | Q(article__code__icontains=q))
+    if statut:
+        bons = bons.filter(statut=statut)
+    page_obj = _paginer(request, bons.order_by('-date_creation'))
+    return render(
+        request,
+        'boutique/entrees_validation.html',
+        {
+            'bons': page_obj.object_list,
+            'page_obj': page_obj,
+            'q': q,
+            'statut': statut,
+        },
+    )
+
+
+@require_permission('boutique.validate_entree')
+def entree_validation_detail(request, pk):
+    peri = _perimetre(request.user)
+    bon = get_object_or_404(
+        BonEntreeBoutique.objects.select_related(
+            'article', 'cree_par', 'valide_par', 'succursale', 'categorie', 'unite'
+        ).filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ),
+        pk=pk,
+    )
+    return render(
+        request,
+        'boutique/entree_validation_detail.html',
+        {'bon': bon},
+    )
+
+
+@require_permission('boutique.validate_entree')
+@require_POST
+def entree_valider(request, pk):
+    peri = _perimetre(request.user)
+    bon = get_object_or_404(
+        BonEntreeBoutique.objects.filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ),
+        pk=pk,
+    )
+    try:
+        BonEntreeService.valider(bon=bon, par=request.user)
+        messages.success(
+            request,
+            f'Entrée {bon.numero} validée : la variante, le stock et le mouvement ont été créés.',
+        )
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('boutique:entrees_validation')
 
 
 @require_permission('boutique.view_stock')

@@ -101,8 +101,15 @@ class ArticleBoutique(models.Model):
     `VarianteArticle` / `StockBoutique`.
     """
 
+    class Devise(models.TextChoices):
+        FC = 'FC', 'Franc congolais (FC)'
+        USD = 'USD', 'Dollar américain (USD)'
+        EUR = 'EUR', 'Euro (EUR)'
+
     code = models.CharField('code', max_length=50)
     designation = models.CharField('désignation', max_length=200)
+    devise = models.CharField(
+        'devise', max_length=3, choices=Devise.choices, default=Devise.FC)
     succursale = models.ForeignKey(
         'core.Succursale',
         on_delete=models.PROTECT,
@@ -252,6 +259,97 @@ class VarianteArticle(models.Model):
         if not self.code_variante and self.article_id:
             self.code_variante = self.prochain_code(self.article)
         super().save(*args, **kwargs)
+
+
+class BonEntreeBoutique(models.Model):
+    """Entrée en stock en deux temps : enregistrée en brouillon, puis validée
+    par le responsable. La variante, le stock et le mouvement ne sont créés
+    qu'à la VALIDATION."""
+
+    class Statut(models.TextChoices):
+        BROUILLON = 'BROUILLON', 'Brouillon'
+        VALIDE = 'VALIDE', 'Validé'
+
+    numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
+    article = models.ForeignKey(
+        ArticleBoutique,
+        on_delete=models.PROTECT,
+        related_name='bons_entree',
+        verbose_name='article',
+    )
+    succursale = models.ForeignKey(
+        'core.Succursale',
+        on_delete=models.PROTECT,
+        related_name='bons_entree_boutique',
+        verbose_name='succursale',
+    )
+    domaine = models.ForeignKey(
+        'core.Domaine',
+        on_delete=models.PROTECT,
+        related_name='bons_entree_boutique',
+        verbose_name='domaine d’activité',
+        null=True,
+        blank=True,
+    )
+    categorie = models.ForeignKey(
+        CategorieBoutique, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bons_entree', verbose_name='catégorie')
+    sous_categorie = models.ForeignKey(
+        SousCategorieBoutique, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bons_entree', verbose_name='sous-catégorie')
+    unite = models.ForeignKey(
+        UniteBoutique, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bons_entree', verbose_name='unité')
+    genre = models.CharField('genre', max_length=10,
+                             choices=VarianteArticle.Genre.choices, blank=True)
+    taille = models.CharField('taille', max_length=20, blank=True)
+    couleur = models.CharField('couleur', max_length=30, blank=True)
+    marque = models.CharField('marque', max_length=50, blank=True)
+    modele = models.CharField('modèle', max_length=50, blank=True)
+    rayon = models.CharField('rayon', max_length=50, blank=True)
+    etagere = models.CharField('étagère', max_length=50, blank=True)
+    emplacement = models.CharField('emplacement', max_length=50, blank=True)
+    prix_achat = models.DecimalField('prix d’achat', max_digits=12, decimal_places=2, default=Decimal('0'))
+    prix_unitaire = models.DecimalField('prix de vente', max_digits=12, decimal_places=2, default=Decimal('0'))
+    prix_minimum = models.DecimalField(
+        'prix minimum', max_digits=12, decimal_places=2, default=Decimal('0'),
+        help_text='Prix plancher : aucune vente en dessous de ce prix.')
+    seuil_alerte = models.PositiveIntegerField('seuil d’alerte', default=0)
+    quantite = models.PositiveIntegerField('quantité')
+    statut = models.CharField(
+        'statut', max_length=12, choices=Statut.choices, default=Statut.BROUILLON)
+    cree_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='bons_entree_crees', verbose_name='créé par')
+    date_creation = models.DateTimeField('créé le', default=timezone.now)
+    valide_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bons_entree_valides', verbose_name='validé par')
+    date_validation = models.DateTimeField('validé le', null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'entrée en stock'
+        verbose_name_plural = 'entrées en stock'
+        ordering = ['-date_creation']
+        permissions = [
+            ('validate_entree', 'Peut valider une entrée de stock'),
+        ]
+
+    def __str__(self):
+        return f'{self.numero} — {self.article.code}'
+
+    @classmethod
+    def prochain_numero(cls):
+        annee = timezone.localdate().year
+        prefixe = f'ENT-{annee}-'
+        dernier = (
+            cls.objects.select_for_update()
+            .filter(numero__startswith=prefixe)
+            .order_by('-numero')
+            .first()
+        )
+        sequence = int(dernier.numero.rsplit('-', 1)[-1]) + 1 if dernier else 1
+        return f'{prefixe}{sequence:04d}'
 
 
 class StockBoutique(models.Model):

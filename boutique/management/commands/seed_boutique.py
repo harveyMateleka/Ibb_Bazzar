@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from boutique.models import (
     ArticleBoutique,
+    BonEntreeBoutique,
     CategorieBoutique,
     FournisseurBoutique,
     InventaireBoutique,
@@ -29,6 +30,7 @@ from boutique.models import (
     Vente,
 )
 from boutique.services import (
+    BonEntreeService,
     InventaireBoutiqueService,
     StockBoutiqueService,
     VarianteService,
@@ -73,6 +75,7 @@ class Command(BaseCommand):
         self._creer_variantes()
         self._creer_stock()
         self._creer_ventes()
+        self._creer_entrees_brouillon()
         self._creer_inventaire()
 
         self.stdout.write(self.style.SUCCESS(
@@ -167,7 +170,7 @@ class Command(BaseCommand):
                 code=code,
                 succursale=self.succ,
                 domaine=self.domaine,
-                defaults={'designation': designation},
+                defaults={'designation': designation, 'devise': 'FC'},
             )
         self.stdout.write(f'  {ArticleBoutique.objects.count()} article(s) parent(s) prêts.')
 
@@ -284,6 +287,26 @@ class Command(BaseCommand):
             v3, self._variante_par('CHEMISE', 'Blanche', 'M', 'HOMME'), 3, 30000)
         VenteService.valider(v3, par=self.responsable)
         self.stdout.write(f'  vente avec remise : {v3.numero} (client {v3.client}, total {v3.total}).')
+
+    # --- Entrées en brouillon (validation responsable) ----------------------
+
+    def _creer_entrees_brouillon(self):
+        if BonEntreeBoutique.objects.exists():
+            self.stdout.write('  entrées brouillon déjà présentes.')
+            return
+        article = ArticleBoutique.objects.get(code='TSHIRT', succursale=self.succ)
+        BonEntreeService.creer(
+            article=article, succursale=self.succ, domaine=self.domaine,
+            quantite=50, cree_par=self.responsable,
+            couleur='Vert', taille='M', genre='HOMME',
+            prix_unitaire=20000, prix_minimum=17000, seuil_alerte=10)
+        article2 = ArticleBoutique.objects.get(code='PANT', succursale=self.succ)
+        BonEntreeService.creer(
+            article=article2, succursale=self.succ, domaine=self.domaine,
+            quantite=30, cree_par=self.responsable,
+            couleur='Gris', taille='L', genre='HOMME',
+            prix_unitaire=28000, prix_minimum=24000, seuil_alerte=8)
+        self.stdout.write('  2 entrée(s) en brouillon créées (à valider par le responsable).')
 
     # --- Inventaire --------------------------------------------------------
 
