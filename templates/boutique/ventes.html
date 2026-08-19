@@ -11,6 +11,7 @@
   {% endif %}
   {% if perms.boutique.view_vente %}
   <a class="btn btn-ghost" href="{% url 'boutique:ventes_report' %}">Imprimer les ventes du jour</a>
+  <a class="btn btn-ghost" href="{% url 'boutique:ventes_report' %}?toutes=1">Imprimer toutes les ventes</a>
   {% endif %}
 </div>
 

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'core',
     'approvisionnement',
     'boutique',
+    'immobilisations',
 ]
 
 # Utilisateur central : tous les modules partagent le même modèle.

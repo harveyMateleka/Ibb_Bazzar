@@ -507,7 +507,8 @@ def ventes_report(request):
     ).exclude(statut=Vente.Statut.ANNULEE)
     date_debut = request.GET.get('date_debut', '')
     date_fin = request.GET.get('date_fin', '')
-    if not date_debut and not date_fin:
+    toutes = request.GET.get('toutes') == '1'
+    if not toutes and not date_debut and not date_fin:
         aujourdhui = timezone.localdate().isoformat()
         date_debut = aujourdhui
         date_fin = aujourdhui

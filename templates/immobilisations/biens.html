@@ -1,0 +1,62 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Biens</p>
+    <h1>Liste des immobilisations</h1>
+  </div>
+  {% if perms.immobilisations.create_asset %}
+  <a class="btn btn-primary" href="{% url 'immobilisations:bien_nouveau' %}">Nouveau bien</a>
+  {% endif %}
+</div>
+
+<form method="get" class="filters">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation, n° de série...">
+  <select class="input" name="etat">
+    <option value="">Tous les états physiques</option>
+    {% for value, label in etats %}
+    <option value="{{ value }}" {% if etat == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Rechercher</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>N° série</th>
+          <th>Catégorie</th>
+          <th>Valeur</th>
+          <th>État</th>
+          <th>Statut</th>
+          <th>Emplacement</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in biens %}
+        <tr>
+          <td>{{ b.code }}</td>
+          <td>{{ b.designation }}</td>
+          <td>{{ b.numero_serie|default:"—" }}</td>
+          <td>{{ b.categorie|default:"—" }}</td>
+          <td>{{ b.valeur_acquisition }}</td>
+          <td>{{ b.get_etat_physique_display }}</td>
+          <td>{{ b.get_statut_administratif_display }}</td>
+          <td>{{ b.emplacement|default:"—" }}</td>
+          <td class="actions"><a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' b.pk %}">Voir</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9">Aucun bien dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

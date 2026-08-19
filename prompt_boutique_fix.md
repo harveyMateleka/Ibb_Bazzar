@@ -585,3 +585,113 @@ MouvementStock
 Et ça, à mon avis, mérite d'être distingué avant de figer tes modèles.
 
 NB: avant d'executé montre moi ce que tu as compris puis le plan d'action
+
+La règle métier que tu viens de préciser est importante : il faut empêcher la création d'une deuxième variante identique, mais surtout ne pas empêcher le réapprovisionnement d'une variante existante.
+
+Je structurerais cette modification comme un prompt indépendant, à donner après les prompts précédents.
+
+PROMPT — GESTION DU RÉAPPROVISIONNEMENT D'UNE VARIANTE EXISTANTE
+OBJECTIF
+Nouvelle entrée :
++20
+
+
+Stock :
+24
+
+
+→ alerte résolue selon la logique existante.
+
+
+TEST 5 — Tentative de doublon
+
+
+Créer exactement la même variante sans quantité d'entrée destinée au réapprovisionnement.
+
+
+→ ne pas créer une deuxième variante.
+
+
+Le système doit réutiliser la variante existante ou demander à l'utilisateur s'il souhaite effectuer une nouvelle entrée.
+
+
+TEST 6 — Validation
+
+
+Une nouvelle entrée sur une variante existante est soumise.
+
+
+→ statut PENDING_VALIDATION.
+
+
+Le stock ne doit pas être définitivement augmenté avant validation si cette règle est applicable.
+
+
+Après validation :
+
+
+→ stock augmenté ;
+→ mouvement créé ;
+→ historique conservé.
+
+
+==================================================
+RÉSULTAT FINAL ATTENDU
+==================================================
+
+
+La logique finale doit être :
+
+
+Article
+    ↓
+VarianteArticle
+    ↓
+Stock
+    ↓
+MouvementStock
+
+
+Pour une nouvelle combinaison :
+
+
+Article
+    ↓
+Nouvelle VarianteArticle
+    ↓
+Stock initial
+    ↓
+Mouvement ENTRÉE
+
+
+Pour une variante existante :
+
+
+Article
+    ↓
+VarianteArticle EXISTANTE
+    ↓
+Stock EXISTANT
+    ↓
+Nouvelle entrée
+    ↓
+Stock augmenté
+    ↓
+NOUVEAU MouvementStock
+
+
+Ne jamais créer une deuxième variante uniquement parce qu'une nouvelle quantité du même produit arrive.
+
+
+L'objectif est de conserver une seule identité de variante et un historique complet de toutes ses entrées et sorties.
+La règle centrale à faire comprendre à ton agent
+
+L'unicité porte sur la variante, pas sur l'entrée en stock.
+
+Donc :
+
+Même variante ≠ même entrée.
+
+Une variante Chemise / Noir / M peut recevoir 10, 20, puis 50 pièces à des dates différentes. On garde une seule variante, un stock courant, et plusieurs mouvements d'entrée qui permettent de reconstruire tout l'historique.
+
+C'est cette distinction qui va éviter que ton contrôle anti-doublon bloque le réapprovisionnement. Ensuite, comme tu l'as prévu, on pourra passer à la vente, qui devra elle aussi travailler directement avec la VarianteArticle/Stock, et non avec l'Article parent.

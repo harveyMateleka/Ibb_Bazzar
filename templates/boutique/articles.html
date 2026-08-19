@@ -25,6 +25,7 @@
         <tr>
           <th>Code</th>
           <th>Désignation</th>
+          <th>Nb variantes</th>
           <th>Variantes</th>
           <th>Stock total</th>
           <th></th>
@@ -36,6 +37,7 @@
         <tr>
           <td>{{ a.code }}</td>
           <td>{{ a.designation }}</td>
+          <td>{{ item.article.nb_variantes }}</td>
           <td>
             {% for label in item.variantes %}{{ label }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
           </td>
@@ -46,7 +48,7 @@
         </tr>
         {% endwith %}
         {% empty %}
-        <tr><td colspan="5">Aucun article boutique dans votre périmètre.</td></tr>
+        <tr><td colspan="6">Aucun article boutique dans votre périmètre.</td></tr>
         {% endfor %}
       </tbody>
     </table>
