@@ -33,53 +33,53 @@ class VarianteService:
                          emplacement='', prix_achat=0, prix_unitaire=0,
                          prix_minimum=0, prix_maximum=0, seuil_alerte=0,
                          par=None, **kwargs):
-        """Retourne (variante, cree). Vérifie l'unicité article/couleur/taille/genre."""
-        variante = VarianteArticle.objects.filter(
-            article=article, couleur=couleur, taille=taille, genre=genre,
-        ).first()
-        if variante:
-            return variante, False
-        # Champs numériques jamais nuls (NULL interdit en base).
-        prix_achat = prix_achat or 0
-        prix_unitaire = prix_unitaire or 0
-        prix_minimum = prix_minimum or 0
-        prix_maximum = prix_maximum or 0
-        seuil_alerte = seuil_alerte or 0
+        """Retourne (variante, cree).
+
+        `get_or_create` gère la course (TOCTOU) sur l'unicité
+        article/couleur/taille/genre : en cas d'IntegrityError concurrent, il
+        rattrape l'erreur et refait le `get` (la variante est alors réutilisée
+        au lieu de faire planter la transaction).
+        """
+        defaults = {
+            'categorie': categorie,
+            'sous_categorie': sous_categorie,
+            'unite': unite,
+            'marque': marque,
+            'matiere': matiere,
+            'modele': modele,
+            'rayon': rayon,
+            'etagere': etagere,
+            'emplacement': emplacement,
+            # Champs numériques jamais nuls (NULL interdit en base).
+            'prix_achat': prix_achat or 0,
+            'prix_unitaire': prix_unitaire or 0,
+            'prix_minimum': prix_minimum or 0,
+            'prix_maximum': prix_maximum or 0,
+            'seuil_alerte': seuil_alerte or 0,
+        }
         with transaction.atomic():
-            variante = VarianteArticle.objects.create(
+            variante, cree = VarianteArticle.objects.get_or_create(
                 article=article,
                 couleur=couleur,
                 taille=taille,
                 genre=genre,
-                categorie=categorie,
-                sous_categorie=sous_categorie,
-                unite=unite,
-                marque=marque,
-                matiere=matiere,
-                modele=modele,
-                rayon=rayon,
-                etagere=etagere,
-                emplacement=emplacement,
-                prix_achat=prix_achat,
-                prix_unitaire=prix_unitaire,
-                prix_minimum=prix_minimum,
-                prix_maximum=prix_maximum,
-                seuil_alerte=seuil_alerte,
+                defaults=defaults,
             )
-            AuditService.auditer(
-                utilisateur=par,
-                succursale=article.succursale,
-                module='BOUTIQUE',
-                action='variante.create',
-                objet_type='VarianteArticle',
-                objet_id=variante.pk,
-                nouvelle_valeur={
-                    'article': article.code,
-                    'code_variante': variante.code_variante,
-                    'couleur': couleur, 'taille': taille, 'genre': genre,
-                },
-            )
-        return variante, True
+            if cree:
+                AuditService.auditer(
+                    utilisateur=par,
+                    succursale=article.succursale,
+                    module='BOUTIQUE',
+                    action='variante.create',
+                    objet_type='VarianteArticle',
+                    objet_id=variante.pk,
+                    nouvelle_valeur={
+                        'article': article.code,
+                        'code_variante': variante.code_variante,
+                        'couleur': couleur, 'taille': taille, 'genre': genre,
+                    },
+                )
+        return variante, cree
 
 
 class BonEntreeService:

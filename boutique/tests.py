@@ -301,6 +301,18 @@ class TestBonEntreeBoutique(BoutiqueBase):
         with self.assertRaises(ValidationError):
             BonEntreeService.valider(bon=bon, par=self.responsable)
 
+    def test_validation_reutilise_variante_existante(self):
+        """Valider une entrée dont la variante existe déjà réutilise la variante
+        (aucune erreur d'unicité, aucun doublon)."""
+        nb_avant = VarianteArticle.objects.filter(article=self.art_tshirt).count()
+        # La variante Noir/M/HOMME existe déjà (fixture `var_noir_m`).
+        bon = self._bon(couleur='Noir')
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        self.assertEqual(
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb_avant)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 25)
+
     def test_liste_entrees_necessite_permission(self):
         """Sans validate_entree (caissier), la liste des entrées est refusée (403)."""
         self.client.force_login(self.caissier)
