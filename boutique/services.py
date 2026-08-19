@@ -133,8 +133,10 @@ class BonEntreeService:
 
     @staticmethod
     def valider(*, bon, par):
-        if bon.statut == BonEntreeBoutique.Statut.VALIDE:
-            raise ValidationError('Cette entrée est déjà validée.')
+        if bon.statut != BonEntreeBoutique.Statut.BROUILLON:
+            raise ValidationError(
+                f'Cette entrée ne peut pas être validée (statut actuel : '
+                f'{bon.get_statut_display()}).')
         if not par:
             raise ValidationError('Le validateur est obligatoire.')
         with transaction.atomic():
@@ -177,6 +179,27 @@ class BonEntreeService:
                 objet_type='BonEntreeBoutique',
                 objet_id=bon.pk,
                 nouvelle_valeur={'numero': bon.numero, 'variante': variante.code_variante},
+            )
+            return bon
+
+    @staticmethod
+    def annuler(*, bon, par, commentaire=''):
+        """Annulation (rejet) d'une entrée en brouillon par le responsable,
+        avec un commentaire visible par le demandeur."""
+        if bon.statut != BonEntreeBoutique.Statut.BROUILLON:
+            raise ValidationError('Seule une entrée en brouillon peut être annulée.')
+        with transaction.atomic():
+            bon.statut = BonEntreeBoutique.Statut.ANNULEE
+            bon.commentaire = commentaire
+            bon.save(update_fields=['statut', 'commentaire'])
+            AuditService.auditer(
+                utilisateur=par,
+                succursale=bon.succursale,
+                module='BOUTIQUE',
+                action='stock.entree.annuler',
+                objet_type='BonEntreeBoutique',
+                objet_id=bon.pk,
+                nouvelle_valeur={'numero': bon.numero, 'statut': 'ANNULEE', 'commentaire': commentaire},
             )
             return bon
 
@@ -326,10 +349,10 @@ class VenteService:
                 action='vente.create', objet_type='Vente', objet_id=vente.pk,
                 nouvelle_valeur={'numero': vente.numero, 'domaine': domaine.code if domaine else None},
             )
-            for var, quantite, prix, remise_ligne in lignes:
+            for var, quantite, prix in lignes:
                 VenteLigne.objects.create(
                     vente=vente, variante=var, quantite=quantite,
-                    prix_unitaire=prix, remise=remise_ligne or 0)
+                    prix_unitaire=prix)
             vente.recalculer()
             VenteService._finaliser(vente, par or utilisateur)
         return vente
@@ -405,9 +428,9 @@ class VenteService:
         return vente
 
     @staticmethod
-    def annuler(vente, par=None):
+    def annuler(vente, par=None, commentaire=''):
         with transaction.atomic():
-            vente.annuler()
+            vente.annuler(commentaire=commentaire)
             AuditService.auditer(
                 utilisateur=par or vente.utilisateur,
                 succursale=vente.succursale,
@@ -415,7 +438,7 @@ class VenteService:
                 action='vente.cancel',
                 objet_type='Vente',
                 objet_id=vente.pk,
-                nouvelle_valeur={'numero': vente.numero, 'statut': 'ANNULEE'},
+                nouvelle_valeur={'numero': vente.numero, 'statut': 'ANNULEE', 'commentaire': commentaire},
             )
         return vente
 

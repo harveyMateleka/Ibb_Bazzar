@@ -312,6 +312,7 @@ class BonEntreeBoutique(models.Model):
     class Statut(models.TextChoices):
         BROUILLON = 'BROUILLON', 'Brouillon'
         VALIDE = 'VALIDE', 'Validé'
+        ANNULEE = 'ANNULEE', 'Annulé'
 
     numero = models.CharField('numéro', max_length=20, unique=True, editable=False)
     article = models.ForeignKey(
@@ -371,6 +372,9 @@ class BonEntreeBoutique(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='bons_entree_valides', verbose_name='validé par')
     date_validation = models.DateTimeField('validé le', null=True, blank=True)
+    commentaire = models.CharField(
+        'commentaire', max_length=300, blank=True,
+        help_text='Motif de la décision (annulation) renseigné par le responsable.')
 
     class Meta:
         verbose_name = 'entrée en stock'
@@ -705,6 +709,9 @@ class Vente(models.Model):
     remise = models.DecimalField('remise', max_digits=12, decimal_places=2, default=Decimal('0'))
     total = models.DecimalField('total', max_digits=12, decimal_places=2, default=Decimal('0'))
     date_validation = models.DateTimeField('date de validation', null=True, blank=True)
+    commentaire = models.CharField(
+        'commentaire', max_length=300, blank=True,
+        help_text='Motif de la décision (annulation) renseigné par le responsable.')
 
     class Meta:
         verbose_name = 'vente'
@@ -802,14 +809,15 @@ class Vente(models.Model):
             ligne.mouvement = mouvement
             ligne.save(update_fields=['mouvement'])
 
-    def annuler(self):
+    def annuler(self, commentaire=''):
         if self.statut in (self.Statut.VALIDEE, self.Statut.ANNULEE):
             raise ValidationError(
                 'Cette vente ne peut pas être annulée (statut actuel : '
                 f'{self.get_statut_display()}). Pour une vente validée, prévoir un retour.'
             )
         self.statut = self.Statut.ANNULEE
-        self.save(update_fields=['statut'])
+        self.commentaire = commentaire
+        self.save(update_fields=['statut', 'commentaire'])
 
 
 class VenteLigne(models.Model):

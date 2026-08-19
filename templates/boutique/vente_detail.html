@@ -18,6 +18,7 @@
       {% if perms.boutique.cancel_vente %}
       <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="inline-form">
         {% csrf_token %}
+        <input class="input" type="text" name="commentaire" placeholder="Raison de l'annulation (obligatoire)">
         <button type="submit" class="btn btn-danger">Annuler</button>
       </form>
       {% endif %}
@@ -36,6 +37,9 @@
     <dt>Domaine</dt><dd>{{ vente.domaine }}</dd>
     <dt>Paiement</dt><dd>{{ vente.get_type_paiement_display }}</dd>
     <dt>Statut</dt><dd>{{ vente.get_statut_display }}</dd>
+    {% if vente.statut == 'ANNULEE' and vente.commentaire %}
+    <dt>Raison de l'annulation</dt><dd>{{ vente.commentaire }}</dd>
+    {% endif %}
   </dl>
 </section>
 
@@ -48,7 +52,6 @@
           <th>Variante</th>
           <th>Qté</th>
           <th>Prix unitaire</th>
-          <th>Remise</th>
           <th>Total</th>
         </tr>
       </thead>
@@ -58,11 +61,10 @@
           <td>{{ ligne.variante.article.code }} — {{ ligne.variante.label }}</td>
           <td>{{ ligne.quantite }}</td>
           <td>{{ ligne.prix_unitaire }}</td>
-          <td>{{ ligne.remise }}</td>
           <td>{{ ligne.total }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5">Aucun article.</td></tr>
+        <tr><td colspan="4">Aucun article.</td></tr>
         {% endfor %}
       </tbody>
     </table>

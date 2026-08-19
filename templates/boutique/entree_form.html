@@ -26,4 +26,44 @@
     </div>
   </form>
 </section>
+
+{% if mes_entrees %}
+<section class="panel">
+  <h2>Mes entrées récentes</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>N°</th>
+          <th>Article</th>
+          <th>Variante</th>
+          <th>Quantité</th>
+          <th>Statut</th>
+          <th>Raison / Commentaire</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in mes_entrees %}
+        <tr>
+          <td>{{ b.numero }}</td>
+          <td>{{ b.article.code }}</td>
+          <td>{{ b.couleur }}/{{ b.taille }}/{{ b.get_genre_display }}</td>
+          <td>{{ b.quantite }}</td>
+          <td>
+            {% if b.statut == 'BROUILLON' %}Brouillon
+            {% elif b.statut == 'ANNULEE' %}Annulé
+            {% else %}Validé{% endif %}
+          </td>
+          <td>{% if b.statut == 'ANNULEE' %}{{ b.commentaire|default:"—" }}{% else %}—{% endif %}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'boutique:entree_validation_detail' b.pk %}">Voir</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

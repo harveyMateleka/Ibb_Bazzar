@@ -8,10 +8,15 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'boutique:entrees_validation' %}">← Retour</a>
-    {% if bon.statut == 'BROUILLON' %}
+    {% if bon.statut == 'BROUILLON' and perms.boutique.validate_entree %}
     <form action="{% url 'boutique:entree_valider' bon.pk %}" method="post" class="inline-form">
       {% csrf_token %}
       <button type="submit" class="btn btn-primary">Valider l'entrée</button>
+    </form>
+    <form action="{% url 'boutique:entree_annuler' bon.pk %}" method="post" class="inline-form">
+      {% csrf_token %}
+      <input class="input" type="text" name="commentaire" placeholder="Raison de l'annulation (obligatoire)">
+      <button type="submit" class="btn btn-danger">Annuler</button>
     </form>
     {% endif %}
   </div>
@@ -31,8 +36,12 @@
     <dt>Statut</dt>
     <dd>
       {% if bon.statut == 'BROUILLON' %}Brouillon — en attente de validation
+      {% elif bon.statut == 'ANNULEE' %}Annulé par le responsable
       {% else %}Validé par {{ bon.valide_par }} ({{ bon.date_validation|date:"d/m/Y H:i" }}){% endif %}
     </dd>
+    {% if bon.statut == 'ANNULEE' and bon.commentaire %}
+    <dt>Raison de l'annulation</dt><dd>{{ bon.commentaire }}</dd>
+    {% endif %}
   </dl>
 </section>
 {% endblock %}

@@ -298,10 +298,15 @@ def entree(request):
             messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
         # Le créateur (magasinier) n'a pas la liste de validation : retour au stock.
         return redirect('boutique:stocks')
+    mes_entrees = BonEntreeBoutique.objects.filter(
+        cree_par=request.user,
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    ).order_by('-date_creation')[:10]
     return render(
         request,
         'boutique/entree_form.html',
-        {'form': formulaire},
+        {'form': formulaire, 'mes_entrees': mes_entrees},
     )
 
 
@@ -332,7 +337,7 @@ def entrees_validation(request):
     )
 
 
-@require_permission('boutique.validate_entree')
+@require_permission('boutique.view_stock')
 def entree_validation_detail(request, pk):
     peri = _perimetre(request.user)
     bon = get_object_or_404(
@@ -368,6 +373,28 @@ def entree_valider(request, pk):
             request,
             f'Entrée {bon.numero} validée : la variante, le stock et le mouvement ont été créés.',
         )
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('boutique:entrees_validation')
+
+
+@require_permission('boutique.validate_entree')
+@require_POST
+def entree_annuler(request, pk):
+    """Annulation (rejet) d'une entrée en brouillon par le responsable,
+    avec un commentaire visible par le demandeur."""
+    peri = _perimetre(request.user)
+    bon = get_object_or_404(
+        BonEntreeBoutique.objects.filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ),
+        pk=pk,
+    )
+    commentaire = request.POST.get('commentaire', '')
+    try:
+        BonEntreeService.annuler(bon=bon, par=request.user, commentaire=commentaire)
+        messages.success(request, f'Entrée {bon.numero} annulée.')
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
     return redirect('boutique:entrees_validation')
@@ -507,7 +534,7 @@ def vente_nouvelle(request):
     return render(
         request,
         'boutique/vente_form.html',
-        {'form': formulaire, 'formset': formset, 'succursale': succursale, 'domaine': domaine},
+        {'form': formulaire, 'formset': formset},
     )
 
 
@@ -581,8 +608,9 @@ def vente_annuler(request, pk):
         ),
         pk=pk,
     )
+    commentaire = request.POST.get('commentaire', '')
     try:
-        VenteService.annuler(vente, par=request.user)
+        VenteService.annuler(vente, par=request.user, commentaire=commentaire)
         messages.success(request, f'Vente {vente.numero} annulée.')
     except ValidationError as exc:
         messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))

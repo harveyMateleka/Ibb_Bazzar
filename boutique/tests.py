@@ -357,6 +357,17 @@ class TestBonEntreeBoutique(BoutiqueBase):
         resp = self.client.get(reverse('boutique:entrees_validation'))
         self.assertEqual(resp.status_code, 403)
 
+    def test_entree_annulee_avec_commentaire(self):
+        """Le responsable annule une entrée brouillon avec un commentaire visible."""
+        bon = self._bon()
+        BonEntreeService.annuler(bon=bon, par=self.responsable, commentaire='Facture erronée')
+        bon.refresh_from_db()
+        self.assertEqual(bon.statut, BonEntreeBoutique.Statut.ANNULEE)
+        self.assertEqual(bon.commentaire, 'Facture erronée')
+        # Une entrée annulée ne peut pas être validée ensuite.
+        with self.assertRaises(ValidationError):
+            BonEntreeService.valider(bon=bon, par=self.responsable)
+
 
 class TestInventaireBoutique(BoutiqueBase):
     def _inventaire(self):
@@ -477,7 +488,7 @@ class TestVenteWorkflow(BoutiqueBase):
     def test_soumettre_prix_sous_reference_pending(self):
         """Prix min ≤ prix < référence → PENDING_VALIDATION, AUCUNE sortie."""
         self._entrer(self.var_noir_m, 10)
-        vente = self._soumettre([(self.var_noir_m, 2, 13, 0)])  # 12 ≤ 13 < 15
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # 12 ≤ 13 < 15
         vente.refresh_from_db()
         self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
         self.assertEqual(
@@ -489,7 +500,7 @@ class TestVenteWorkflow(BoutiqueBase):
     def test_soumettre_prix_egal_reference_validee(self):
         """Prix == référence → VALIDEE + sorties immédiates."""
         self._entrer(self.var_noir_m, 10)
-        vente = self._soumettre([(self.var_noir_m, 2, 15, 0)])
+        vente = self._soumettre([(self.var_noir_m, 2, 15)])
         vente.refresh_from_db()
         self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
         self.assertEqual(
@@ -502,14 +513,14 @@ class TestVenteWorkflow(BoutiqueBase):
         """Prix < minimum → refus, aucune vente créée (transaction annulée)."""
         self._entrer(self.var_noir_m, 10)
         with self.assertRaises(ValidationError):
-            self._soumettre([(self.var_noir_m, 2, 10, 0)])
+            self._soumettre([(self.var_noir_m, 2, 10)])
         self.assertFalse(Vente.objects.filter(client='Workflow').exists())
 
     def test_soumettre_prix_superieur_reference_refuse(self):
         """Prix > référence → refus, aucune vente créée."""
         self._entrer(self.var_noir_m, 10)
         with self.assertRaises(ValidationError):
-            self._soumettre([(self.var_noir_m, 2, 20, 0)])
+            self._soumettre([(self.var_noir_m, 2, 20)])
         self.assertFalse(Vente.objects.filter(client='Workflow').exists())
 
     def test_soumettre_transaction_annulee_si_une_ligne_erronnee(self):
@@ -517,14 +528,14 @@ class TestVenteWorkflow(BoutiqueBase):
         self._entrer(self.var_noir_m, 10)
         self._entrer(self.var_noir_l, 10)
         with self.assertRaises(ValidationError):
-            self._soumettre([(self.var_noir_m, 2, 15, 0), (self.var_noir_l, 1, 10, 0)])
+            self._soumettre([(self.var_noir_m, 2, 15), (self.var_noir_l, 1, 10)])
         self.assertFalse(Vente.objects.filter(client='Workflow').exists())
         self.assertEqual(VenteLigne.objects.count(), 0)
 
     def test_approuver_vente_pending(self):
         """Approuver une PENDING_VALIDATION crée les sorties et passe VALIDEE."""
         self._entrer(self.var_noir_m, 10)
-        vente = self._soumettre([(self.var_noir_m, 2, 13, 0)])
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])
         self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
         VenteService.approuver(vente, par=self.responsable)
         vente.refresh_from_db()
@@ -538,10 +549,19 @@ class TestVenteWorkflow(BoutiqueBase):
     def test_approuver_deja_validee_refuse(self):
         """Une vente déjà approuvée ne peut pas être ré-approuvée (anti-double)."""
         self._entrer(self.var_noir_m, 10)
-        vente = self._soumettre([(self.var_noir_m, 2, 15, 0)])
+        vente = self._soumettre([(self.var_noir_m, 2, 15)])
         self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
         with self.assertRaises(ValidationError):
             VenteService.approuver(vente, par=self.responsable)
+
+    def test_vente_annulee_avec_commentaire(self):
+        """Annuler une vente en attente enregistre la raison (commentaire) du responsable."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # PENDING_VALIDATION
+        VenteService.annuler(vente, par=self.responsable, commentaire='Prix jugé incohérent')
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.ANNULEE)
+        self.assertEqual(vente.commentaire, 'Prix jugé incohérent')
 
 
 class TestPerimetreBoutique(BoutiqueBase):

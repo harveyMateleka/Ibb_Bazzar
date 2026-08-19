@@ -14,6 +14,7 @@ urlpatterns = [
     path('stock/entrees/', views.entrees_validation, name='entrees_validation'),
     path('stock/entrees/<int:pk>/', views.entree_validation_detail, name='entree_validation_detail'),
     path('stock/entrees/<int:pk>/valider/', views.entree_valider, name='entree_valider'),
+    path('stock/entrees/<int:pk>/annuler/', views.entree_annuler, name='entree_annuler'),
     path('mouvements/', views.mouvements, name='mouvements'),
     path('mouvements/rapport/', views.mouvements_report, name='mouvements_report'),
     path('alertes/', views.alertes, name='alertes'),

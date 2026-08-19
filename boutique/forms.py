@@ -161,13 +161,11 @@ class VarianteArticleSelect(forms.Select):
 class VenteLigneForm(forms.ModelForm):
     class Meta:
         model = VenteLigne
-        fields = ['variante', 'quantite', 'prix_unitaire', 'remise']
+        fields = ['variante', 'quantite', 'prix_unitaire']
         widgets = {
             'quantite': forms.NumberInput(attrs={'min': 1, 'class': 'input'}),
             'prix_unitaire': forms.NumberInput(
                 attrs={'step': '0.01', 'min': '0', 'class': 'input', 'data-prix-ligne': '1'}),
-            'remise': forms.NumberInput(
-                attrs={'step': '0.01', 'min': '0', 'class': 'input', 'data-remise-ligne': '1'}),
         }
 
     def __init__(self, *args, succursale=None, domaine=None, **kwargs):
@@ -181,7 +179,6 @@ class VenteLigneForm(forms.ModelForm):
         self.fields['variante'].required = False
         self.fields['quantite'].required = False
         self.fields['prix_unitaire'].required = False
-        self.fields['remise'].required = False
         prix_par_variante = {
             v.pk: (str(v.prix_unitaire), str(v.prix_minimum), str(v.prix_maximum))
             for v in variantes
@@ -255,7 +252,7 @@ class BaseLigneVenteSaisieFormSet(forms.BaseFormSet):
         return super()._construct_form(i, **kwargs)
 
     def lignes_cleaned(self):
-        """Lignes (variante, quantite, prix_unitaire, remise) à soumettre."""
+        """Lignes (variante, quantite, prix_unitaire) à soumettre."""
         lignes = []
         for form in self.forms:
             if form.cleaned_data.get('DELETE'):
@@ -267,7 +264,6 @@ class BaseLigneVenteSaisieFormSet(forms.BaseFormSet):
                     variante,
                     quantite,
                     form.cleaned_data.get('prix_unitaire') or variante.prix_unitaire,
-                    form.cleaned_data.get('remise') or 0,
                 ))
         return lignes
 

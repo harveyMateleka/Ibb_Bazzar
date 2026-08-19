@@ -25,14 +25,6 @@
         {{ field.errors }}
       </div>
       {% endfor %}
-      <div class="field">
-        <label>Succursale</label>
-        <input class="input" value="{{ succursale }}" readonly>
-      </div>
-      <div class="field">
-        <label>Domaine</label>
-        <input class="input" value="{{ domaine }}" readonly>
-      </div>
     </div>
   </section>
 
@@ -47,7 +39,6 @@
             <th>Variante</th>
             <th>Qté</th>
             <th>Prix unitaire</th>
-            <th>Remise</th>
             <th>Montant</th>
             <th>Action</th>
           </tr>
@@ -63,7 +54,6 @@
             </td>
             <td>{{ form.quantite }}{{ form.quantite.errors }}</td>
             <td>{{ form.prix_unitaire }}{{ form.prix_unitaire.errors }}</td>
-            <td>{{ form.remise }}{{ form.remise.errors }}</td>
             <td><span class="montant-ligne">0</span></td>
             <td>
               <span style="display:none">{{ form.DELETE }}</span>
@@ -140,11 +130,9 @@
         if (ligne.style.display === "none") return;
         var q = ligne.querySelector("input[name$='-quantite']");
         var p = ligne.querySelector("input[name$='-prix_unitaire']");
-        var r = ligne.querySelector("input[name$='-remise']");
         var qte = q ? (parseFloat(q.value) || 0) : 0;
         var prix = p ? (parseFloat(p.value) || 0) : 0;
-        var rem = r ? (parseFloat(r.value) || 0) : 0;
-        var montant = qte * prix - rem;
+        var montant = qte * prix;
         var span = ligne.querySelector(".montant-ligne");
         if (span) span.textContent = montant.toLocaleString("fr-FR");
         sousTotal += montant;
@@ -215,10 +203,10 @@
 
     form.addEventListener("change", function (event) {
       if (event.target && event.target.matches("select[data-article-ligne]")) majPrix(event.target);
-      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name$='-remise'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
+      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
     });
     form.addEventListener("input", function (event) {
-      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name$='-remise'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
+      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
     });
     if (btnAjouter) btnAjouter.addEventListener("click", ajouterLigne);
     if (tbody) tbody.addEventListener("click", function (event) {
