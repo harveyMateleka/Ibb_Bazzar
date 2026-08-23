@@ -9,7 +9,6 @@
 </div>
 
 <form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="N°, article...">
   <select class="input" name="statut">
     <option value="">Tous les statuts</option>
     <option value="BROUILLON" {% if statut == 'BROUILLON' %}selected{% endif %}>Brouillon</option>
@@ -20,7 +19,7 @@
 
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table data-datatable>
       <thead>
         <tr>
           <th>N°</th>
@@ -31,7 +30,7 @@
           <th>Créé par</th>
           <th>Date</th>
           <th>Statut</th>
-          <th></th>
+          <th class="no-sort"></th>
         </tr>
       </thead>
       <tbody>

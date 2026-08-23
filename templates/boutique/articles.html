@@ -13,14 +13,9 @@
   </div>
 </div>
 
-<form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation...">
-  <button type="submit" class="btn btn-primary">Rechercher</button>
-</form>
-
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table data-datatable>
       <thead>
         <tr>
           <th>Code</th>
@@ -28,7 +23,7 @@
           <th>Nb variantes</th>
           <th>Variantes</th>
           <th>Stock total</th>
-          <th></th>
+          <th class="no-sort"></th>
         </tr>
       </thead>
       <tbody>

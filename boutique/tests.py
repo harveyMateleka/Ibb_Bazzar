@@ -708,9 +708,11 @@ class TestHistoriqueMouvements(BoutiqueBase):
 
 class TestTableauxBoutique(BoutiqueBase):
     def test_articles_pagines(self):
-        for i in range(28):
+        # Taille de page serveur = 100 (DataTable pagine ensuite côté client) :
+        # il faut dépasser 100 articles pour voir la pagination Django.
+        for i in range(105):
             ArticleBoutique.objects.create(
-                code=f'PAGE-{i:02d}', designation=f'Article page {i}',
+                code=f'PAGE-{i:03d}', designation=f'Article page {i}',
                 succursale=self.succ_a, domaine=self.domaine)
         self.client.force_login(self.caissier)
         resp = self.client.get(reverse('boutique:articles'))

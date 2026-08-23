@@ -100,7 +100,7 @@ def _contexte_boutique(user):
     }
 
 
-def _paginer(request, qs, par_page=25):
+def _paginer(request, qs, par_page=100):
     return Paginator(qs, par_page).get_page(request.GET.get('page'))
 
 
@@ -446,6 +446,8 @@ def entree_annuler(request, pk):
 def mouvements(request):
     peri = _perimetre(request.user)
     qs, filtres = _filtrer_mouvements(request, peri)
+    # L'historique des mouvements garde la recherche/filtres Django (serveur) ET
+    # DataTable (pagination/recherche client) sur la page serveur de 100.
     page = _paginer(request, qs)
     return render(
         request,

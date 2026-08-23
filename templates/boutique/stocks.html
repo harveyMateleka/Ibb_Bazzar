@@ -12,7 +12,6 @@
 </div>
 
 <form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation...">
   <select class="input" name="etat">
     <option value="">Tous les états</option>
     <option value="rupture" {% if etat == 'rupture' %}selected{% endif %}>Rupture</option>
@@ -25,7 +24,7 @@
 
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table data-datatable>
       <thead>
         <tr>
           <th>Code</th>

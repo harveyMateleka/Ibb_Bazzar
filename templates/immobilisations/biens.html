@@ -12,7 +12,6 @@
 </div>
 
 <form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation, n° de série...">
   <select class="input" name="etat">
     <option value="">Tous les états physiques</option>
     {% for value, label in etats %}
@@ -25,12 +24,12 @@
     Inclure les biens déclassés
   </label>
   {% endif %}
-  <button type="submit" class="btn btn-primary">Rechercher</button>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
 </form>
 
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table data-datatable>
       <thead>
         <tr>
           <th>Code</th>
@@ -41,7 +40,7 @@
           <th>État</th>
           <th>Statut</th>
           <th>Emplacement</th>
-          <th></th>
+          <th class="no-sort"></th>
         </tr>
       </thead>
       <tbody>

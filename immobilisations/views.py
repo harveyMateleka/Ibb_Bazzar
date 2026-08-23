@@ -97,7 +97,7 @@ def _biens_perimetre(peri, inclure_declasses=False):
     return qs
 
 
-def _paginer(request, qs, par_page=25):
+def _paginer(request, qs, par_page=100):
     return Paginator(qs, par_page).get_page(request.GET.get('page'))
 
 
@@ -552,7 +552,7 @@ def historique(request):
             or q.lower() in (e['bien'].designation.lower())
             or q.lower() in e['details'].lower()
         ]
-    paginator = Paginator(evenements, 25)
+    paginator = Paginator(evenements, 100)
     page = paginator.get_page(request.GET.get('page'))
     return render(
         request,

@@ -11,14 +11,9 @@
   {% endif %}
 </div>
 
-<form method="get" class="filters">
-  <input class="input" type="search" name="q" value="{{ q }}" placeholder="N° d'inventaire...">
-  <button type="submit" class="btn btn-primary">Rechercher</button>
-</form>
-
 <section class="panel">
   <div class="table-wrap">
-    <table>
+    <table data-datatable>
       <thead>
         <tr>
           <th>N°</th>
@@ -27,7 +22,7 @@
           <th>Périmètre</th>
           <th>Lignes</th>
           <th>Statut</th>
-          <th></th>
+          <th class="no-sort"></th>
         </tr>
       </thead>
       <tbody>
