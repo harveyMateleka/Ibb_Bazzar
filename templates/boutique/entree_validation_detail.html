@@ -13,8 +13,8 @@
 
 <section class="panel">
   <dl class="detail-grid">
-    <dt>Article</dt><dd>{{ bon.article.code }} — {{ bon.article.designation }} ({{ bon.article.get_devise_display }})</dd>
-    <dt>Variante</dt><dd>{{ bon.couleur }}/{{ bon.taille }}/{{ bon.get_genre_display }}</dd>
+    <dt>Article</dt><dd>{{ bon.article.code }} — {{ bon.article.designation }} ({{ bon.get_devise_display }})</dd>
+    <dt>Variante</dt><dd>{{ bon.couleur }}/{{ bon.taille }}/{{ bon.get_genre_display }}{% if bon.type_tissu %} · {{ bon.type_tissu }}{% endif %}</dd>
     <dt>Quantité</dt><dd>{{ bon.quantite }}</dd>
     <dt>Prix d'achat</dt><dd>{{ bon.prix_achat }}</dd>
     <dt>Prix unitaire</dt><dd>{{ bon.prix_unitaire }}</dd>

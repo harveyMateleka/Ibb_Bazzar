@@ -28,11 +28,32 @@ from .models import (
 )
 
 
+def _verifier_bien_actif(immobilisation):
+    """Un bien déclassé est sorti du système : seule l'admin peut le réactiver
+    (modification de `statut_administratif`). Aucune opération applicative ne
+    doit pouvoir le remettre en service directement."""
+    if immobilisation.statut_administratif == Immobilisation.StatutAdministratif.DECLASSE:
+        raise ValidationError(
+            f'Le bien {immobilisation.code} est déclassé : réactivez-le via '
+            'l’admin avant toute opération.'
+        )
+
+
+def _verifier_bien_en_reparation(immobilisation):
+    """Règle métier : un bien en réparation ne peut être ni affecté ni déplacé.
+    Il peut en revanche être déclaré cassé ou demandé au déclassement."""
+    if immobilisation.statut_administratif == Immobilisation.StatutAdministratif.EN_REPARATION:
+        raise ValidationError(
+            f'Le bien {immobilisation.code} est en réparation : il ne peut pas '
+            'être affecté ni déplacé tant que la réparation n’est pas terminée.'
+        )
+
+
 class ImmobilisationService:
     @staticmethod
     def creer(*, designation, succursale, domaine, categorie=None, numero_serie='',
               valeur_acquisition=0, date_acquisition=None, fournisseur='',
-              service='', emplacement='', observation='', par):
+              service=None, emplacement=None, observation='', par):
         with transaction.atomic():
             immo = Immobilisation.objects.create(
                 code=Immobilisation.prochain_numero(),
@@ -66,9 +87,11 @@ class ImmobilisationService:
 
 class AffectationService:
     @staticmethod
-    def affecter(*, immobilisation, succursale, service='', emplacement='', par):
+    def affecter(*, immobilisation, succursale, service=None, emplacement=None, par):
         if not par:
             raise ValidationError('L’utilisateur qui affecte est obligatoire.')
+        _verifier_bien_actif(immobilisation)
+        _verifier_bien_en_reparation(immobilisation)
         with transaction.atomic():
             # Clôturer l'affectation courante (jamais supprimée).
             Affectation.objects.filter(
@@ -99,8 +122,8 @@ class AffectationService:
                 nouvelle_valeur={
                     'code': immobilisation.code,
                     'succursale': str(succursale),
-                    'service': service,
-                    'emplacement': emplacement,
+                    'service': service.nom if service else '',
+                    'emplacement': emplacement.nom if emplacement else '',
                 },
             )
             return affectation
@@ -108,10 +131,12 @@ class AffectationService:
 
 class DeplacementService:
     @staticmethod
-    def deplacer(*, immobilisation, nouvelle_succursale, nouveau_service='',
-                 nouvel_emplacement='', motif='', par):
+    def deplacer(*, immobilisation, nouvelle_succursale, nouveau_service=None,
+                 nouvel_emplacement=None, motif='', par):
         if not par:
             raise ValidationError('L’utilisateur qui déplace est obligatoire.')
+        _verifier_bien_actif(immobilisation)
+        _verifier_bien_en_reparation(immobilisation)
         with transaction.atomic():
             deplacement = Deplacement.objects.create(
                 immobilisation=immobilisation,
@@ -140,8 +165,8 @@ class DeplacementService:
                 ancienne_valeur={'succursale': str(deplacement.ancienne_succursale)},
                 nouvelle_valeur={
                     'succursale': str(nouvelle_succursale),
-                    'service': nouveau_service,
-                    'emplacement': nouvel_emplacement,
+                    'service': nouveau_service.nom if nouveau_service else '',
+                    'emplacement': nouvel_emplacement.nom if nouvel_emplacement else '',
                 },
                 motif=motif,
             )
@@ -153,6 +178,7 @@ class ReparationService:
     def declarer(*, immobilisation, motif, description='', cout=0, par):
         if not par:
             raise ValidationError('L’utilisateur qui déclare la réparation est obligatoire.')
+        _verifier_bien_actif(immobilisation)
         with transaction.atomic():
             reparation = Reparation.objects.create(
                 immobilisation=immobilisation,
@@ -182,6 +208,7 @@ class ReparationService:
             raise ValidationError('L’utilisateur qui termine la réparation est obligatoire.')
         if reparation.statut == Reparation.Statut.TERMINEE:
             raise ValidationError('Cette réparation est déjà terminée.')
+        _verifier_bien_actif(reparation.immobilisation)
         with transaction.atomic():
             reparation.statut = Reparation.Statut.TERMINEE
             reparation.save(update_fields=['statut'])
@@ -203,14 +230,16 @@ class ReparationService:
 
 class CasseService:
     @staticmethod
-    def declarer(*, immobilisation, motif, description='', par):
+    def declarer(*, immobilisation, motif, description='', responsable_dommage='', par):
         if not par:
             raise ValidationError('Le déclarant est obligatoire.')
+        _verifier_bien_actif(immobilisation)
         with transaction.atomic():
             casse = Casse.objects.create(
                 immobilisation=immobilisation,
                 motif=motif,
                 description=description,
+                responsable_dommage=responsable_dommage,
                 par=par,
             )
             immobilisation.etat_physique = Immobilisation.EtatPhysique.CASSE
@@ -259,6 +288,7 @@ class DeclassementService:
     def demander(*, immobilisation, motif, par):
         if not par:
             raise ValidationError('Le demandeur est obligatoire.')
+        _verifier_bien_actif(immobilisation)
         with transaction.atomic():
             declassement = Declassement.objects.create(
                 immobilisation=immobilisation,

@@ -29,27 +29,30 @@ class VarianteService:
     @staticmethod
     def creer_ou_trouver(*, article, couleur='', taille='', genre='',
                          categorie=None, sous_categorie=None, unite=None,
+                         type_tissu=None,
                          marque='', matiere='', modele='', rayon='', etagere='',
-                         emplacement='', prix_achat=0, prix_unitaire=0,
+                         emplacement='', devise='FC', prix_achat=0, prix_unitaire=0,
                          prix_minimum=0, prix_maximum=0, seuil_alerte=0,
                          par=None, **kwargs):
         """Retourne (variante, cree).
 
-        `get_or_create` gère la course (TOCTOU) sur l'unicité
-        article/couleur/taille/genre : en cas d'IntegrityError concurrent, il
-        rattrape l'erreur et refait le `get` (la variante est alors réutilisée
-        au lieu de faire planter la transaction).
+        L'identité d'une variante = article + couleur + taille + genre + type de
+        tissu. `get_or_create` gère la course (TOCTOU) sur cette combinaison : en
+        cas d'IntegrityError concurrent, il rattrape l'erreur et refait le `get`
+        (la variante est alors réutilisée au lieu de faire planter la transaction).
         """
         defaults = {
             'categorie': categorie,
             'sous_categorie': sous_categorie,
             'unite': unite,
+            'type_tissu': type_tissu,
             'marque': marque,
             'matiere': matiere,
             'modele': modele,
             'rayon': rayon,
             'etagere': etagere,
             'emplacement': emplacement,
+            'devise': devise or 'FC',
             # Champs numériques jamais nuls (NULL interdit en base).
             'prix_achat': prix_achat or 0,
             'prix_unitaire': prix_unitaire or 0,
@@ -63,6 +66,7 @@ class VarianteService:
                 couleur=couleur,
                 taille=taille,
                 genre=genre,
+                type_tissu=type_tissu,
                 defaults=defaults,
             )
             if cree:
@@ -93,9 +97,10 @@ class BonEntreeService:
 
     @staticmethod
     def creer(*, article, succursale, domaine, quantite, cree_par,
-              categorie=None, sous_categorie=None, unite=None, genre='', taille='',
+              categorie=None, sous_categorie=None, unite=None, type_tissu=None,
+              genre='', taille='',
               couleur='', marque='', modele='', rayon='', etagere='', emplacement='',
-              prix_achat=0, prix_unitaire=0, prix_minimum=0, seuil_alerte=0):
+              devise='FC', prix_achat=0, prix_unitaire=0, prix_minimum=0, seuil_alerte=0):
         with transaction.atomic():
             bon = BonEntreeBoutique.objects.create(
                 numero=BonEntreeBoutique.prochain_numero(),
@@ -105,6 +110,7 @@ class BonEntreeService:
                 categorie=categorie,
                 sous_categorie=sous_categorie,
                 unite=unite,
+                type_tissu=type_tissu,
                 genre=genre,
                 taille=taille,
                 couleur=couleur,
@@ -113,6 +119,7 @@ class BonEntreeService:
                 rayon=rayon,
                 etagere=etagere,
                 emplacement=emplacement,
+                devise=devise or 'FC',
                 prix_achat=prix_achat or 0,
                 prix_unitaire=prix_unitaire or 0,
                 prix_minimum=prix_minimum or 0,
@@ -147,6 +154,7 @@ class BonEntreeService:
                 categorie=bon.categorie,
                 sous_categorie=bon.sous_categorie,
                 unite=bon.unite,
+                type_tissu=bon.type_tissu,
                 genre=bon.genre,
                 taille=bon.taille,
                 couleur=bon.couleur,
@@ -155,6 +163,7 @@ class BonEntreeService:
                 rayon=bon.rayon,
                 etagere=bon.etagere,
                 emplacement=bon.emplacement,
+                devise=bon.devise,
                 prix_achat=bon.prix_achat,
                 prix_unitaire=bon.prix_unitaire,
                 prix_minimum=bon.prix_minimum,

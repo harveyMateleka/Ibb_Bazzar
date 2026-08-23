@@ -20,8 +20,10 @@ from immobilisations.models import (
     CategorieImmobilisation,
     Declassement,
     Deplacement,
+    Emplacement,
     Immobilisation,
     Reparation,
+    Service,
 )
 from immobilisations.services import (
     AffectationService,
@@ -70,6 +72,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING('Purge des données immobilisations...'))
         Immobilisation.objects.all().delete()  # cascade sur le cycle de vie
         CategorieImmobilisation.objects.all().delete()
+        Service.objects.all().delete()
+        Emplacement.objects.all().delete()
 
     def _creer_utilisateur(self):
         user = User.objects.filter(username='gestionnaire_assets').first()
@@ -89,8 +93,16 @@ class Command(BaseCommand):
         for code, nom in [('INFO', 'Informatique'), ('MOB', 'Mobilier'), ('VEH', 'Véhicule')]:
             CategorieImmobilisation.objects.get_or_create(code=code, defaults={'nom': nom})
 
+    @staticmethod
+    def _service(nom):
+        return Service.objects.get_or_create(nom=nom)[0]
+
+    @staticmethod
+    def _emplacement(nom):
+        return Emplacement.objects.get_or_create(nom=nom)[0]
+
     def _bien(self, code, designation, categorie, numero_serie, valeur, fournisseur,
-              service='', emplacement=''):
+              service=None, emplacement=None):
         """Crée un bien s'il n'existe pas (par code unique)."""
         bien = Immobilisation.objects.filter(code__startswith='IMM-', designation=designation).first()
         if bien:
@@ -109,35 +121,43 @@ class Command(BaseCommand):
         )
 
     def _creer_biens(self):
+        comptabilite = self._service('Comptabilité')
+        direction = self._service('Direction')
+        logistique = self._service('Logistique')
+        bureau_01 = self._emplacement('Bureau 01')
+        bureau_12 = self._emplacement('Bureau 12')
+        bureau_14 = self._emplacement('Bureau 14')
+        parking = self._emplacement('Parking')
+
         # Bien 1 : en service (affecté puis déplacé)
         b1 = self._bien('IMM', 'Ordinateur Dell XPS', 'INFO', 'DLX-001', 1500000, 'SOTEX')
         if not b1.affectations.exists():
             AffectationService.affecter(
                 immobilisation=b1, succursale=self.succ,
-                service='Comptabilité', emplacement='Bureau 12', par=self.gestionnaire)
+                service=comptabilite, emplacement=bureau_12, par=self.gestionnaire)
         if not b1.deplacements.exists():
             DeplacementService.deplacer(
                 immobilisation=b1, nouvelle_succursale=self.succ,
-                nouveau_service='Comptabilité', nouvel_emplacement='Bureau 14',
+                nouveau_service=comptabilite, nouvel_emplacement=bureau_14,
                 motif='Changement de bureau', par=self.gestionnaire)
 
         # Bien 2 : en réparation
         b2 = self._bien('IMM', 'Imprimante HP Laser', 'INFO', 'HP-L-204', 800000, 'SOTEX',
-                        service='Direction', emplacement='Bureau 01')
+                        service=direction, emplacement=bureau_01)
         if not b2.reparations.exists():
             ReparationService.declarer(
                 immobilisation=b2, motif='Rouleau usé', cout=120000, par=self.gestionnaire)
 
         # Bien 3 : casse évaluée réparable
         b3 = self._bien('IMM', 'Bureau en bois', 'MOB', 'MOB-014', 450000, 'MBI',
-                        service='Comptabilité', emplacement='Bureau 12')
+                        service=comptabilite, emplacement=bureau_12)
         if not b3.casses.exists():
             casse = CasseService.declarer(immobilisation=b3, motif='Pied cassé', par=self.gestionnaire)
             CasseService.evaluer(casse=casse, decision='REPARABLE', par=self.gestionnaire)
 
         # Bien 4 : déclassé
         b4 = self._bien('IMM', 'Véhicule Toyota Hiace', 'VEH', 'TOY-H-12', 25000000, 'TOYOTA',
-                        service='Logistique', emplacement='Parking')
+                        service=logistique, emplacement=parking)
         if not b4.declassements.exists():
             dec = DeclassementService.demander(immobilisation=b4, motif='Hors d’usage', par=self.gestionnaire)
             DeclassementService.valider(declassement=dec, par=self.gestionnaire)

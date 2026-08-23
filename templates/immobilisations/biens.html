@@ -19,6 +19,12 @@
     <option value="{{ value }}" {% if etat == value %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
+  {% if peut_voir_declasses %}
+  <label class="filter-check">
+    <input type="checkbox" name="declasses" value="1" {% if afficher %}checked{% endif %}>
+    Inclure les biens déclassés
+  </label>
+  {% endif %}
   <button type="submit" class="btn btn-primary">Rechercher</button>
 </form>
 

@@ -13,7 +13,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from core.models import Domaine
+from core.models import Domaine, Succursale
 from core.permissions import require_permission, succursales_autorisees
 
 from .forms import (
@@ -54,11 +54,47 @@ def _perimetre(user):
     }
 
 
-def _biens_perimetre(peri):
-    return Immobilisation.objects.select_related('categorie').filter(
+def _peut_voir_declasses(user):
+    """Seul un superuser (ou un utilisateur disposant de la permission dédiée)
+    voit les biens déclassés."""
+    return user.is_superuser or user.has_perm('immobilisations.view_declassified_asset')
+
+
+def _contexte_immobilisations(user):
+    """Contexte du module Immobilisations : affectation de l'utilisateur au
+    domaine IMMOBILISATIONS (préférer la principale), jamais sa principale
+    globale qui peut appartenir à un autre domaine (ex. BOUTIQUE).
+    Repli : première succursale du périmètre immobilisations."""
+    peri = _perimetre(user)
+    aff = (
+        user.affectations_succursales
+        .filter(domaine_id=peri['domaine_id'])
+        .select_related('succursale', 'domaine')
+        .order_by('-principale', 'date_affectation')
+        .first()
+    )
+    if aff:
+        return {
+            'succursale': aff.succursale,
+            'domaine': aff.domaine,
+            'verrouille': not user.is_superuser,
+        }
+    return {
+        'succursale': Succursale.objects.filter(pk__in=peri['succursales_ids']).first(),
+        'domaine': peri['domaine'],
+        'verrouille': not user.is_superuser,
+    }
+
+
+def _biens_perimetre(peri, inclure_declasses=False):
+    qs = Immobilisation.objects.select_related('categorie').filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
+    if not inclure_declasses:
+        # Un bien déclassé disparaît du système : seuls les privilégiés le voient.
+        qs = qs.exclude(statut_administratif=Immobilisation.StatutAdministratif.DECLASSE)
+    return qs
 
 
 def _paginer(request, qs, par_page=25):
@@ -71,7 +107,7 @@ def _timeline(peri, limite=None):
                   immobilisation__domaine_id=peri['domaine_id'])
     evenements = []
     for a in Affectation.objects.filter(**f_immo).select_related(
-            'immobilisation', 'par', 'succursale'):
+            'immobilisation', 'par', 'succursale', 'service', 'emplacement'):
         evenements.append({
             'date': a.date_affectation,
             'type': 'Affectation',
@@ -80,7 +116,8 @@ def _timeline(peri, limite=None):
             'par': a.par,
         })
     for d in Deplacement.objects.filter(**f_immo).select_related(
-            'immobilisation', 'par', 'ancienne_succursale', 'nouvelle_succursale'):
+            'immobilisation', 'par', 'ancienne_succursale', 'nouvelle_succursale',
+            'ancien_service', 'nouveau_service', 'ancien_emplacement', 'nouvel_emplacement'):
         evenements.append({
             'date': d.date_deplacement,
             'type': 'Déplacement',
@@ -119,7 +156,7 @@ def _timeline(peri, limite=None):
 @require_permission('immobilisations.view_asset')
 def tableau_de_bord(request):
     peri = _perimetre(request.user)
-    biens = _biens_perimetre(peri)
+    biens = _biens_perimetre(peri, inclure_declasses=_peut_voir_declasses(request.user))
     derniers = biens[:8]
     evenements = _timeline(peri, limite=8)
     return render(
@@ -141,7 +178,9 @@ def tableau_de_bord(request):
 @require_permission('immobilisations.view_asset')
 def biens(request):
     peri = _perimetre(request.user)
-    biens_qs = _biens_perimetre(peri)
+    peut_voir_declasses = _peut_voir_declasses(request.user)
+    afficher = peut_voir_declasses and request.GET.get('declasses') == '1'
+    biens_qs = _biens_perimetre(peri, inclure_declasses=afficher)
     q = request.GET.get('q', '')
     etat = request.GET.get('etat', '')
     if q:
@@ -162,6 +201,8 @@ def biens(request):
             'q': q,
             'etat': etat,
             'etats': Immobilisation.EtatPhysique.choices,
+            'peut_voir_declasses': peut_voir_declasses,
+            'afficher': afficher,
         },
     )
 
@@ -174,7 +215,7 @@ def bien_nouveau(request):
         if peri['domaine_id']
         else Domaine.objects.none()
     )
-    contexte = request.user.contexte_actif()
+    contexte = _contexte_immobilisations(request.user)
     formulaire = ImmobilisationForm(
         request.POST if request.method == 'POST' else None,
         succursales=peri['succursales'],
@@ -197,8 +238,8 @@ def bien_nouveau(request):
             valeur_acquisition=donnees.get('valeur_acquisition', 0),
             date_acquisition=donnees.get('date_acquisition'),
             fournisseur=donnees.get('fournisseur', ''),
-            service=donnees.get('service', ''),
-            emplacement=donnees.get('emplacement', ''),
+            service=donnees.get('service'),
+            emplacement=donnees.get('emplacement'),
             observation=donnees.get('observation', ''),
             par=request.user,
         )
@@ -215,12 +256,16 @@ def bien_nouveau(request):
 def bien_detail(request, pk):
     peri = _perimetre(request.user)
     bien = get_object_or_404(
-        _biens_perimetre(peri).select_related('categorie'),
+        _biens_perimetre(
+            peri, inclure_declasses=_peut_voir_declasses(request.user)
+        ).select_related('categorie'),
         pk=pk,
     )
-    affectations = bien.affectations.select_related('succursale', 'par')
+    affectations = bien.affectations.select_related(
+        'succursale', 'par', 'service', 'emplacement')
     deplacements = bien.deplacements.select_related(
-        'par', 'ancienne_succursale', 'nouvelle_succursale')
+        'par', 'ancienne_succursale', 'nouvelle_succursale',
+        'ancien_service', 'nouveau_service', 'ancien_emplacement', 'nouvel_emplacement')
     reparations = bien.reparations.select_related('par')
     casses = bien.casses.select_related('par')
     declassements = bien.declassements.select_related('par', 'valide_par')
@@ -241,7 +286,10 @@ def bien_detail(request, pk):
 
 def _bien_du_perimetre(request, pk):
     peri = _perimetre(request.user)
-    return get_object_or_404(_biens_perimetre(peri), pk=pk)
+    return get_object_or_404(
+        _biens_perimetre(peri, inclure_declasses=_peut_voir_declasses(request.user)),
+        pk=pk,
+    )
 
 
 @require_permission('immobilisations.assign_asset')
@@ -259,8 +307,8 @@ def affectation_nouvelle(request, pk):
             AffectationService.affecter(
                 immobilisation=bien,
                 succursale=formulaire.cleaned_data['succursale'],
-                service=formulaire.cleaned_data.get('service', ''),
-                emplacement=formulaire.cleaned_data.get('emplacement', ''),
+                service=formulaire.cleaned_data.get('service'),
+                emplacement=formulaire.cleaned_data.get('emplacement'),
                 par=request.user,
             )
             messages.success(request, f'Bien {bien.code} affecté avec succès.')
@@ -288,8 +336,8 @@ def deplacement_nouveau(request, pk):
             DeplacementService.deplacer(
                 immobilisation=bien,
                 nouvelle_succursale=formulaire.cleaned_data['nouvelle_succursale'],
-                nouveau_service=formulaire.cleaned_data.get('nouveau_service', ''),
-                nouvel_emplacement=formulaire.cleaned_data.get('nouvel_emplacement', ''),
+                nouveau_service=formulaire.cleaned_data.get('nouveau_service'),
+                nouvel_emplacement=formulaire.cleaned_data.get('nouvel_emplacement'),
                 motif=formulaire.cleaned_data.get('motif', ''),
                 par=request.user,
             )
@@ -358,6 +406,7 @@ def casse_declarer(request, pk):
                 immobilisation=bien,
                 motif=formulaire.cleaned_data['motif'],
                 description=formulaire.cleaned_data.get('description', ''),
+                responsable_dommage=formulaire.cleaned_data.get('responsable_dommage', ''),
                 par=request.user,
             )
             messages.success(request, f'Casse déclarée pour {bien.code}.')
@@ -433,7 +482,7 @@ def declassement_valider(request, pk, dec_pk):
 @require_permission('immobilisations.view_asset')
 def etats(request):
     peri = _perimetre(request.user)
-    biens_qs = _biens_perimetre(peri)
+    biens_qs = _biens_perimetre(peri, inclure_declasses=_peut_voir_declasses(request.user))
     etat_physique = request.GET.get('etat_physique', '')
     statut = request.GET.get('statut', '')
     if etat_physique:
@@ -458,7 +507,8 @@ def etats(request):
 @require_permission('immobilisations.view_asset')
 def affectations(request):
     peri = _perimetre(request.user)
-    qs = Affectation.objects.select_related('immobilisation', 'succursale', 'par').filter(
+    qs = Affectation.objects.select_related(
+        'immobilisation', 'succursale', 'par', 'service', 'emplacement').filter(
         immobilisation__succursale_id__in=peri['succursales_ids'],
         immobilisation__domaine_id=peri['domaine_id'],
     )
@@ -474,7 +524,8 @@ def affectations(request):
 def deplacements(request):
     peri = _perimetre(request.user)
     qs = Deplacement.objects.select_related(
-        'immobilisation', 'par', 'ancienne_succursale', 'nouvelle_succursale').filter(
+        'immobilisation', 'par', 'ancienne_succursale', 'nouvelle_succursale',
+        'ancien_service', 'nouveau_service', 'ancien_emplacement', 'nouvel_emplacement').filter(
         immobilisation__succursale_id__in=peri['succursales_ids'],
         immobilisation__domaine_id=peri['domaine_id'],
     )

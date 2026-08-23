@@ -136,13 +136,14 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Date</th><th>Motif</th><th>Décision</th><th>Par</th><th></th></tr>
+        <tr><th>Date</th><th>Motif</th><th>Responsable du dommage</th><th>Décision</th><th>Par</th><th></th></tr>
       </thead>
       <tbody>
         {% for c in casses %}
         <tr>
           <td>{{ c.date_casse|date:"d/m/Y H:i" }}</td>
           <td>{{ c.motif }}</td>
+          <td>{{ c.responsable_dommage|default:"—" }}</td>
           <td>{{ c.get_decision_display|default:"—" }}</td>
           <td>{{ c.par }}</td>
           <td class="actions">
@@ -161,7 +162,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5">Aucune casse.</td></tr>
+        <tr><td colspan="6">Aucune casse.</td></tr>
         {% endfor %}
       </tbody>
     </table>

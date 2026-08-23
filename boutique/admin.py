@@ -11,6 +11,7 @@ from .models import (
     MouvementStockBoutique,
     SousCategorieBoutique,
     StockBoutique,
+    TypeTissuArticle,
     UniteBoutique,
     VarianteArticle,
     Vente,
@@ -36,6 +37,12 @@ class UniteBoutiqueAdmin(admin.ModelAdmin):
     list_display = ['nom', 'code']
 
 
+@admin.register(TypeTissuArticle)
+class TypeTissuArticleAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'code', 'actif']
+    search_fields = ['nom', 'code']
+
+
 @admin.register(FournisseurBoutique)
 class FournisseurBoutiqueAdmin(admin.ModelAdmin):
     list_display = ['nom', 'contact', 'telephone', 'actif']
@@ -52,7 +59,7 @@ class ArticleBoutiqueAdmin(admin.ModelAdmin):
 @admin.register(BonEntreeBoutique)
 class BonEntreeBoutiqueAdmin(admin.ModelAdmin):
     list_display = ['numero', 'article', 'couleur', 'taille', 'genre',
-                    'quantite', 'prix_unitaire', 'statut', 'cree_par', 'date_creation']
+                    'type_tissu', 'quantite', 'devise', 'prix_unitaire', 'statut', 'cree_par', 'date_creation']
     list_filter = ['statut', 'succursale']
     search_fields = ['numero', 'article__code']
     readonly_fields = ['numero', 'date_creation', 'date_validation']
@@ -61,8 +68,8 @@ class BonEntreeBoutiqueAdmin(admin.ModelAdmin):
 @admin.register(VarianteArticle)
 class VarianteArticleAdmin(admin.ModelAdmin):
     list_display = ['code_variante', 'article', 'couleur', 'taille', 'genre',
-                    'prix_unitaire', 'prix_minimum', 'prix_maximum', 'seuil_alerte', 'statut']
-    list_filter = ['genre', 'statut', 'categorie', 'en_vente']
+                    'type_tissu', 'devise', 'prix_unitaire', 'prix_minimum', 'prix_maximum', 'seuil_alerte', 'statut']
+    list_filter = ['genre', 'statut', 'categorie', 'type_tissu', 'en_vente']
     search_fields = ['code_variante', 'article__code', 'article__designation']
     readonly_fields = ['code_variante']
 

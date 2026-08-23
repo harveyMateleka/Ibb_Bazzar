@@ -66,10 +66,38 @@ def _articles_perimetre(peri):
 
 
 def _variantes_perimetre(peri):
-    return VarianteArticle.objects.select_related('article', 'categorie', 'unite').filter(
+    return VarianteArticle.objects.select_related(
+        'article', 'categorie', 'unite', 'type_tissu').filter(
         article__succursale_id__in=peri['succursales_ids'],
         article__domaine_id=peri['domaine_id'],
     )
+
+
+def _contexte_boutique(user):
+    """Contexte du module Boutique : affectation de l'utilisateur au domaine
+    BOUTIQUE (préférer la principale), jamais sa principale globale qui peut
+    appartenir à un autre domaine (ex. IMMOBILISATIONS) — sinon les formulaires
+    de vente/entrée/inventaire ne trouvent aucune variante ni article.
+    Repli : première succursale du périmètre boutique."""
+    peri = _perimetre(user)
+    aff = (
+        user.affectations_succursales
+        .filter(domaine_id=peri['domaine_id'])
+        .select_related('succursale', 'domaine')
+        .order_by('-principale', 'date_affectation')
+        .first()
+    )
+    if aff:
+        return {
+            'succursale': aff.succursale,
+            'domaine': aff.domaine,
+            'verrouille': not user.is_superuser,
+        }
+    return {
+        'succursale': Succursale.objects.filter(pk__in=peri['succursales_ids']).first(),
+        'domaine': peri['domaine'],
+        'verrouille': not user.is_superuser,
+    }
 
 
 def _paginer(request, qs, par_page=25):
@@ -109,7 +137,8 @@ def _filtrer_mouvements(request, peri):
 def tableau_de_bord(request):
     peri = _perimetre(request.user)
     articles = _articles_perimetre(peri)
-    stocks = StockBoutique.objects.select_related('variante', 'variante__article').filter(
+    stocks = StockBoutique.objects.select_related(
+        'variante', 'variante__article', 'variante__type_tissu').filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
@@ -154,7 +183,7 @@ def articles(request):
     page_obj = _paginer(request, articles_qs.order_by('code'))
     articles_page = page_obj.object_list
     # Variantes par article (texte) pour la colonne « Variantes ».
-    variantes_qs = VarianteArticle.objects.filter(
+    variantes_qs = VarianteArticle.objects.select_related('type_tissu').filter(
         article_id__in=articles_page.values('id')).order_by('code_variante')
     variantes_par_article = {}
     for v in variantes_qs:
@@ -178,7 +207,7 @@ def article_nouveau(request):
         if peri['domaine_id']
         else Domaine.objects.none()
     )
-    contexte = request.user.contexte_actif()
+    contexte = _contexte_boutique(request.user)
     formulaire = ArticleBoutiqueForm(
         request.POST if request.method == 'POST' else None,
         succursales=peri['succursales'],
@@ -287,6 +316,7 @@ def entree(request):
                 cree_par=request.user,
                 categorie=d.get('categorie'),
                 unite=d.get('unite'),
+                type_tissu=d.get('type_tissu'),
                 genre=d.get('genre', ''),
                 taille=d.get('taille', ''),
                 couleur=d.get('couleur', ''),
@@ -295,6 +325,7 @@ def entree(request):
                 rayon=d.get('rayon', ''),
                 etagere=d.get('etagere', ''),
                 emplacement=d.get('emplacement', ''),
+                devise=d.get('devise', 'FC'),
                 prix_achat=d.get('prix_achat', 0),
                 prix_unitaire=d.get('prix_unitaire', 0),
                 prix_minimum=d.get('prix_minimum', 0),
@@ -541,7 +572,7 @@ def ventes_report(request):
 def vente_nouvelle(request):
     """Interface UNIQUE de vente : entête + lignes + paiement, puis « Créer et soumettre »."""
     peri = _perimetre(request.user)
-    contexte = request.user.contexte_actif()
+    contexte = _contexte_boutique(request.user)
     # Succursale/domaine déterminés côté backend (contexte utilisateur).
     succursale = contexte['succursale'] if contexte and contexte['succursale'] else (
         Succursale.objects.filter(pk__in=peri['succursales_ids']).first())
@@ -729,7 +760,7 @@ def inventaire_nouveau(request):
         if peri['domaine_id']
         else Domaine.objects.none()
     )
-    contexte = request.user.contexte_actif()
+    contexte = _contexte_boutique(request.user)
     articles = _articles_perimetre(peri)
     formulaire = InventaireForm(
         request.POST if request.method == 'POST' else None,

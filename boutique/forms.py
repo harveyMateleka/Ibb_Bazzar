@@ -10,6 +10,7 @@ from .models import (
     CategorieBoutique,
     InventaireBoutique,
     LigneInventaireBoutique,
+    TypeTissuArticle,
     UniteBoutique,
     VarianteArticle,
     Vente,
@@ -22,7 +23,7 @@ class ArticleBoutiqueForm(forms.ModelForm):
 
     class Meta:
         model = ArticleBoutique
-        fields = ['code', 'designation', 'devise', 'succursale', 'domaine']
+        fields = ['code', 'designation', 'succursale', 'domaine']
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -82,12 +83,21 @@ class StockEntreeForm(forms.Form):
     unite = forms.ModelChoiceField(
         label='Unité', required=False, queryset=None,
         widget=forms.Select(attrs={'class': 'input'}))
+    type_tissu = forms.ModelChoiceField(
+        label='Type de tissu', required=False,
+        queryset=TypeTissuArticle.objects.filter(actif=True),
+        empty_label='— Aucun —',
+        widget=forms.Select(attrs={'class': 'input'}))
     rayon = forms.CharField(label='Rayon', required=False, max_length=50,
                             widget=forms.TextInput(attrs={'class': 'input'}))
     etagere = forms.CharField(label='Étagère', required=False, max_length=50,
                               widget=forms.TextInput(attrs={'class': 'input'}))
     emplacement = forms.CharField(label='Emplacement', required=False, max_length=50,
                                   widget=forms.TextInput(attrs={'class': 'input'}))
+    devise = forms.ChoiceField(
+        label='Devise', choices=VarianteArticle.Devise.choices,
+        initial=VarianteArticle.Devise.FC,
+        widget=forms.Select(attrs={'class': 'input'}))
     prix_achat = forms.DecimalField(label='Prix d’achat', required=False, max_digits=12, decimal_places=2)
     prix_unitaire = forms.DecimalField(label='Prix unitaire', required=False, max_digits=12, decimal_places=2)
     prix_minimum = forms.DecimalField(label='Prix minimum', required=False, max_digits=12, decimal_places=2)
@@ -170,7 +180,7 @@ class VenteLigneForm(forms.ModelForm):
 
     def __init__(self, *args, succursale=None, domaine=None, **kwargs):
         super().__init__(*args, **kwargs)
-        variantes = VarianteArticle.objects.select_related('article', 'unite', 'categorie')
+        variantes = VarianteArticle.objects.select_related('article', 'unite', 'categorie', 'type_tissu')
         if succursale is not None:
             variantes = variantes.filter(article__succursale_id=succursale)
         if domaine is not None:

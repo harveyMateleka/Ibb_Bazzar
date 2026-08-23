@@ -24,6 +24,7 @@ from .models import (
     MouvementStockBoutique,
     SousCategorieBoutique,
     StockBoutique,
+    TypeTissuArticle,
     UniteBoutique,
     VarianteArticle,
     Vente,
@@ -48,6 +49,8 @@ class BoutiqueBase(TestCase):
         self.cat = CategorieBoutique.objects.create(nom='Vêtements', code='VET')
         self.sous_cat = SousCategorieBoutique.objects.create(categorie=self.cat, nom='T-shirts', code='TSH')
         self.unite = UniteBoutique.objects.create(nom='Pièce', code='PCE')
+        self.tissu_coton = TypeTissuArticle.objects.create(nom='Coton', code='COT')
+        self.tissu_poly = TypeTissuArticle.objects.create(nom='Polyester', code='POL')
         self.fournisseur = FournisseurBoutique.objects.create(nom='Fournisseur 1')
 
         self.art_tshirt = ArticleBoutique.objects.create(
@@ -184,11 +187,44 @@ class TestArticleEtVariante(BoutiqueBase):
         self.client.force_login(self.responsable)
         resp = self.client.post(
             reverse('boutique:article_nouveau'),
-            {'code': 'TSHIRT', 'designation': 'Doublon', 'devise': 'FC'},
+            {'code': 'TSHIRT', 'designation': 'Doublon'},
         )
         self.assertEqual(
             ArticleBoutique.objects.filter(code='TSHIRT', succursale=self.succ_a).count(), 1)
         self.assertContains(resp, 'existe déjà')
+
+    def test_variante_porte_la_devise(self):
+        """La devise vit sur la variante (défaut FC), plus sur l'article."""
+        self.assertFalse(hasattr(self.art_tshirt, 'devise'))
+        self.assertEqual(self.var_noir_m.devise, 'FC')
+        v_usd, _ = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Vert', taille='M', genre='HOMME',
+            devise='USD', par=self.responsable)
+        self.assertEqual(v_usd.devise, 'USD')
+
+    def test_variante_distincte_par_type_tissu(self):
+        """Le type de tissu fait partie de l'identité : 2 tissus = 2 variantes."""
+        v1, c1 = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Noir', taille='S', genre='HOMME',
+            type_tissu=self.tissu_coton, par=self.responsable)
+        v2, c2 = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Noir', taille='S', genre='HOMME',
+            type_tissu=self.tissu_poly, par=self.responsable)
+        self.assertTrue(c1 and c2)
+        self.assertNotEqual(v1.pk, v2.pk)
+        self.assertNotEqual(v1.label, v2.label)
+
+    def test_anti_doublon_avec_type_tissu(self):
+        """Même combinaison + même tissu → la variante est réutilisée (pas de doublon)."""
+        v1, c1 = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Vert', taille='M', genre='HOMME',
+            type_tissu=self.tissu_coton, par=self.responsable)
+        v2, c2 = VarianteService.creer_ou_trouver(
+            article=self.art_tshirt, couleur='Vert', taille='M', genre='HOMME',
+            type_tissu=self.tissu_coton, par=self.responsable)
+        self.assertTrue(c1)
+        self.assertFalse(c2)
+        self.assertEqual(v1.pk, v2.pk)
 
     def test_sortie_stock_insuffisant_refusee(self):
         self._entrer(self.var_noir_m, 5)
@@ -323,6 +359,32 @@ class TestBonEntreeBoutique(BoutiqueBase):
         self.assertEqual(StockBoutique.objects.get(variante=var).quantite, 25)
         self.assertTrue(
             MouvementStockBoutique.objects.filter(variante=var, type='ENTREE').exists())
+
+    def test_entree_transmet_la_devise_a_la_variante(self):
+        """La devise choisie à l'entrée est transmise à la variante créée.
+        (Sur un réapprovisionnement, la variante existante garde SA devise.)"""
+        bon = BonEntreeService.creer(
+            article=self.art_tshirt, succursale=self.succ_a, domaine=self.domaine,
+            quantite=5, cree_par=self.responsable,
+            couleur='Rouge', taille='L', genre='HOMME',
+            devise='EUR', prix_unitaire=20)
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        var = VarianteArticle.objects.get(
+            article=self.art_tshirt, couleur='Rouge', taille='L', genre='HOMME')
+        self.assertEqual(var.devise, 'EUR')
+
+    def test_entree_transmet_type_tissu(self):
+        """Le type de tissu choisi à l'entrée est transmis à la variante créée."""
+        bon = BonEntreeService.creer(
+            article=self.art_tshirt, succursale=self.succ_a, domaine=self.domaine,
+            quantite=5, cree_par=self.responsable,
+            couleur='Rouge', taille='S', genre='HOMME',
+            type_tissu=self.tissu_coton, prix_unitaire=20)
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        var = VarianteArticle.objects.get(
+            article=self.art_tshirt, couleur='Rouge', taille='S', genre='HOMME',
+            type_tissu=self.tissu_coton)
+        self.assertEqual(var.type_tissu, self.tissu_coton)
 
     def test_validation_refusee_deux_fois(self):
         bon = self._bon()
@@ -595,6 +657,24 @@ class TestPerimetreBoutique(BoutiqueBase):
         resp = self.client.get(reverse('boutique:articles'))
         self.assertEqual(resp.status_code, 200)
         self.assertNotContains(resp, 'TSHIRT')
+
+    def test_vente_variantes_avec_principale_autre_domaine(self):
+        """Régression : la vue vente charge les variantes BOUTIQUE même quand la
+        principale de l'utilisateur appartient à un autre domaine (RESTAURANT).
+        Le contexte du module Boutique vient de l'affectation BOUTIQUE."""
+        user = UserService.creer(
+            username='caissier_boutique', password='pass1234', roles=[self.role_caissier])
+        UserService.affecter_succursale(
+            user, self.succ_a, self.restaurant, principale=True, role=self.role_caissier)
+        UserService.affecter_succursale(
+            user, self.succ_a, self.domaine, principale=False, role=self.role_caissier)
+        self.client.force_login(user)
+        resp = self.client.get(reverse('boutique:vente_nouvelle'))
+        self.assertEqual(resp.status_code, 200)
+        # La variante BOUTIQUE de la succursale A est chargée dans le select.
+        self.assertContains(resp, str(self.var_noir_m))
+        # Pas de variante de la succursale B (hors contexte BOUTIQUE).
+        self.assertNotContains(resp, str(self.var_jean))
 
 
 class TestHistoriqueMouvements(BoutiqueBase):

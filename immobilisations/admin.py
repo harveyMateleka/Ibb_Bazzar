@@ -6,8 +6,10 @@ from .models import (
     CategorieImmobilisation,
     Declassement,
     Deplacement,
+    Emplacement,
     Immobilisation,
     Reparation,
+    Service,
 )
 
 
@@ -17,12 +19,24 @@ class CategorieImmobilisationAdmin(admin.ModelAdmin):
     search_fields = ['nom', 'code']
 
 
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'actif']
+    search_fields = ['nom']
+
+
+@admin.register(Emplacement)
+class EmplacementAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'actif']
+    search_fields = ['nom']
+
+
 @admin.register(Immobilisation)
 class ImmobilisationAdmin(admin.ModelAdmin):
     list_display = ['code', 'designation', 'categorie', 'succursale', 'etat_physique',
                     'statut_administratif', 'valeur_acquisition', 'emplacement']
     list_filter = ['etat_physique', 'statut_administratif', 'succursale', 'categorie']
-    search_fields = ['code', 'designation', 'numero_serie']
+    search_fields = ['code', 'designation', 'numero_serie', 'service__nom', 'emplacement__nom']
     readonly_fields = ['code', 'date_creation', 'date_modification']
 
 
@@ -49,7 +63,8 @@ class ReparationAdmin(admin.ModelAdmin):
 
 @admin.register(Casse)
 class CasseAdmin(admin.ModelAdmin):
-    list_display = ['immobilisation', 'date_casse', 'motif', 'decision', 'par']
+    list_display = ['immobilisation', 'date_casse', 'motif', 'responsable_dommage',
+                    'decision', 'par']
     list_filter = ['decision']
 
 

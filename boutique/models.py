@@ -76,6 +76,23 @@ class UniteBoutique(models.Model):
         return self.code
 
 
+class TypeTissuArticle(models.Model):
+    """Type de tissu d'un article textile (référentiel)."""
+
+    nom = models.CharField('nom', max_length=100, unique=True)
+    code = models.CharField('code', max_length=20, unique=True)
+    description = models.TextField('description', blank=True)
+    actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'type de tissu d’article'
+        verbose_name_plural = 'types de tissus d’articles'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
 class FournisseurBoutique(models.Model):
     """Fournisseur de la boutique (référentiel)."""
 
@@ -101,15 +118,8 @@ class ArticleBoutique(models.Model):
     `VarianteArticle` / `StockBoutique`.
     """
 
-    class Devise(models.TextChoices):
-        FC = 'FC', 'Franc congolais (FC)'
-        USD = 'USD', 'Dollar américain (USD)'
-        EUR = 'EUR', 'Euro (EUR)'
-
     code = models.CharField('code', max_length=50)
     designation = models.CharField('désignation', max_length=200)
-    devise = models.CharField(
-        'devise', max_length=3, choices=Devise.choices, default=Devise.FC)
     succursale = models.ForeignKey(
         'core.Succursale',
         on_delete=models.PROTECT,
@@ -226,6 +236,14 @@ class VarianteArticle(models.Model):
         null=True,
         blank=True,
     )
+    type_tissu = models.ForeignKey(
+        TypeTissuArticle,
+        on_delete=models.PROTECT,
+        related_name='variantes',
+        verbose_name='type de tissu',
+        null=True,
+        blank=True,
+    )
 
     # Caractéristiques (valeurs contrôlées pour la cohérence)
     genre = models.CharField('genre', max_length=10, choices=Genre.choices, blank=True)
@@ -238,7 +256,14 @@ class VarianteArticle(models.Model):
     etagere = models.CharField('étagère', max_length=50, blank=True)
     emplacement = models.CharField('emplacement', max_length=50, blank=True)
 
+    class Devise(models.TextChoices):
+        FC = 'FC', 'Franc congolais (FC)'
+        USD = 'USD', 'Dollar américain (USD)'
+        EUR = 'EUR', 'Euro (EUR)'
+
     # Tarifs — règle : prix_minimum ≤ prix_unitaire ≤ prix_maximum
+    devise = models.CharField(
+        'devise', max_length=3, choices=Devise.choices, default=Devise.FC)
     prix_achat = models.DecimalField('prix d’achat', max_digits=12, decimal_places=2, default=Decimal('0'))
     prix_unitaire = models.DecimalField('prix de vente', max_digits=12, decimal_places=2, default=Decimal('0'))
     prix_minimum = models.DecimalField(
@@ -260,15 +285,29 @@ class VarianteArticle(models.Model):
         verbose_name = 'variante d’article'
         verbose_name_plural = 'variantes d’articles'
         ordering = ['code_variante']
-        # Identité métier d'une variante : pas de doublon pour un même article.
-        unique_together = [('article', 'couleur', 'taille', 'genre')]
+        # Identité métier d'une variante : article + caractéristiques + type de
+        # tissu. Deux contraintes partielles (PostgreSQL) pour préserver
+        # l'anti-doublon quand type_tissu est NULL (NULL ≠ NULL en SQL).
+        constraints = [
+            models.UniqueConstraint(
+                fields=['article', 'couleur', 'taille', 'genre'],
+                name='variante_unique_sans_tissu',
+                condition=models.Q(type_tissu__isnull=True),
+            ),
+            models.UniqueConstraint(
+                fields=['article', 'couleur', 'taille', 'genre', 'type_tissu'],
+                name='variante_unique_avec_tissu',
+                condition=models.Q(type_tissu__isnull=False),
+            ),
+        ]
 
     def __str__(self):
-        return f'{self.article.code} — {self.label}'
+        return f'{self.article.designation} — {self.label}'
 
     @property
     def label(self):
-        parties = [p for p in (self.couleur, self.taille, self.get_genre_display()) if p]
+        tissu = self.type_tissu.nom if self.type_tissu else ''
+        parties = [p for p in (tissu, self.couleur, self.taille, self.get_genre_display()) if p]
         return ' / '.join(parties) if parties else self.code_variante
 
     @property
@@ -344,6 +383,9 @@ class BonEntreeBoutique(models.Model):
     unite = models.ForeignKey(
         UniteBoutique, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='bons_entree', verbose_name='unité')
+    type_tissu = models.ForeignKey(
+        TypeTissuArticle, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bons_entree', verbose_name='type de tissu')
     genre = models.CharField('genre', max_length=10,
                              choices=VarianteArticle.Genre.choices, blank=True)
     taille = models.CharField('taille', max_length=20,
@@ -355,6 +397,9 @@ class BonEntreeBoutique(models.Model):
     rayon = models.CharField('rayon', max_length=50, blank=True)
     etagere = models.CharField('étagère', max_length=50, blank=True)
     emplacement = models.CharField('emplacement', max_length=50, blank=True)
+    devise = models.CharField(
+        'devise', max_length=3, choices=VarianteArticle.Devise.choices,
+        default=VarianteArticle.Devise.FC)
     prix_achat = models.DecimalField('prix d’achat', max_digits=12, decimal_places=2, default=Decimal('0'))
     prix_unitaire = models.DecimalField('prix de vente', max_digits=12, decimal_places=2, default=Decimal('0'))
     prix_minimum = models.DecimalField(

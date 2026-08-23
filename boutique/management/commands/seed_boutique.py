@@ -25,6 +25,7 @@ from boutique.models import (
     MouvementStockBoutique,
     SousCategorieBoutique,
     StockBoutique,
+    TypeTissuArticle,
     UniteBoutique,
     VarianteArticle,
     Vente,
@@ -98,6 +99,7 @@ class Command(BaseCommand):
         SousCategorieBoutique.objects.all().delete()
         CategorieBoutique.objects.all().delete()
         UniteBoutique.objects.all().delete()
+        TypeTissuArticle.objects.all().delete()
         FournisseurBoutique.objects.all().delete()
 
     # --- Utilisateurs ------------------------------------------------------
@@ -150,6 +152,12 @@ class Command(BaseCommand):
         self.unite_pce, _ = UniteBoutique.objects.get_or_create(
             code='PCE', defaults={'nom': 'Pièce'})
 
+        self.tissus = {}
+        for code, nom in [('COT', 'Coton'), ('POL', 'Polyester'),
+                          ('JEA', 'Jean'), ('LAI', 'Laine')]:
+            self.tissus[code], _ = TypeTissuArticle.objects.get_or_create(
+                code=code, defaults={'nom': nom})
+
         self.fournisseur, _ = FournisseurBoutique.objects.get_or_create(
             nom='SOTEX DRC',
             defaults={'contact': 'M. Kabila', 'telephone': '+243 810 000 000',
@@ -171,12 +179,12 @@ class Command(BaseCommand):
                 code=code,
                 succursale=self.succ,
                 domaine=self.domaine,
-                defaults={'designation': designation, 'devise': 'FC'},
+                defaults={'designation': designation},
             )
         self.stdout.write(f'  {ArticleBoutique.objects.count()} article(s) parent(s) prêts.')
 
     def _variante(self, code_article, couleur, taille, genre, sous,
-                  pa, pv, pmin, pmax, seuil=0, rayon='', etagere=''):
+                  pa, pv, pmin, pmax, seuil=0, rayon='', etagere='', tissu=None):
         """Crée (ou réutilise) une variante d'un article parent."""
         article = ArticleBoutique.objects.get(
             code=code_article, succursale=self.succ, domaine=self.domaine)
@@ -185,12 +193,14 @@ class Command(BaseCommand):
             categorie=self.cat_vet if sous != 'CAS' else self.cat_acc,
             sous_categorie=self.sous_cats[sous],
             unite=self.unite_pce,
+            type_tissu=tissu,
             genre=genre,
             taille=taille,
             couleur=couleur,
             marque='IBBS',
             rayon=rayon,
             etagere=etagere,
+            devise='FC',
             prix_achat=pa,
             prix_unitaire=pv,
             prix_minimum=pmin,
@@ -201,21 +211,23 @@ class Command(BaseCommand):
         return variante
 
     def _creer_variantes(self):
-        # (article, couleur, taille, genre, sous-cat, pa, pv, pmin, pmax, seuil)
+        # (article, couleur, taille, genre, sous-cat, pa, pv, pmin, pmax, seuil,
+        #  rayon, etagere, tissu)
         donnees = [
-            ('TSHIRT', 'Noir', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A1'),
-            ('TSHIRT', 'Noir', 'L', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A1'),
-            ('TSHIRT', 'Bleu', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A2'),
-            ('TSHIRT', 'Bleu', 'L', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A2'),
-            ('TSHIRT', 'Rouge', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A3'),
-            ('JEAN', 'Bleu', '32', 'HOMME', 'JEA', 25000, 35000, 30000, 45000, 5, 'Homme', 'B1'),
-            ('CHEMISE', 'Blanche', 'M', 'HOMME', 'CHE', 20000, 30000, 26000, 40000, 5, 'Homme', 'B2'),
-            ('PANT', 'Noir', 'S', 'HOMME', 'PAN', 18000, 28000, 24000, 35000, 10, 'Homme', 'B3'),
-            ('CASQ', 'Noir', 'U', 'MIXTE', 'CAS', 5000, 10000, 8000, 15000, 3, 'Accessoires', 'C1'),
+            ('TSHIRT', 'Noir', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A1', 'COT'),
+            ('TSHIRT', 'Noir', 'L', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A1', 'COT'),
+            ('TSHIRT', 'Bleu', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A2', 'COT'),
+            ('TSHIRT', 'Bleu', 'L', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A2', 'COT'),
+            ('TSHIRT', 'Rouge', 'M', 'HOMME', 'TSH', 12000, 20000, 17000, 25000, 10, 'Homme', 'A3', 'COT'),
+            ('JEAN', 'Bleu', '32', 'HOMME', 'JEA', 25000, 35000, 30000, 45000, 5, 'Homme', 'B1', 'JEA'),
+            ('CHEMISE', 'Blanche', 'M', 'HOMME', 'CHE', 20000, 30000, 26000, 40000, 5, 'Homme', 'B2', 'COT'),
+            ('PANT', 'Noir', 'S', 'HOMME', 'PAN', 18000, 28000, 24000, 35000, 10, 'Homme', 'B3', 'COT'),
+            ('CASQ', 'Noir', 'U', 'MIXTE', 'CAS', 5000, 10000, 8000, 15000, 3, 'Accessoires', 'C1', ''),
         ]
-        for code_article, couleur, taille, genre, sous, pa, pv, pmin, pmax, seuil, rayon, etagere in donnees:
+        for code_article, couleur, taille, genre, sous, pa, pv, pmin, pmax, seuil, rayon, etagere, tissu in donnees:
             self._variante(code_article, couleur, taille, genre, sous,
-                           pa, pv, pmin, pmax, seuil, rayon, etagere)
+                           pa, pv, pmin, pmax, seuil, rayon, etagere,
+                           tissu=self.tissus[tissu] if tissu else None)
         self.stdout.write(f'  {VarianteArticle.objects.count()} variante(s) prêtes.')
 
     # --- Stock -------------------------------------------------------------

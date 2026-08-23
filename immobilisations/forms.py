@@ -15,8 +15,10 @@ from .models import (
     Casse,
     Declassement,
     Deplacement,
+    Emplacement,
     Immobilisation,
     Reparation,
+    Service,
 )
 
 
@@ -36,6 +38,9 @@ class ImmobilisationForm(forms.ModelForm):
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['date_acquisition'].input_formats = ['%Y-%m-%d']
+        for champ, Entite in (('service', Service), ('emplacement', Emplacement)):
+            self.fields[champ].queryset = Entite.objects.filter(actif=True)
+            self.fields[champ].empty_label = '— Aucun —'
         if succursales is not None:
             self.fields['succursale'].queryset = succursales
         if domaines is not None:
@@ -61,15 +66,14 @@ class AffectationForm(_ActeurMixin, forms.ModelForm):
     class Meta:
         model = Affectation
         fields = ['succursale', 'service', 'emplacement', 'par']
-        widgets = {
-            'service': forms.TextInput(attrs={'class': 'input'}),
-            'emplacement': forms.TextInput(attrs={'class': 'input'}),
-        }
 
     def __init__(self, *args, succursales=None, request_user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if succursales is not None:
             self.fields['succursale'].queryset = succursales
+        for champ, Entite in (('service', Service), ('emplacement', Emplacement)):
+            self.fields[champ].queryset = Entite.objects.filter(actif=True)
+            self.fields[champ].empty_label = '— Aucun —'
         self._init_acteur(request_user)
 
 
@@ -80,8 +84,6 @@ class DeplacementForm(_ActeurMixin, forms.ModelForm):
         model = Deplacement
         fields = ['nouvelle_succursale', 'nouveau_service', 'nouvel_emplacement', 'motif', 'par']
         widgets = {
-            'nouveau_service': forms.TextInput(attrs={'class': 'input'}),
-            'nouvel_emplacement': forms.TextInput(attrs={'class': 'input'}),
             'motif': forms.TextInput(attrs={'class': 'input'}),
         }
 
@@ -89,6 +91,9 @@ class DeplacementForm(_ActeurMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         if succursales is not None:
             self.fields['nouvelle_succursale'].queryset = succursales
+        for champ, Entite in (('nouveau_service', Service), ('nouvel_emplacement', Emplacement)):
+            self.fields[champ].queryset = Entite.objects.filter(actif=True)
+            self.fields[champ].empty_label = '— Aucun —'
         self._init_acteur(request_user)
 
 
@@ -113,9 +118,13 @@ class CasseForm(_ActeurMixin, forms.ModelForm):
 
     class Meta:
         model = Casse
-        fields = ['motif', 'description', 'par']
+        fields = ['motif', 'description', 'responsable_dommage', 'par']
         widgets = {
             'motif': forms.TextInput(attrs={'class': 'input'}),
+            'responsable_dommage': forms.TextInput(attrs={
+                'class': 'input',
+                'placeholder': 'Nom de la personne ayant causé le dommage',
+            }),
         }
 
     def __init__(self, *args, request_user=None, **kwargs):

@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from core.models import Domaine, Role, Succursale
+from core.models import Domaine, Role, Succursale, User
 from core.services import UserService
 
 from .models import (
@@ -14,8 +14,10 @@ from .models import (
     CategorieImmobilisation,
     Declassement,
     Deplacement,
+    Emplacement,
     Immobilisation,
     Reparation,
+    Service,
 )
 from .services import (
     AffectationService,
@@ -62,6 +64,19 @@ class ImmobilisationBase(TestCase):
             user, succursale, self.domaine, principale=True, role=role)
         return user
 
+    def _bien_declasse(self):
+        """Bien déclassé (statut DECLASSE), hors du système pour les non-privilégiés."""
+        bien = ImmobilisationService.creer(
+            designation='PC déclassé', succursale=self.succ_a, domaine=self.domaine,
+            categorie=self.cat, numero_serie='S-DEC', valeur_acquisition=500,
+            par=self.gestionnaire)
+        dec = DeclassementService.demander(
+            immobilisation=bien, motif='Hors service', par=self.gestionnaire)
+        DeclassementService.valider(declassement=dec, par=self.gestionnaire)
+        bien.refresh_from_db()
+        self.assertEqual(bien.statut_administratif, 'DECLASSE')
+        return bien
+
 
 class TestImmobilisationService(ImmobilisationBase):
     def test_creation_bien(self):
@@ -70,40 +85,49 @@ class TestImmobilisationService(ImmobilisationBase):
         self.assertEqual(self.bien.statut_administratif, Immobilisation.StatutAdministratif.STOCKE)
 
     def test_affectation_statut_en_service(self):
+        svc = Service.objects.create(nom='Comptabilité')
+        emp = Emplacement.objects.create(nom='Bureau 12')
         affect = AffectationService.affecter(
             immobilisation=self.bien, succursale=self.succ_a,
-            service='Comptabilité', emplacement='Bureau 12', par=self.gestionnaire)
+            service=svc, emplacement=emp, par=self.gestionnaire)
         self.assertEqual(affect.par, self.gestionnaire)
         self.bien.refresh_from_db()
         self.assertEqual(self.bien.statut_administratif, 'EN_SERVICE')
-        self.assertEqual(self.bien.service, 'Comptabilité')
-        self.assertEqual(self.bien.emplacement, 'Bureau 12')
+        self.assertEqual(self.bien.service, svc)
+        self.assertEqual(self.bien.emplacement, emp)
 
     def test_affectation_historisée(self):
+        svc_a = Service.objects.create(nom='A')
+        svc_b = Service.objects.create(nom='B')
+        emp_1 = Emplacement.objects.create(nom='E1')
+        emp_2 = Emplacement.objects.create(nom='E2')
         AffectationService.affecter(
             immobilisation=self.bien, succursale=self.succ_a,
-            service='A', emplacement='E1', par=self.gestionnaire)
+            service=svc_a, emplacement=emp_1, par=self.gestionnaire)
         AffectationService.affecter(
             immobilisation=self.bien, succursale=self.succ_a,
-            service='B', emplacement='E2', par=self.gestionnaire)
+            service=svc_b, emplacement=emp_2, par=self.gestionnaire)
         self.assertEqual(Affectation.objects.filter(immobilisation=self.bien).count(), 2)
         self.assertEqual(Affectation.objects.filter(immobilisation=self.bien, actif=True).count(), 1)
         active = self.bien.affectation_courante
-        self.assertEqual(active.service, 'B')
+        self.assertEqual(active.service, svc_b)
 
     def test_deplacement_historisé(self):
+        svc = Service.objects.create(nom='A')
+        emp_1 = Emplacement.objects.create(nom='E1')
+        emp_2 = Emplacement.objects.create(nom='E2')
         AffectationService.affecter(
             immobilisation=self.bien, succursale=self.succ_a,
-            service='A', emplacement='E1', par=self.gestionnaire)
+            service=svc, emplacement=emp_1, par=self.gestionnaire)
         DeplacementService.deplacer(
             immobilisation=self.bien, nouvelle_succursale=self.succ_a,
-            nouveau_service='A', nouvel_emplacement='E2',
+            nouveau_service=svc, nouvel_emplacement=emp_2,
             motif='Changement', par=self.gestionnaire)
         self.bien.refresh_from_db()
-        self.assertEqual(self.bien.emplacement, 'E2')
+        self.assertEqual(self.bien.emplacement, emp_2)
         dep = Deplacement.objects.get(immobilisation=self.bien)
-        self.assertEqual(dep.ancien_emplacement, 'E1')
-        self.assertEqual(dep.nouvel_emplacement, 'E2')
+        self.assertEqual(dep.ancien_emplacement, emp_1)
+        self.assertEqual(dep.nouvel_emplacement, emp_2)
         self.assertEqual(dep.par, self.gestionnaire)
 
     def test_reparation_cycle(self):
@@ -117,11 +141,46 @@ class TestImmobilisationService(ImmobilisationBase):
         self.assertEqual(self.bien.etat_physique, 'BON')
         self.assertEqual(self.bien.statut_administratif, 'EN_SERVICE')
 
+    def test_bien_en_reparation_non_affectable(self):
+        """Règle métier : un bien en réparation ne peut pas être affecté."""
+        ReparationService.declarer(immobilisation=self.bien, motif='Écran', par=self.gestionnaire)
+        with self.assertRaises(ValidationError):
+            AffectationService.affecter(
+                immobilisation=self.bien, succursale=self.succ_a, par=self.gestionnaire)
+
+    def test_bien_en_reparation_non_deplacable(self):
+        """Règle métier : un bien en réparation ne peut pas être déplacé."""
+        ReparationService.declarer(immobilisation=self.bien, motif='Écran', par=self.gestionnaire)
+        with self.assertRaises(ValidationError):
+            DeplacementService.deplacer(
+                immobilisation=self.bien, nouvelle_succursale=self.succ_a, par=self.gestionnaire)
+
+    def test_bien_en_reparation_peut_etre_declare_casse(self):
+        """Un bien en réparation peut être déclaré cassé."""
+        ReparationService.declarer(immobilisation=self.bien, motif='Écran', par=self.gestionnaire)
+        casse = CasseService.declarer(immobilisation=self.bien, motif='Chute', par=self.gestionnaire)
+        self.assertEqual(casse.par, self.gestionnaire)
+
+    def test_bien_en_reparation_peut_etre_demande_declassement(self):
+        """Un bien en réparation peut être demandé au déclassement."""
+        ReparationService.declarer(immobilisation=self.bien, motif='Écran', par=self.gestionnaire)
+        dec = DeclassementService.demander(
+            immobilisation=self.bien, motif='Usure', par=self.gestionnaire)
+        self.assertEqual(dec.statut, Declassement.Statut.DEMANDE)
+
     def test_casse_declaration_et_evaluation(self):
         casse = CasseService.declarer(
             immobilisation=self.bien, motif='Chute', par=self.gestionnaire)
         self.bien.refresh_from_db()
         self.assertEqual(self.bien.etat_physique, 'CASSE')
+        # Le responsable du dommage est facultatif.
+        self.assertEqual(casse.responsable_dommage, '')
+
+    def test_casse_enregistre_le_responsable_du_dommage(self):
+        casse = CasseService.declarer(
+            immobilisation=self.bien, motif='Chute',
+            responsable_dommage='Jean M.', par=self.gestionnaire)
+        self.assertEqual(casse.responsable_dommage, 'Jean M.')
         # Décision réparable → en réparation
         CasseService.evaluer(casse=casse, decision='REPARABLE', par=self.gestionnaire)
         self.bien.refresh_from_db()
@@ -174,3 +233,64 @@ class TestPerimetreEtPermissions(ImmobilisationBase):
         resp2 = self.client.get(
             reverse('immobilisations:affectation_nouvelle', kwargs={'pk': self.bien.pk}))
         self.assertEqual(resp2.status_code, 403)
+
+
+class TestBiensDeclasses(ImmobilisationBase):
+    """Un bien déclassé disparaît du système ; seuls superuser / détenteur de la
+    permission view_declassified_asset le voient ; aucune opération applicative."""
+
+    def setUp(self):
+        super().setUp()
+        self.bien_declasse = self._bien_declasse()
+
+    def test_masque_sans_droit(self):
+        self.client.force_login(self.lecteur)  # view_asset seul
+        resp = self.client.get(reverse('immobilisations:biens'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, self.bien.code)          # le bien actif reste visible
+        self.assertNotContains(resp, self.bien_declasse.code)  # le déclassé est masqué
+        self.assertNotContains(resp, 'Inclure les biens déclassés')  # pas de case pour lui
+
+    def test_visible_superuser(self):
+        admin = User.objects.create_superuser(username='super', password='x')
+        self.client.force_login(admin)
+        resp = self.client.get(reverse('immobilisations:biens'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Inclure les biens déclassés')  # la case est proposée
+        # Le bien déclassé apparaît dès que la case est cochée (?declasses=1).
+        resp2 = self.client.get(reverse('immobilisations:biens') + '?declasses=1')
+        self.assertContains(resp2, self.bien_declasse.code)
+
+    def test_visible_avec_permission(self):
+        perm = Permission.objects.get(
+            content_type__app_label='immobilisations', codename='view_declassified_asset')
+        self.lecteur.user_permissions.add(perm)
+        self.client.force_login(self.lecteur)
+        resp = self.client.get(reverse('immobilisations:biens') + '?declasses=1')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, self.bien_declasse.code)
+
+    def test_detail_interdit_sans_droit(self):
+        self.client.force_login(self.lecteur)
+        resp = self.client.get(
+            reverse('immobilisations:bien_detail', kwargs={'pk': self.bien_declasse.pk}))
+        self.assertEqual(resp.status_code, 404)  # existence masquée
+
+    def test_detail_ok_privelegie(self):
+        admin = User.objects.create_superuser(username='super2', password='x')
+        self.client.force_login(admin)
+        resp = self.client.get(
+            reverse('immobilisations:bien_detail', kwargs={'pk': self.bien_declasse.pk}))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_actions_bloquees_sur_bien_declasse(self):
+        # Aucune opération applicative ne peut réactiver un bien déclassé
+        # (seule la modification du statut en admin le permet).
+        with self.assertRaises(ValidationError):
+            AffectationService.affecter(
+                immobilisation=self.bien_declasse, succursale=self.succ_a,
+                par=self.gestionnaire)
+        with self.assertRaises(ValidationError):
+            DeplacementService.deplacer(
+                immobilisation=self.bien_declasse, nouvelle_succursale=self.succ_a,
+                par=self.gestionnaire)

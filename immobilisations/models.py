@@ -37,6 +37,38 @@ class CategorieImmobilisation(models.Model):
         return self.nom
 
 
+class Service(models.Model):
+    """Service d'affectation d'un bien (référentiel maintenu en admin)."""
+
+    nom = models.CharField('nom', max_length=150, unique=True)
+    description = models.TextField('description', blank=True)
+    actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'service'
+        verbose_name_plural = 'services'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
+class Emplacement(models.Model):
+    """Emplacement d'un bien (référentiel maintenu en admin)."""
+
+    nom = models.CharField('nom', max_length=150, unique=True)
+    description = models.TextField('description', blank=True)
+    actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'emplacement'
+        verbose_name_plural = 'emplacements'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
 class Immobilisation(models.Model):
     """Bien durable. Ne se supprime jamais : seul le déclassement le clôture."""
 
@@ -91,8 +123,22 @@ class Immobilisation(models.Model):
         'statut administratif', max_length=14, choices=StatutAdministratif.choices,
         default=StatutAdministratif.STOCKE)
 
-    service = models.CharField('service', max_length=150, blank=True)
-    emplacement = models.CharField('emplacement', max_length=150, blank=True)
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='immobilisations',
+        verbose_name='service',
+        null=True,
+        blank=True,
+    )
+    emplacement = models.ForeignKey(
+        Emplacement,
+        on_delete=models.PROTECT,
+        related_name='immobilisations',
+        verbose_name='emplacement',
+        null=True,
+        blank=True,
+    )
     observation = models.TextField('observation', blank=True)
     date_creation = models.DateTimeField('créé le', default=timezone.now)
     date_modification = models.DateTimeField('modifié le', auto_now=True)
@@ -110,6 +156,7 @@ class Immobilisation(models.Model):
             ('repair_asset', 'Peut gérer les réparations'),
             ('report_damage_asset', 'Peut déclarer une casse'),
             ('decommission_asset', 'Peut déclasser une immobilisation'),
+            ('view_declassified_asset', 'Peut consulter les biens déclassés'),
         ]
 
     def __str__(self):
@@ -155,8 +202,22 @@ class Affectation(models.Model):
         related_name='affectations_immobilisations',
         verbose_name='succursale',
     )
-    service = models.CharField('service', max_length=150, blank=True)
-    emplacement = models.CharField('emplacement', max_length=150, blank=True)
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='affectations',
+        verbose_name='service',
+        null=True,
+        blank=True,
+    )
+    emplacement = models.ForeignKey(
+        Emplacement,
+        on_delete=models.PROTECT,
+        related_name='affectations',
+        verbose_name='emplacement',
+        null=True,
+        blank=True,
+    )
     date_affectation = models.DateTimeField('date d’affectation', default=timezone.now)
     par = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -201,10 +262,38 @@ class Deplacement(models.Model):
         null=True,
         blank=True,
     )
-    ancien_service = models.CharField('ancien service', max_length=150, blank=True)
-    nouveau_service = models.CharField('nouveau service', max_length=150, blank=True)
-    ancien_emplacement = models.CharField('ancien emplacement', max_length=150, blank=True)
-    nouvel_emplacement = models.CharField('nouvel emplacement', max_length=150, blank=True)
+    ancien_service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='+',
+        verbose_name='ancien service',
+        null=True,
+        blank=True,
+    )
+    nouveau_service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='+',
+        verbose_name='nouveau service',
+        null=True,
+        blank=True,
+    )
+    ancien_emplacement = models.ForeignKey(
+        Emplacement,
+        on_delete=models.PROTECT,
+        related_name='+',
+        verbose_name='ancien emplacement',
+        null=True,
+        blank=True,
+    )
+    nouvel_emplacement = models.ForeignKey(
+        Emplacement,
+        on_delete=models.PROTECT,
+        related_name='+',
+        verbose_name='nouvel emplacement',
+        null=True,
+        blank=True,
+    )
     date_deplacement = models.DateTimeField('date de déplacement', default=timezone.now)
     motif = models.CharField('motif', max_length=200, blank=True)
     par = models.ForeignKey(
@@ -275,6 +364,8 @@ class Casse(models.Model):
     date_casse = models.DateTimeField('date', default=timezone.now)
     motif = models.CharField('motif', max_length=200)
     description = models.TextField('description', blank=True)
+    responsable_dommage = models.CharField(
+        'responsable du dommage', max_length=150, blank=True)
     decision = models.CharField(
         'décision', max_length=14, choices=Decision.choices, null=True, blank=True)
     observation = models.TextField('observation', blank=True)
