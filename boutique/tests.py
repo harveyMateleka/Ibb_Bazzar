@@ -906,8 +906,31 @@ class TestVenteTraitementLigne(BoutiqueBase):
         self.assertContains(resp, 'Traitement des lignes')
         self.assertContains(resp, 'REJETEE')           # option « Rejeter »
         self.assertContains(resp, 'prix_responsable')  # champ prix retenu
+        self.assertContains(resp, 'prix-decision')     # grille input 50 % / bouton 50 %
         self.assertContains(resp, 'Montant retenu')    # colonne montant/écart
         self.assertContains(resp, 'Écart')
+
+    def test_ticket_affiche_prix_retenu_et_exclut_ligne_rejetee(self):
+        """Ticket : prix retenu affiché (pas le prix normal), lignes rejetées exclues."""
+        self._entrer(self.var_noir_m, 10)
+        self._entrer(self.var_noir_l, 10)
+        vente = self._soumettre([
+            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)])
+        lignes = {l.variante_id: l for l in vente.lignes.all()}
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=lignes[self.var_noir_m.pk].pk,
+            decision='VALIDEE', prix_responsable=14, par=self.responsable)
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=lignes[self.var_noir_l.pk].pk,
+            decision='REJETEE', par=self.responsable)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        self.client.force_login(self.responsable)
+        resp = self.client.get(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, '14,00')   # prix retenu (14), pas le prix normal (15)
+        self.assertContains(resp, '28,00')   # total ligne = 14 × 2
+        self.assertNotContains(resp, '15,00')  # la ligne rejetée n'est pas facturée
 
 
 class TestPerimetreBoutique(BoutiqueBase):

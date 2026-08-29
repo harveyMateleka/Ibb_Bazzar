@@ -58,15 +58,17 @@
             {% else %}—{% endif %}
           </td>
           <td>
-            <form action="{% url 'boutique:vente_decider_ligne' vente.pk ligne.pk %}" method="post" class="field inline">
+            <form action="{% url 'boutique:vente_decider_ligne' vente.pk ligne.pk %}" method="post" class="field">
               {% csrf_token %}
               <select class="input" name="decision" style="width:auto">
                 <option value="VALIDEE" {% if ligne.statut_ligne == 'VALIDEE' %}selected{% endif %}>Valider</option>
                 <option value="REJETEE" {% if ligne.statut_ligne == 'REJETEE' %}selected{% endif %}>Rejeter</option>
               </select>
-              <input class="input" type="number" name="prix_responsable" step="0.01" placeholder="Prix retenu"
-                     value="{{ ligne.prix_responsable|default:'' }}" style="width:90px">
-              <button type="submit" class="btn btn-primary">OK</button>
+              <div class="prix-decision">
+                <input class="input" type="number" name="prix_responsable" step="0.01" placeholder="Prix retenu"
+                       value="{{ ligne.prix_responsable|default:'' }}">
+                <button type="submit" class="btn btn-primary">OK</button>
+              </div>
             </form>
           </td>
         </tr>

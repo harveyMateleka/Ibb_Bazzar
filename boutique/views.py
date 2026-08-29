@@ -1084,7 +1084,11 @@ def vente_imprimer(request, pk):
         'boutique/vente_impression.html',
         {
             'vente': vente,
-            'lignes': vente.lignes.select_related('variante', 'variante__article'),
+            # Seules les lignes VALIDÉES figurent au ticket : une ligne rejetée
+            # par le responsable n'est ni vendue ni facturée.
+            'lignes': vente.lignes.filter(
+                statut_ligne=VenteLigne.StatutLigne.VALIDEE,
+            ).select_related('variante', 'variante__article'),
         },
     )
 
