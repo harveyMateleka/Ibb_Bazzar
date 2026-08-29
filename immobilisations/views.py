@@ -28,6 +28,7 @@ from .forms import (
 from .models import (
     Affectation,
     Casse,
+    CategorieImmobilisation,
     Declassement,
     Deplacement,
     Immobilisation,
@@ -237,19 +238,90 @@ def bien_nouveau(request):
             numero_serie=donnees.get('numero_serie', ''),
             valeur_acquisition=donnees.get('valeur_acquisition', 0),
             date_acquisition=donnees.get('date_acquisition'),
-            fournisseur=donnees.get('fournisseur', ''),
             service=donnees.get('service'),
             emplacement=donnees.get('emplacement'),
+            periode_entretien=donnees.get('periode_entretien'),
+            duree_vie=donnees.get('duree_vie'),
             observation=donnees.get('observation', ''),
             par=request.user,
         )
-        messages.success(request, f'Bien {immo.code} créé avec succès.')
+        messages.success(request, f'Bien {immo.code} créé avec succès (brouillon).')
         return redirect('immobilisations:bien_detail', pk=immo.pk)
     return render(
         request,
         'immobilisations/bien_form.html',
         {'form': formulaire},
     )
+
+
+@require_permission('immobilisations.update_asset')
+@require_POST
+def bien_soumettre(request, pk):
+    """Soumet un bien brouillon pour validation."""
+    bien = _bien_du_perimetre(request, pk)
+    try:
+        ImmobilisationService.soumettre(immobilisation=bien, par=request.user)
+        messages.success(request, f'Bien {bien.code} soumis pour validation.')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('immobilisations:bien_detail', pk=bien.pk)
+
+
+@require_permission('immobilisations.validate_asset')
+@require_POST
+def bien_valider(request, pk):
+    """Valide un bien en attente."""
+    bien = _bien_du_perimetre(request, pk)
+    try:
+        ImmobilisationService.valider(immobilisation=bien, par=request.user)
+        messages.success(request, f'Bien {bien.code} validé.')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('immobilisations:bien_detail', pk=bien.pk)
+
+
+@require_permission('immobilisations.validate_asset')
+@require_POST
+def bien_rejeter(request, pk):
+    """Rejette un bien en attente (motif obligatoire)."""
+    bien = _bien_du_perimetre(request, pk)
+    motif = request.POST.get('motif', '')
+    try:
+        ImmobilisationService.rejeter(immobilisation=bien, par=request.user, motif=motif)
+        messages.success(request, f'Bien {bien.code} rejeté.')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('immobilisations:bien_detail', pk=bien.pk)
+
+
+@require_permission('immobilisations.validate_asset')
+def biens_a_valider(request):
+    """Liste des biens en attente de validation (validation individuelle + par lots)."""
+    peri = _perimetre(request.user)
+    biens = _biens_perimetre(peri).filter(
+        statut_validation=Immobilisation.StatutValidation.EN_ATTENTE)
+    page_obj = _paginer(request, biens.order_by('code'))
+    return render(
+        request,
+        'immobilisations/biens_a_valider.html',
+        {'biens': page_obj.object_list, 'page_obj': page_obj},
+    )
+
+
+@require_permission('immobilisations.validate_asset')
+@require_POST
+def biens_valider_lot(request):
+    """Valide plusieurs biens sélectionnés (seuls les éligibles sont validés)."""
+    peri = _perimetre(request.user)
+    ids = request.POST.getlist('biens')
+    biens = _biens_perimetre(peri).filter(pk__in=ids)
+    nb_valides, nb_ignores = ImmobilisationService.valider_plusieurs(
+        biens=biens, par=request.user)
+    message = f'{nb_valides} bien(s) validé(s).'
+    if nb_ignores:
+        message += f' {nb_ignores} ignoré(s) (statut inéligible).'
+    messages.success(request, message)
+    return redirect('immobilisations:biens_a_valider')
 
 
 @require_permission('immobilisations.view_asset')
@@ -405,6 +477,7 @@ def casse_declarer(request, pk):
             CasseService.declarer(
                 immobilisation=bien,
                 motif=formulaire.cleaned_data['motif'],
+                date_dommage=formulaire.cleaned_data.get('date_dommage'),
                 description=formulaire.cleaned_data.get('description', ''),
                 responsable_dommage=formulaire.cleaned_data.get('responsable_dommage', ''),
                 par=request.user,
@@ -562,5 +635,193 @@ def historique(request):
             'types': ['Affectation', 'Déplacement', 'Réparation', 'Casse', 'Déclassement'],
             'type': type_,
             'q': q,
+        },
+    )
+
+
+@require_permission('immobilisations.view_asset')
+def rapports(request):
+    """Centre des rapports des immobilisations."""
+    return render(request, 'immobilisations/rapports.html', {
+        'utilisateur': request.user,
+        'date_generation': timezone.localtime(),
+    })
+
+
+@require_permission('immobilisations.view_asset')
+def rapport_immobilisations(request):
+    """Rapport des biens enregistrés (filtres bornés au périmètre)."""
+    peri = _perimetre(request.user)
+    qs = _biens_perimetre(peri, inclure_declasses=_peut_voir_declasses(request.user))
+    q = request.GET.get('q', '')
+    categorie_id = request.GET.get('categorie', '')
+    etat = request.GET.get('etat', '')
+    statut = request.GET.get('statut', '')
+    succursale_id = request.GET.get('succursale', '')
+    if q:
+        qs = qs.filter(
+            Q(code__icontains=q)
+            | Q(designation__icontains=q)
+            | Q(numero_serie__icontains=q))
+    if categorie_id:
+        qs = qs.filter(categorie_id=categorie_id)
+    if etat:
+        qs = qs.filter(etat_physique=etat)
+    if statut:
+        qs = qs.filter(statut_administratif=statut)
+    if succursale_id:
+        qs = qs.filter(succursale_id=succursale_id)
+    qs = qs.select_related('categorie', 'succursale').order_by('code')
+    return render(
+        request,
+        'immobilisations/rapport_immobilisations.html',
+        {
+            'biens': qs,
+            'q': q,
+            'categorie_id': categorie_id,
+            'etat': etat,
+            'statut': statut,
+            'succursale_id': succursale_id,
+            'categories': CategorieImmobilisation.objects.filter(actif=True),
+            'etats': Immobilisation.EtatPhysique.choices,
+            'statuts': Immobilisation.StatutAdministratif.choices,
+            'succursales': peri['succursales'],
+            'nb_biens': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('immobilisations.view_asset')
+def rapport_affectations(request):
+    """Rapport des affectations (période + statut)."""
+    peri = _perimetre(request.user)
+    qs = Affectation.objects.select_related(
+        'immobilisation', 'succursale', 'par', 'service', 'emplacement').filter(
+        immobilisation__succursale_id__in=peri['succursales_ids'],
+        immobilisation__domaine_id=peri['domaine_id'],
+    )
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    statut = request.GET.get('statut', '')
+    if date_debut:
+        qs = qs.filter(date_affectation__date__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date_affectation__date__lte=date_fin)
+    if statut == 'active':
+        qs = qs.filter(actif=True)
+    elif statut == 'cloturee':
+        qs = qs.filter(actif=False)
+    qs = qs.order_by('-date_affectation')
+    return render(
+        request,
+        'immobilisations/rapport_affectations.html',
+        {
+            'affectations': qs,
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+            'statut': statut,
+            'statuts': [('', 'Toutes'), ('active', 'Active'), ('cloturee', 'Clôturée')],
+            'nb_affectations': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('immobilisations.view_asset')
+def rapport_deplacements(request):
+    """Rapport des déplacements (période)."""
+    peri = _perimetre(request.user)
+    qs = Deplacement.objects.select_related(
+        'immobilisation', 'par', 'ancienne_succursale', 'nouvelle_succursale').filter(
+        immobilisation__succursale_id__in=peri['succursales_ids'],
+        immobilisation__domaine_id=peri['domaine_id'],
+    )
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    if date_debut:
+        qs = qs.filter(date_deplacement__date__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date_deplacement__date__lte=date_fin)
+    qs = qs.order_by('-date_deplacement')
+    return render(
+        request,
+        'immobilisations/rapport_deplacements.html',
+        {
+            'deplacements': qs,
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+            'nb_deplacements': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('immobilisations.view_asset')
+def rapport_casses(request):
+    """Rapport des biens déclarés cassés (période + décision)."""
+    peri = _perimetre(request.user)
+    qs = Casse.objects.select_related('immobilisation', 'par').filter(
+        immobilisation__succursale_id__in=peri['succursales_ids'],
+        immobilisation__domaine_id=peri['domaine_id'],
+    )
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    decision = request.GET.get('decision', '')
+    if date_debut:
+        qs = qs.filter(date_casse__date__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date_casse__date__lte=date_fin)
+    if decision:
+        qs = qs.filter(decision=decision)
+    qs = qs.order_by('-date_casse')
+    return render(
+        request,
+        'immobilisations/rapport_casses.html',
+        {
+            'casses': qs,
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+            'decision': decision,
+            'decisions': Casse.Decision.choices,
+            'nb_casses': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('immobilisations.view_asset')
+def rapport_etats(request):
+    """Rapport par état physique / statut administratif des biens."""
+    peri = _perimetre(request.user)
+    qs = _biens_perimetre(peri, inclure_declasses=_peut_voir_declasses(request.user))
+    etat = request.GET.get('etat_physique', '')
+    statut = request.GET.get('statut', '')
+    if etat:
+        qs = qs.filter(etat_physique=etat)
+    if statut:
+        qs = qs.filter(statut_administratif=statut)
+    qs = qs.select_related('categorie', 'succursale').order_by('code')
+    par_etat = [
+        (label, qs.filter(etat_physique=choix).count())
+        for choix, label in Immobilisation.EtatPhysique.choices
+    ]
+    return render(
+        request,
+        'immobilisations/rapport_etats.html',
+        {
+            'biens': qs,
+            'etat': etat,
+            'statut': statut,
+            'etats': Immobilisation.EtatPhysique.choices,
+            'statuts': Immobilisation.StatutAdministratif.choices,
+            'par_etat': par_etat,
+            'nb_biens': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
         },
     )

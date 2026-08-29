@@ -284,58 +284,50 @@ class VenteService:
 
     @staticmethod
     def _controle_prix_ligne(ligne):
-        """Règles de prix par ligne. Retourne 'ok' ou 'pending' ; lève une
-        ValidationError si le prix est sous le minimum ou au-dessus de la référence."""
+        """Règles de prix par ligne (sur le PRIX PROPOSÉ). Retourne 'ok' ou
+        'pending' ; lève une ValidationError si le prix est sous le minimum ou
+        au-dessus du prix normal de la variante."""
         var = ligne.variante
-        if var.prix_minimum and ligne.prix_unitaire < var.prix_minimum:
+        prix = ligne.prix_propose if ligne.prix_propose is not None else ligne.prix_unitaire
+        if var.prix_minimum and prix < var.prix_minimum:
             raise ValidationError(
                 f'Cette variante ne peut pas être vendue en dessous de son prix '
                 f'minimum autorisé ({var.prix_minimum}).')
-        if ligne.prix_unitaire > var.prix_unitaire:
+        if prix > var.prix_unitaire:
             raise ValidationError(
-                f'Le prix de vente de la variante {var.article.code} ({var.label}) '
-                f'({ligne.prix_unitaire}) est supérieur au prix de référence '
-                f'autorisé ({var.prix_unitaire}).')
-        if ligne.prix_unitaire < var.prix_unitaire:
+                f'Le prix proposé de la variante {var.article.code} ({var.label}) '
+                f'({prix}) est supérieur au prix de référence autorisé '
+                f'({var.prix_unitaire}).')
+        if prix < var.prix_unitaire:
             return 'pending'
         return 'ok'
 
     @staticmethod
     def _finaliser(vente, par):
-        """Contrôles (prix sur chaque ligne, paiement) puis statut final :
-        PENDING_VALIDATION si au moins une ligne est sous la référence, sinon
-        VALIDEE avec application immédiate des sorties."""
+        """Contrôles (prix sur chaque ligne, paiement) puis statut :
+        PENDING_VALIDATION si une ligne est sous la référence (traitement du
+        responsable), sinon TRAITEE (prête à être confirmée par l'opérateur).
+        AUCUNE sortie de stock ici — seule la confirmation finale les déclenche."""
         lignes = list(vente.lignes.select_related('variante', 'variante__article'))
         if not lignes:
             raise ValidationError('Ajoutez au moins une ligne de produit.')
-        needs_validation = False
+        needs_traitement = False
         for ligne in lignes:
             if VenteService._controle_prix_ligne(ligne) == 'pending':
-                needs_validation = True
+                needs_traitement = True
         if vente.montant_recu < vente.total:
             raise ValidationError(
                 f'Le montant reçu ({vente.montant_recu}) est inférieur au total '
-                f'({vente.total}). Le paiement est incohérent : saisissez un '
-                'montant reçu supérieur ou égal au total.'
+                f'({vente.total}). Le paiement est incohérent.'
             )
-        if needs_validation:
-            vente.statut = Vente.Statut.PENDING_VALIDATION
-            vente.save(update_fields=['statut'])
-            AuditService.auditer(
-                utilisateur=par, succursale=vente.succursale, module='BOUTIQUE',
-                action='vente.submit', objet_type='Vente', objet_id=vente.pk,
-                nouvelle_valeur={'numero': vente.numero, 'statut': 'PENDING_VALIDATION'},
-            )
-        else:
-            vente._appliquer_sorties()  # lève si stock insuffisant → rollback
-            vente.statut = Vente.Statut.VALIDEE
-            vente.date_validation = timezone.now()
-            vente.save(update_fields=['statut', 'date_validation'])
-            AuditService.auditer(
-                utilisateur=par, succursale=vente.succursale, module='BOUTIQUE',
-                action='vente.validate', objet_type='Vente', objet_id=vente.pk,
-                nouvelle_valeur={'numero': vente.numero, 'total': str(vente.total)},
-            )
+        vente.statut = (
+            Vente.Statut.PENDING_VALIDATION if needs_traitement else Vente.Statut.TRAITEE)
+        vente.save(update_fields=['statut'])
+        AuditService.auditer(
+            utilisateur=par, succursale=vente.succursale, module='BOUTIQUE',
+            action='vente.submit', objet_type='Vente', objet_id=vente.pk,
+            nouvelle_valeur={'numero': vente.numero, 'statut': vente.statut},
+        )
         return vente
 
     @staticmethod
@@ -363,31 +355,157 @@ class VenteService:
             for var, quantite, prix in lignes:
                 VenteLigne.objects.create(
                     vente=vente, variante=var, quantite=quantite,
-                    prix_unitaire=prix)
+                    prix_unitaire=var.prix_unitaire,  # prix normal (instantané)
+                    prix_propose=prix or var.prix_unitaire,  # prix facturé
+                )
             vente.recalculer()
+            # Montant reçu non saisi : toujours égal au total de la facture.
+            vente.montant_recu = vente.total
+            vente.save(update_fields=['montant_recu'])
             VenteService._finaliser(vente, par or utilisateur)
         return vente
 
     @staticmethod
+    def traiter_ligne(*, vente, ligne_pk, decision, prix_responsable=None, par=None):
+        """Le responsable traite UNE ligne : VALIDEE ou REJETEE, éventuellement en
+        fixant le prix retenu (contrôlé ≥ prix minimum). La décision est enregistrée
+        sur la ligne."""
+        with transaction.atomic():
+            if vente.statut != Vente.Statut.PENDING_VALIDATION:
+                raise ValidationError('Seule une vente en attente de traitement est modifiable.')
+            ligne = vente.lignes.select_related('variante').get(pk=ligne_pk)
+            if decision == VenteLigne.StatutLigne.REJETEE:
+                ligne.statut_ligne = VenteLigne.StatutLigne.REJETEE
+                ligne.prix_responsable = None
+            else:
+                ligne.statut_ligne = VenteLigne.StatutLigne.VALIDEE
+                if prix_responsable is not None:
+                    if ligne.variante.prix_minimum and prix_responsable < ligne.variante.prix_minimum:
+                        raise ValidationError(
+                            f'Le prix retenu ({prix_responsable}) est inférieur au prix '
+                            f'minimum autorisé ({ligne.variante.prix_minimum}).')
+                    ligne.prix_responsable = prix_responsable
+            ligne.date_decision = timezone.now()
+            ligne.decide_par = par or vente.utilisateur
+            ligne.save(update_fields=[
+                'statut_ligne', 'prix_responsable', 'date_decision', 'decide_par'])
+            AuditService.auditer(
+                utilisateur=par or vente.utilisateur, succursale=vente.succursale,
+                module='BOUTIQUE', action='vente.line_process', objet_type='VenteLigne',
+                objet_id=ligne.pk,
+                nouvelle_valeur={
+                    'vente': vente.numero, 'ligne': ligne.variante.article.code,
+                    'decision': ligne.statut_ligne,
+                    'prix_responsable': str(ligne.prix_responsable) if ligne.prix_responsable is not None else None,
+                },
+            )
+        return ligne
+
+    @staticmethod
+    def traiter_vente(*, vente, par=None):
+        """PENDING_VALIDATION → TRAITEE. Le responsable a terminé : toutes les
+        lignes en attente (prix proposé < normal) doivent avoir une décision.
+        AUCUNE sortie de stock ici."""
+        with transaction.atomic():
+            if vente.statut != Vente.Statut.PENDING_VALIDATION:
+                raise ValidationError(
+                    f'Seule une vente en attente de traitement peut être traitée '
+                    f'(statut actuel : {vente.get_statut_display()}).')
+            for ligne in vente.lignes.all():
+                if ligne.prix_propose is not None and ligne.prix_propose < ligne.prix_unitaire \
+                        and ligne.date_decision is None:
+                    raise ValidationError(
+                        f'La ligne {ligne.variante.article.code} ({ligne.variante.label}) '
+                        'n’a pas encore été décidée par le responsable.')
+            vente.statut = Vente.Statut.TRAITEE
+            vente.save(update_fields=['statut'])
+            AuditService.auditer(
+                utilisateur=par or vente.utilisateur, succursale=vente.succursale,
+                module='BOUTIQUE', action='vente.process', objet_type='Vente',
+                objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'statut': 'TRAITEE'},
+            )
+        return vente
+
+    @staticmethod
+    def confirmer(*, vente, par=None):
+        """TRAITEE → CONFIRMEE. SEUL point qui applique les sorties de stock
+        (mouvements SORTIE + décrémentation) pour les lignes validées, au prix
+        retenu. Idempotent : une vente déjà confirmée ne rejoue jamais le stock."""
+        with transaction.atomic():
+            if vente.statut == Vente.Statut.CONFIRMEE:
+                return vente  # idempotent : déjà confirmée
+            if vente.statut != Vente.Statut.TRAITEE:
+                raise ValidationError(
+                    f'Seule une vente traitée peut être confirmée (statut actuel : '
+                    f'{vente.get_statut_display()}).')
+            if not vente.lignes.exists():
+                raise ValidationError('Cette vente n’a aucune ligne.')
+            # Contrôles finaux (étape 11) puis montants au prix retenu.
+            for ligne in vente.lignes.all():
+                if ligne.statut_ligne != VenteLigne.StatutLigne.VALIDEE:
+                    continue
+                if ligne.variante.prix_minimum and ligne.prix_retenu < ligne.variante.prix_minimum:
+                    raise ValidationError(
+                        f'La ligne {ligne.variante.article.code} ({ligne.variante.label}) '
+                        f'a un prix retenu ({ligne.prix_retenu}) inférieur au prix minimum '
+                        f'({ligne.variante.prix_minimum}). Confirmation impossible.')
+                ligne.total = (ligne.prix_retenu * ligne.quantite) - ligne.remise
+                ligne.save(update_fields=['total'])
+            vente.recalculer()
+            # Montant reçu = total de la facture (auto, cohérence de paiement).
+            vente.montant_recu = vente.total
+            vente.save(update_fields=['montant_recu'])
+            vente._appliquer_sorties()  # re-vérifie le stock ; lève sinon (rollback)
+            vente.statut = Vente.Statut.CONFIRMEE
+            vente.date_validation = timezone.now()
+            vente.save(update_fields=['statut', 'date_validation'])
+            AuditService.auditer(
+                utilisateur=par or vente.utilisateur, succursale=vente.succursale,
+                module='BOUTIQUE', action='vente.confirm', objet_type='Vente',
+                objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'total': str(vente.total)},
+            )
+        return vente
+
+    @staticmethod
     def approuver(vente, par=None):
-        """Approuve une vente PENDING_VALIDATION : re-vérifie le stock, crée les
-        mouvements SORTIE, décrémente les stocks et passe la vente en VALIDEE."""
+        """Raccourci (rétrocompatibilité) : décide toutes les lignes en attente,
+        traite la vente puis la confirme immédiatement (sorties de stock)."""
         with transaction.atomic():
             if vente.statut != Vente.Statut.PENDING_VALIDATION:
                 raise ValidationError(
                     f'Cette vente ne peut pas être approuvée (statut actuel : '
                     f'{vente.get_statut_display()}).')
-            if not vente.lignes.exists():
-                raise ValidationError('Cette vente n’a aucune ligne.')
-            vente._appliquer_sorties()
-            vente.statut = Vente.Statut.VALIDEE
-            vente.date_validation = timezone.now()
-            vente.save(update_fields=['statut', 'date_validation'])
+            for ligne in vente.lignes.all():
+                if ligne.date_decision is None:
+                    ligne.date_decision = timezone.now()
+                    ligne.decide_par = par or vente.utilisateur
+                    ligne.save(update_fields=['date_decision', 'decide_par'])
+            VenteService.traiter_vente(vente=vente, par=par or vente.utilisateur)
+            VenteService.confirmer(vente=vente, par=par or vente.utilisateur)
+        return vente
+
+    @staticmethod
+    def modifier_traitement(*, vente, par=None):
+        """TRAITEE → PENDING_VALIDATION : le responsable peut revenir sur le
+        traitement des lignes (revalider / rejeter, corriger un prix retenu).
+
+        Interdit dès qu'un mouvement de stock a été appliqué : une vente déjà
+        confirmée (ou annulée) ne peut pas être modifiée."""
+        with transaction.atomic():
+            if vente.statut != Vente.Statut.TRAITEE:
+                raise ValidationError(
+                    f'Seule une vente traitée peut être modifiée (statut actuel : '
+                    f'{vente.get_statut_display()}). Une vente confirmée a déjà '
+                    'généré ses mouvements de stock et ne peut plus être modifiée.')
+            vente.statut = Vente.Statut.PENDING_VALIDATION
+            vente.save(update_fields=['statut'])
             AuditService.auditer(
-                utilisateur=par or vente.utilisateur,
-                succursale=vente.succursale, module='BOUTIQUE',
-                action='vente.approve', objet_type='Vente', objet_id=vente.pk,
-                nouvelle_valeur={'numero': vente.numero, 'statut': 'VALIDEE'},
+                utilisateur=par or vente.utilisateur, succursale=vente.succursale,
+                module='BOUTIQUE', action='vente.modify_process', objet_type='Vente',
+                objet_id=vente.pk,
+                nouvelle_valeur={'numero': vente.numero, 'statut': 'PENDING_VALIDATION'},
             )
         return vente
 
@@ -417,13 +535,14 @@ class VenteService:
         return vente
 
     @staticmethod
-    def ajouter_ligne(vente, variante, quantite, prix_unitaire, remise=0, par=None):
+    def ajouter_ligne(vente, variante, quantite, prix_propose=None, remise=0, par=None):
         with transaction.atomic():
             ligne = VenteLigne.objects.create(
                 vente=vente,
                 variante=variante,
                 quantite=quantite,
-                prix_unitaire=prix_unitaire,
+                prix_unitaire=variante.prix_unitaire,  # prix normal (instantané)
+                prix_propose=prix_propose or variante.prix_unitaire,
                 remise=remise,
             )
             vente.recalculer()
@@ -431,10 +550,11 @@ class VenteService:
 
     @staticmethod
     def valider(vente, par=None):
-        """Validation normale d'un brouillon (rétrocompatibilité seed/tests)."""
+        """Soumission d'un brouillon : PENDING_VALIDATION (si réduction) ou
+        TRAITEE. Aucune sortie de stock à ce stade."""
         with transaction.atomic():
-            if vente.statut == Vente.Statut.VALIDEE:
-                raise ValidationError('Cette vente est déjà validée.')
+            if vente.statut == Vente.Statut.CONFIRMEE:
+                raise ValidationError('Cette vente est déjà confirmée.')
             VenteService._finaliser(vente, par or vente.utilisateur)
         return vente
 

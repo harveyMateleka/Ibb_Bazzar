@@ -49,11 +49,22 @@ def _verifier_bien_en_reparation(immobilisation):
         )
 
 
+def _verifier_bien_valide(immobilisation):
+    """Règle : un bien non validé ne peut être ni affecté, ni déplacé, ni réparé,
+    ni déclaré cassé, ni déclassé. Seule la validation (soumettre/valider) agit."""
+    if immobilisation.statut_validation != Immobilisation.StatutValidation.VALIDE:
+        raise ValidationError(
+            f'Le bien {immobilisation.code} n’est pas validé : il doit être '
+            'validé avant toute opération.'
+        )
+
+
 class ImmobilisationService:
     @staticmethod
     def creer(*, designation, succursale, domaine, categorie=None, numero_serie='',
-              valeur_acquisition=0, date_acquisition=None, fournisseur='',
-              service=None, emplacement=None, observation='', par):
+              valeur_acquisition=0, date_acquisition=None,
+              service=None, emplacement=None, observation='', par,
+              periode_entretien=None, duree_vie=None):
         with transaction.atomic():
             immo = Immobilisation.objects.create(
                 code=Immobilisation.prochain_numero(),
@@ -62,11 +73,12 @@ class ImmobilisationService:
                 numero_serie=numero_serie,
                 valeur_acquisition=valeur_acquisition,
                 date_acquisition=date_acquisition,
-                fournisseur=fournisseur,
                 succursale=succursale,
                 domaine=domaine,
                 service=service,
                 emplacement=emplacement,
+                periode_entretien=periode_entretien,
+                duree_vie=duree_vie,
                 observation=observation,
             )
             AuditService.auditer(
@@ -84,6 +96,77 @@ class ImmobilisationService:
             )
             return immo
 
+    @staticmethod
+    def soumettre(*, immobilisation, par):
+        """Brouillon → En attente de validation."""
+        if immobilisation.statut_validation != Immobilisation.StatutValidation.BROUILLON:
+            raise ValidationError('Seul un bien en brouillon peut être soumis pour validation.')
+        with transaction.atomic():
+            immobilisation.statut_validation = Immobilisation.StatutValidation.EN_ATTENTE
+            immobilisation.soumis_par = par
+            immobilisation.date_soumission = timezone.now()
+            immobilisation.save(update_fields=[
+                'statut_validation', 'soumis_par', 'date_soumission', 'date_modification'])
+            AuditService.auditer(
+                utilisateur=par, succursale=immobilisation.succursale, module='ASSET',
+                action='asset.submit', objet_type='Immobilisation', objet_id=immobilisation.pk,
+                nouvelle_valeur={'code': immobilisation.code, 'validation': 'EN_ATTENTE'},
+            )
+            return immobilisation
+
+    @staticmethod
+    def valider(*, immobilisation, par):
+        """En attente → Validé."""
+        if immobilisation.statut_validation != Immobilisation.StatutValidation.EN_ATTENTE:
+            raise ValidationError('Seul un bien en attente de validation peut être validé.')
+        with transaction.atomic():
+            immobilisation.statut_validation = Immobilisation.StatutValidation.VALIDE
+            immobilisation.valide_par = par
+            immobilisation.date_validation = timezone.now()
+            immobilisation.motif_rejet = ''
+            immobilisation.save(update_fields=[
+                'statut_validation', 'valide_par', 'date_validation',
+                'motif_rejet', 'date_modification'])
+            AuditService.auditer(
+                utilisateur=par, succursale=immobilisation.succursale, module='ASSET',
+                action='asset.validate', objet_type='Immobilisation', objet_id=immobilisation.pk,
+                nouvelle_valeur={'code': immobilisation.code, 'validation': 'VALIDE'},
+            )
+            return immobilisation
+
+    @staticmethod
+    def rejeter(*, immobilisation, par, motif=''):
+        """En attente → Rejeté (motif obligatoire)."""
+        if immobilisation.statut_validation != Immobilisation.StatutValidation.EN_ATTENTE:
+            raise ValidationError('Seul un bien en attente de validation peut être rejeté.')
+        if not (motif or '').strip():
+            raise ValidationError('Le motif de rejet est obligatoire.')
+        with transaction.atomic():
+            immobilisation.statut_validation = Immobilisation.StatutValidation.REJETE
+            immobilisation.motif_rejet = motif
+            immobilisation.save(update_fields=[
+                'statut_validation', 'motif_rejet', 'date_modification'])
+            AuditService.auditer(
+                utilisateur=par, succursale=immobilisation.succursale, module='ASSET',
+                action='asset.reject', objet_type='Immobilisation', objet_id=immobilisation.pk,
+                nouvelle_valeur={'code': immobilisation.code, 'validation': 'REJETE', 'motif': motif},
+            )
+            return immobilisation
+
+    @staticmethod
+    def valider_plusieurs(*, biens, par):
+        """Validation par lots : chaque bien dans sa propre transaction ; seuls
+        les biens éligibles (EN_ATTENTE) sont validés, les autres sont ignorés."""
+        nb_valides = 0
+        nb_ignores = 0
+        for bien in biens:
+            try:
+                ImmobilisationService.valider(immobilisation=bien, par=par)
+                nb_valides += 1
+            except ValidationError:
+                nb_ignores += 1
+        return nb_valides, nb_ignores
+
 
 class AffectationService:
     @staticmethod
@@ -92,6 +175,7 @@ class AffectationService:
             raise ValidationError('L’utilisateur qui affecte est obligatoire.')
         _verifier_bien_actif(immobilisation)
         _verifier_bien_en_reparation(immobilisation)
+        _verifier_bien_valide(immobilisation)
         with transaction.atomic():
             # Clôturer l'affectation courante (jamais supprimée).
             Affectation.objects.filter(
@@ -137,6 +221,7 @@ class DeplacementService:
             raise ValidationError('L’utilisateur qui déplace est obligatoire.')
         _verifier_bien_actif(immobilisation)
         _verifier_bien_en_reparation(immobilisation)
+        _verifier_bien_valide(immobilisation)
         with transaction.atomic():
             deplacement = Deplacement.objects.create(
                 immobilisation=immobilisation,
@@ -179,6 +264,7 @@ class ReparationService:
         if not par:
             raise ValidationError('L’utilisateur qui déclare la réparation est obligatoire.')
         _verifier_bien_actif(immobilisation)
+        _verifier_bien_valide(immobilisation)
         with transaction.atomic():
             reparation = Reparation.objects.create(
                 immobilisation=immobilisation,
@@ -209,6 +295,7 @@ class ReparationService:
         if reparation.statut == Reparation.Statut.TERMINEE:
             raise ValidationError('Cette réparation est déjà terminée.')
         _verifier_bien_actif(reparation.immobilisation)
+        _verifier_bien_valide(reparation.immobilisation)
         with transaction.atomic():
             reparation.statut = Reparation.Statut.TERMINEE
             reparation.save(update_fields=['statut'])
@@ -230,14 +317,17 @@ class ReparationService:
 
 class CasseService:
     @staticmethod
-    def declarer(*, immobilisation, motif, description='', responsable_dommage='', par):
+    def declarer(*, immobilisation, motif, date_dommage=None, description='',
+                 responsable_dommage='', par):
         if not par:
             raise ValidationError('Le déclarant est obligatoire.')
         _verifier_bien_actif(immobilisation)
+        _verifier_bien_valide(immobilisation)
         with transaction.atomic():
             casse = Casse.objects.create(
                 immobilisation=immobilisation,
                 motif=motif,
+                date_dommage=date_dommage,
                 description=description,
                 responsable_dommage=responsable_dommage,
                 par=par,
@@ -289,6 +379,7 @@ class DeclassementService:
         if not par:
             raise ValidationError('Le demandeur est obligatoire.')
         _verifier_bien_actif(immobilisation)
+        _verifier_bien_valide(immobilisation)
         with transaction.atomic():
             declassement = Declassement.objects.create(
                 immobilisation=immobilisation,

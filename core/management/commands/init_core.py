@@ -19,7 +19,8 @@ BOUTIQUE = 'boutique'
 IMMOBILISATIONS = 'immobilisations'
 
 IMMO_TOUTES = ['view_asset', 'create_asset', 'update_asset', 'assign_asset',
-               'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset']
+               'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset',
+               'validate_asset']
 IMMO_SANS_DECLASSEMENT = [p for p in IMMO_TOUTES if p != 'decommission_asset']
 
 PERMISSIONS_ROLES = {

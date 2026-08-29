@@ -27,12 +27,14 @@ class ImmobilisationForm(forms.ModelForm):
         model = Immobilisation
         fields = [
             'designation', 'categorie', 'numero_serie', 'valeur_acquisition',
-            'date_acquisition', 'fournisseur', 'succursale', 'domaine',
-            'service', 'emplacement', 'observation',
+            'date_acquisition', 'succursale', 'domaine',
+            'service', 'emplacement', 'periode_entretien', 'duree_vie', 'observation',
         ]
         widgets = {
             'date_acquisition': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
             'valeur_acquisition': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'periode_entretien': forms.NumberInput(attrs={'min': 1}),
+            'duree_vie': forms.NumberInput(attrs={'min': 1}),
         }
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
@@ -118,9 +120,10 @@ class CasseForm(_ActeurMixin, forms.ModelForm):
 
     class Meta:
         model = Casse
-        fields = ['motif', 'description', 'responsable_dommage', 'par']
+        fields = ['motif', 'date_dommage', 'description', 'responsable_dommage', 'par']
         widgets = {
             'motif': forms.TextInput(attrs={'class': 'input'}),
+            'date_dommage': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'input'}),
             'responsable_dommage': forms.TextInput(attrs={
                 'class': 'input',
                 'placeholder': 'Nom de la personne ayant causé le dommage',

@@ -122,25 +122,25 @@ class StockEntreeForm(forms.Form):
 
 
 class VenteForm(forms.ModelForm):
-    """Interface unique de vente : entête (client, paiement, remise, montant reçu).
+    """Interface unique de vente : entête (client, paiement, remise).
 
-    Succursale et domaine sont déterminés côté backend (contexte utilisateur),
-    jamais demandés ni acceptés depuis l'input."""
+    Le montant reçu n'est plus saisi : il est posé automatiquement à la valeur
+    du total de la facture côté service (montant_recu = total), pour éviter
+    toute incohérence de paiement. Succursale et domaine sont déterminés côté
+    backend (contexte utilisateur), jamais demandés ni acceptés depuis l'input."""
 
     class Meta:
         model = Vente
-        fields = ['client', 'type_paiement', 'remise', 'montant_recu']
+        fields = ['client', 'type_paiement', 'remise']
         widgets = {
             'client': forms.TextInput(attrs={'class': 'input', 'placeholder': 'Nom du client'}),
             'type_paiement': forms.Select(attrs={'class': 'input'}),
-            'montant_recu': forms.NumberInput(attrs={'step': '0.01', 'min': '0', 'class': 'input'}),
         }
 
     def __init__(self, *args, request_user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['client'].required = True
         self.fields['remise'].required = False
-        self.fields['montant_recu'].required = False
         if not request_user or not request_user.has_perm('boutique.apply_remise'):
             self.fields['remise'].widget.attrs['readonly'] = True
             self.fields['remise'].help_text = 'Remise réservée aux profils autorisés.'
@@ -171,10 +171,10 @@ class VarianteArticleSelect(forms.Select):
 class VenteLigneForm(forms.ModelForm):
     class Meta:
         model = VenteLigne
-        fields = ['variante', 'quantite', 'prix_unitaire']
+        fields = ['variante', 'quantite', 'prix_propose']
         widgets = {
             'quantite': forms.NumberInput(attrs={'min': 1, 'class': 'input'}),
-            'prix_unitaire': forms.NumberInput(
+            'prix_propose': forms.NumberInput(
                 attrs={'step': '0.01', 'min': '0', 'class': 'input', 'data-prix-ligne': '1'}),
         }
 
@@ -188,7 +188,7 @@ class VenteLigneForm(forms.ModelForm):
         self.fields['variante'].queryset = variantes
         self.fields['variante'].required = False
         self.fields['quantite'].required = False
-        self.fields['prix_unitaire'].required = False
+        self.fields['prix_propose'].required = False
         prix_par_variante = {
             v.pk: (str(v.prix_unitaire), str(v.prix_minimum), str(v.prix_maximum))
             for v in variantes
@@ -203,7 +203,7 @@ class VenteLigneForm(forms.ModelForm):
         cleaned = super().clean()
         variante = cleaned.get('variante')
         quantite = cleaned.get('quantite')
-        prix = cleaned.get('prix_unitaire')
+        prix = cleaned.get('prix_propose')
         if variante and not quantite:
             self.add_error('quantite', 'La quantité est obligatoire.')
         if quantite and not variante:
@@ -211,16 +211,16 @@ class VenteLigneForm(forms.ModelForm):
         if variante:
             if prix in (None, ''):
                 prix = variante.prix_unitaire
-                cleaned['prix_unitaire'] = prix
+                cleaned['prix_propose'] = prix
             if variante.prix_minimum and prix < variante.prix_minimum:
                 self.add_error(
-                    'prix_unitaire',
+                    'prix_propose',
                     f'Cette variante ne peut pas être vendue en dessous de son prix '
                     f'minimum autorisé ({variante.prix_minimum}).')
             if prix > variante.prix_unitaire:
                 self.add_error(
-                    'prix_unitaire',
-                    f'Le prix de vente de {variante.article.code} ({variante.label}) '
+                    'prix_propose',
+                    f'Le prix proposé de {variante.article.code} ({variante.label}) '
                     f'est supérieur au prix de référence autorisé ({variante.prix_unitaire}).')
         return cleaned
 
@@ -262,7 +262,7 @@ class BaseLigneVenteSaisieFormSet(forms.BaseFormSet):
         return super()._construct_form(i, **kwargs)
 
     def lignes_cleaned(self):
-        """Lignes (variante, quantite, prix_unitaire) à soumettre."""
+        """Lignes (variante, quantite, prix_propose) à soumettre."""
         lignes = []
         for form in self.forms:
             if form.cleaned_data.get('DELETE'):
@@ -273,7 +273,7 @@ class BaseLigneVenteSaisieFormSet(forms.BaseFormSet):
                 lignes.append((
                     variante,
                     quantite,
-                    form.cleaned_data.get('prix_unitaire') or variante.prix_unitaire,
+                    form.cleaned_data.get('prix_propose') or variante.prix_unitaire,
                 ))
         return lignes
 

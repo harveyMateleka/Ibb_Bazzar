@@ -39,7 +39,8 @@ class ImmobilisationBase(TestCase):
 
         self.role_gestionnaire = self._role('GESTIONNAIRE', [
             'view_asset', 'create_asset', 'update_asset', 'assign_asset',
-            'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset'])
+            'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset',
+            'validate_asset'])
         self.role_lecteur = self._role('LECTEUR', ['view_asset'])
 
         self.gestionnaire = self._user('gest', self.role_gestionnaire, self.succ_a)
@@ -48,6 +49,12 @@ class ImmobilisationBase(TestCase):
             designation='PC Dell', succursale=self.succ_a, domaine=self.domaine,
             categorie=self.cat, numero_serie='S1', valeur_acquisition=1000,
             par=self.gestionnaire)
+        self._valider(self.bien)
+
+    def _valider(self, bien):
+        """Soumet puis valide un bien (les opérations exigent un bien validé)."""
+        ImmobilisationService.soumettre(immobilisation=bien, par=self.gestionnaire)
+        ImmobilisationService.valider(immobilisation=bien, par=self.gestionnaire)
 
     @staticmethod
     def _permission(codename):
@@ -70,6 +77,7 @@ class ImmobilisationBase(TestCase):
             designation='PC déclassé', succursale=self.succ_a, domaine=self.domaine,
             categorie=self.cat, numero_serie='S-DEC', valeur_acquisition=500,
             par=self.gestionnaire)
+        self._valider(bien)
         dec = DeclassementService.demander(
             immobilisation=bien, motif='Hors service', par=self.gestionnaire)
         DeclassementService.valider(declassement=dec, par=self.gestionnaire)
@@ -181,6 +189,14 @@ class TestImmobilisationService(ImmobilisationBase):
             immobilisation=self.bien, motif='Chute',
             responsable_dommage='Jean M.', par=self.gestionnaire)
         self.assertEqual(casse.responsable_dommage, 'Jean M.')
+
+    def test_casse_enregistre_date_dommage(self):
+        from django.utils import timezone
+        jour = timezone.localdate()
+        casse = CasseService.declarer(
+            immobilisation=self.bien, motif='Chute',
+            date_dommage=jour, par=self.gestionnaire)
+        self.assertEqual(casse.date_dommage, jour)
         # Décision réparable → en réparation
         CasseService.evaluer(casse=casse, decision='REPARABLE', par=self.gestionnaire)
         self.bien.refresh_from_db()
@@ -208,6 +224,91 @@ class TestImmobilisationService(ImmobilisationBase):
         with self.assertRaises(ValidationError):
             AffectationService.affecter(
                 immobilisation=self.bien, succursale=self.succ_a, par=None)
+
+
+class TestValidationBien(ImmobilisationBase):
+    """Cycle de validation du bien : brouillon → en attente → validé/rejeté,
+    champs entretien/durée facultatifs, validation par lots."""
+
+    def _brouillon(self, designation='PC brouillon'):
+        return ImmobilisationService.creer(
+            designation=designation, succursale=self.succ_a, domaine=self.domaine,
+            par=self.gestionnaire)
+
+    def test_creation_brouillon_avec_entretien_et_duree(self):
+        b = ImmobilisationService.creer(
+            designation='PC spé', succursale=self.succ_a, domaine=self.domaine,
+            categorie=self.cat, numero_serie='S2', valeur_acquisition=900,
+            periode_entretien=6, duree_vie=5, par=self.gestionnaire)
+        self.assertEqual(b.statut_validation, 'BROUILLON')
+        self.assertEqual(b.periode_entretien, 6)
+        self.assertEqual(b.duree_vie, 5)
+
+    def test_creation_sans_entretien_ni_duree(self):
+        b = self._brouillon()
+        self.assertIsNone(b.periode_entretien)
+        self.assertIsNone(b.duree_vie)
+
+    def test_soumission_puis_validation(self):
+        b = self._brouillon()
+        ImmobilisationService.soumettre(immobilisation=b, par=self.gestionnaire)
+        b.refresh_from_db()
+        self.assertEqual(b.statut_validation, 'EN_ATTENTE')
+        self.assertEqual(b.soumis_par, self.gestionnaire)
+        self.assertIsNotNone(b.date_soumission)
+        ImmobilisationService.valider(immobilisation=b, par=self.gestionnaire)
+        b.refresh_from_db()
+        self.assertEqual(b.statut_validation, 'VALIDE')
+        self.assertEqual(b.valide_par, self.gestionnaire)
+        self.assertIsNotNone(b.date_validation)
+
+    def test_rejet_avec_motif(self):
+        b = self._brouillon()
+        ImmobilisationService.soumettre(immobilisation=b, par=self.gestionnaire)
+        ImmobilisationService.rejeter(
+            immobilisation=b, par=self.gestionnaire, motif='Document manquant')
+        b.refresh_from_db()
+        self.assertEqual(b.statut_validation, 'REJETE')
+        self.assertEqual(b.motif_rejet, 'Document manquant')
+
+    def test_rejet_sans_motif_refuse(self):
+        b = self._brouillon()
+        ImmobilisationService.soumettre(immobilisation=b, par=self.gestionnaire)
+        with self.assertRaises(ValidationError):
+            ImmobilisationService.rejeter(immobilisation=b, par=self.gestionnaire, motif='')
+
+    def test_validation_d_un_brouillon_refusee(self):
+        b = self._brouillon()
+        with self.assertRaises(ValidationError):
+            ImmobilisationService.valider(immobilisation=b, par=self.gestionnaire)
+
+    def test_operation_bloquee_sur_bien_non_valide(self):
+        b = self._brouillon()
+        with self.assertRaises(ValidationError):
+            AffectationService.affecter(
+                immobilisation=b, succursale=self.succ_a, par=self.gestionnaire)
+
+    def test_validation_par_lots(self):
+        b1 = self._brouillon('A')
+        b2 = self._brouillon('B')
+        b3 = self._brouillon('C')
+        ImmobilisationService.soumettre(immobilisation=b1, par=self.gestionnaire)
+        ImmobilisationService.soumettre(immobilisation=b2, par=self.gestionnaire)
+        nb_v, nb_i = ImmobilisationService.valider_plusieurs(
+            biens=[b1, b2, b3], par=self.gestionnaire)
+        self.assertEqual((nb_v, nb_i), (2, 1))
+        b1.refresh_from_db(); b2.refresh_from_db(); b3.refresh_from_db()
+        self.assertEqual(b1.statut_validation, 'VALIDE')
+        self.assertEqual(b2.statut_validation, 'VALIDE')
+        self.assertEqual(b3.statut_validation, 'BROUILLON')
+
+    def test_validation_view_sans_permission_403(self):
+        b = self._brouillon()
+        ImmobilisationService.soumettre(immobilisation=b, par=self.gestionnaire)
+        self.client.force_login(self.lecteur)  # view_asset seul
+        resp = self.client.post(
+            reverse('immobilisations:bien_valider', kwargs={'pk': b.pk}))
+        self.assertEqual(resp.status_code, 403)
 
 
 class TestPerimetreEtPermissions(ImmobilisationBase):

@@ -19,6 +19,7 @@
       <a href="{% url 'boutique:inventaires' %}" {% if 'inventaire' in request.resolver_match.url_name %}class="is-active"{% endif %}>Inventaires</a>
       <a href="{% url 'boutique:mouvements' %}" {% if request.resolver_match.url_name == 'mouvements' %}class="is-active"{% endif %}>Historique</a>
       <a href="{% url 'boutique:alertes' %}" {% if request.resolver_match.url_name == 'alertes' %}class="is-active"{% endif %}>Alertes</a>
+      <a href="{% url 'boutique:rapports' %}" {% if 'rapport' in request.resolver_match.url_name %}class="is-active"{% endif %}>Rapports</a>
     </nav>
     {% block app_content %}{% endblock %}
   </div>

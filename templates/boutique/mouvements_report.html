@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Rapport des mouvements · IBBS BAZAR{% endblock %}
+{% block title %}Rapport des mouvements{% endblock %}
 
 {% block content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
 <div class="bon-doc no-print">
   <div class="print-toolbar">
     <a class="btn btn-ghost" href="{% url 'boutique:mouvements' %}">← Retour à l'historique</a>
@@ -10,7 +11,7 @@
   </div>
 </div>
 
-<div class="bon-doc">
+<div class="bon-doc report-doc">
   <div class="bon-head">
     <h1>Rapport des mouvements de stock — Boutique</h1>
     <p class="bon-meta">
@@ -24,7 +25,7 @@
       Entrées : <strong>{{ total_entrees }}</strong> · Sorties : <strong>{{ total_sorties }}</strong></p>
   </div>
 
-  <table class="bon-table">
+  <table class="bon-table" data-datatable>
     <thead>
       <tr>
         <th>Date</th>

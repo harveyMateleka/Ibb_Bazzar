@@ -101,24 +101,27 @@ class Command(BaseCommand):
     def _emplacement(nom):
         return Emplacement.objects.get_or_create(nom=nom)[0]
 
-    def _bien(self, code, designation, categorie, numero_serie, valeur, fournisseur,
+    def _bien(self, code, designation, categorie, numero_serie, valeur,
               service=None, emplacement=None):
         """Crée un bien s'il n'existe pas (par code unique)."""
         bien = Immobilisation.objects.filter(code__startswith='IMM-', designation=designation).first()
         if bien:
             return bien
-        return ImmobilisationService.creer(
+        bien = ImmobilisationService.creer(
             designation=designation,
             succursale=self.succ,
             domaine=self.domaine,
             categorie=CategorieImmobilisation.objects.get(code=categorie),
             numero_serie=numero_serie,
             valeur_acquisition=valeur,
-            fournisseur=fournisseur,
             service=service,
             emplacement=emplacement,
             par=self.gestionnaire,
         )
+        # Le seed crée des biens opérationnels : soumettre puis valider.
+        ImmobilisationService.soumettre(immobilisation=bien, par=self.gestionnaire)
+        ImmobilisationService.valider(immobilisation=bien, par=self.gestionnaire)
+        return bien
 
     def _creer_biens(self):
         comptabilite = self._service('Comptabilité')
@@ -130,7 +133,7 @@ class Command(BaseCommand):
         parking = self._emplacement('Parking')
 
         # Bien 1 : en service (affecté puis déplacé)
-        b1 = self._bien('IMM', 'Ordinateur Dell XPS', 'INFO', 'DLX-001', 1500000, 'SOTEX')
+        b1 = self._bien('IMM', 'Ordinateur Dell XPS', 'INFO', 'DLX-001', 1500000)
         if not b1.affectations.exists():
             AffectationService.affecter(
                 immobilisation=b1, succursale=self.succ,
@@ -142,27 +145,27 @@ class Command(BaseCommand):
                 motif='Changement de bureau', par=self.gestionnaire)
 
         # Bien 2 : en réparation
-        b2 = self._bien('IMM', 'Imprimante HP Laser', 'INFO', 'HP-L-204', 800000, 'SOTEX',
+        b2 = self._bien('IMM', 'Imprimante HP Laser', 'INFO', 'HP-L-204', 800000,
                         service=direction, emplacement=bureau_01)
         if not b2.reparations.exists():
             ReparationService.declarer(
                 immobilisation=b2, motif='Rouleau usé', cout=120000, par=self.gestionnaire)
 
         # Bien 3 : casse évaluée réparable
-        b3 = self._bien('IMM', 'Bureau en bois', 'MOB', 'MOB-014', 450000, 'MBI',
+        b3 = self._bien('IMM', 'Bureau en bois', 'MOB', 'MOB-014', 450000,
                         service=comptabilite, emplacement=bureau_12)
         if not b3.casses.exists():
             casse = CasseService.declarer(immobilisation=b3, motif='Pied cassé', par=self.gestionnaire)
             CasseService.evaluer(casse=casse, decision='REPARABLE', par=self.gestionnaire)
 
         # Bien 4 : déclassé
-        b4 = self._bien('IMM', 'Véhicule Toyota Hiace', 'VEH', 'TOY-H-12', 25000000, 'TOYOTA',
+        b4 = self._bien('IMM', 'Véhicule Toyota Hiace', 'VEH', 'TOY-H-12', 25000000,
                         service=logistique, emplacement=parking)
         if not b4.declassements.exists():
             dec = DeclassementService.demander(immobilisation=b4, motif='Hors d’usage', par=self.gestionnaire)
             DeclassementService.valider(declassement=dec, par=self.gestionnaire)
 
         # Bien 5 : stocké (neuf, sans affectation)
-        self._bien('IMM', 'Écran Dell 24"', 'INFO', 'DL-E-88', 350000, 'SOTEX')
+        self._bien('IMM', 'Écran Dell 24"', 'INFO', 'DL-E-88', 350000)
 
         self.stdout.write(f'  {Immobilisation.objects.count()} bien(s) prêts.')

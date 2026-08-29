@@ -8,7 +8,7 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'boutique:ventes' %}">← Retour</a>
-    {% if vente.statut == 'VALIDEE' %}
+    {% if vente.statut == 'VALIDEE' or vente.statut == 'CONFIRMEE' %}
     <a class="btn btn-primary" href="{% url 'boutique:vente_imprimer' vente.pk %}">Imprimer</a>
     {% endif %}
   </div>
@@ -28,31 +28,128 @@
   </dl>
 </section>
 
-{% if vente.statut == 'BROUILLON' or vente.statut == 'PENDING_VALIDATION' %}
+{% if vente.statut == 'PENDING_VALIDATION' and perms.boutique.validate_vente %}
+<section class="panel mx-5" id="traitement-responsable">
+  <h2>Traitement des lignes</h2>
+  <p class="help">Examinez chaque ligne : validez-la (éventuellement avec un prix retenu) ou rejetez-la, puis traitez la vente. Aucune sortie de stock ici.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Variante</th><th>Qté</th><th>Prix normal</th><th>Prix min</th>
+          <th>Prix proposé</th><th>Montant normal</th><th>Montant retenu</th><th>Écart</th>
+          <th>Statut</th><th class="no-sort">Décision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.variante.article.code }} — {{ ligne.variante.label }}</td>
+          <td>{{ ligne.quantite }}</td>
+          <td>{{ ligne.prix_unitaire }}</td>
+          <td>{{ ligne.variante.prix_minimum }}</td>
+          <td>{{ ligne.prix_propose|default:ligne.prix_unitaire }}</td>
+          <td>{{ ligne.montant_normal }}</td>
+          <td>{{ ligne.montant_retenu }}</td>
+          <td class="{% if ligne.ecart %}text-danger{% endif %}">{{ ligne.ecart }}</td>
+          <td>
+            {% if ligne.date_decision %}
+              {{ ligne.get_statut_ligne_display }}{% if ligne.prix_responsable %} · {{ ligne.prix_responsable }}{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <form action="{% url 'boutique:vente_decider_ligne' vente.pk ligne.pk %}" method="post" class="field inline">
+              {% csrf_token %}
+              <select class="input" name="decision" style="width:auto">
+                <option value="VALIDEE" {% if ligne.statut_ligne == 'VALIDEE' %}selected{% endif %}>Valider</option>
+                <option value="REJETEE" {% if ligne.statut_ligne == 'REJETEE' %}selected{% endif %}>Rejeter</option>
+              </select>
+              <input class="input" type="number" name="prix_responsable" step="0.01" placeholder="Prix retenu"
+                     value="{{ ligne.prix_responsable|default:'' }}" style="width:90px">
+              <button type="submit" class="btn btn-primary">OK</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="actions" style="margin-top:1rem;">
+    <form action="{% url 'boutique:vente_traiter' vente.pk %}" method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Traiter la vente</button>
+    </form>
+    {% if perms.boutique.cancel_vente %}
+    <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <input class="input" type="text" name="commentaire" required placeholder="Motif de l'annulation de la demande">
+      <button type="submit" class="btn btn-danger">Annuler la demande</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+<script>
+(function () {
+  var section = document.getElementById("traitement-responsable");
+  if (!section) return;
+  // Quand la décision est « Rejeter », le prix retenu n'a pas de sens : on le
+  // MASQUE et on le désactive (il ne sera pas envoyé ; le backend force de toute
+  // façon prix=None sur une ligne rejetée).
+  function majPrix(select) {
+    var form = select.closest("form");
+    var prix = form && form.querySelector("input[name='prix_responsable']");
+    if (!prix) return;
+    var rejete = String(select.value) === "REJETEE";
+    prix.disabled = rejete;
+    prix.style.display = rejete ? "none" : "";
+  }
+  function lier(sel) {
+    // Écoute native (reste valide même si Select2 n'est pas appliqué).
+    sel.addEventListener("change", function () { majPrix(sel); });
+    majPrix(sel); // état initial (ligne déjà rejetée au re-rendu)
+  }
+  Array.prototype.forEach.call(
+    section.querySelectorAll("select[name='decision']"), lier);
+  // Select2 déclenche le change via jQuery : délégation pour le capturer.
+  function viaJQuery() {
+    var $ = window.jQuery;
+    if (!$) return;
+    $(section).on("change", "select[name='decision']", function () { majPrix(this); });
+    $(section).find("select[name='decision']").each(function () { majPrix(this); });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", viaJQuery);
+  } else {
+    viaJQuery();
+  }
+  // Après l'init Select2 (app.js émet ibbs:select2:init), re-synchroniser.
+  document.addEventListener("ibbs:select2:init", viaJQuery);
+})();
+</script>
+{% endif %}
+
+{% if vente.statut == 'TRAITEE' %}
+<section class="panel mx-5">
+  <h2>Confirmation</h2>
+  <p class="help">La vente a été traitée par le responsable. La confirmation finale déclenche la sortie de stock.</p>
+  <div class="actions" style="margin-top:1rem;">
+    {% if perms.boutique.create_vente %}
+    <form action="{% url 'boutique:vente_confirmer' vente.pk %}" method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Confirmer la vente</button>
+    </form>
+    {% endif %}
+    {% if perms.boutique.validate_vente %}
+    <form action="{% url 'boutique:vente_modifier_traitement' vente.pk %}" method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-ghost">Modifier le traitement</button>
+    </form>
+    {% endif %}
+  </div>
   {% if perms.boutique.validate_vente %}
-  <section class="panel">
-    <h2>Décision</h2>
-    <div class="form-grid">
-      <form action="{% url 'boutique:vente_approuver' vente.pk %}" method="post" class="field">
-        {% csrf_token %}
-        {% if vente.statut == 'PENDING_VALIDATION' %}
-        <button type="submit" class="btn btn-primary">Approuver la vente</button>
-        {% else %}
-        <button type="submit" class="btn btn-primary">Valider la vente</button>
-        {% endif %}
-      </form>
-      {% if perms.boutique.cancel_vente %}
-      <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="field">
-        {% csrf_token %}
-        <label for="id_commentaire">Raison de l'annulation (obligatoire)</label>
-        <input class="input" type="text" id="id_commentaire" name="commentaire" required
-               placeholder="Motif de l'annulation de la demande">
-        <button type="submit" class="btn btn-danger">Annuler la demande</button>
-      </form>
-      {% endif %}
-    </div>
-  </section>
+  <p class="help" style="margin-top:.5rem;">« Modifier le traitement » renvoie la vente en attente pour revalider ou rejeter des lignes (aucune sortie de stock tant que la vente n'est pas confirmée).</p>
   {% endif %}
+</section>
 {% endif %}
 
 <section class="panel">
@@ -63,8 +160,15 @@
         <tr>
           <th>Variante</th>
           <th>Qté</th>
-          <th>Prix unitaire</th>
-          <th>Total</th>
+          <th>Prix normal</th>
+          <th>Prix min</th>
+          <th>Prix proposé</th>
+          <th>Prix retenu</th>
+          <th>Statut</th>
+          <th>Montant normal</th>
+          <th>Montant proposé</th>
+          <th>Montant retenu</th>
+          <th>Écart</th>
         </tr>
       </thead>
       <tbody>
@@ -73,10 +177,17 @@
           <td>{{ ligne.variante.article.code }} — {{ ligne.variante.label }}</td>
           <td>{{ ligne.quantite }}</td>
           <td>{{ ligne.prix_unitaire }}</td>
-          <td>{{ ligne.total }}</td>
+          <td>{{ ligne.variante.prix_minimum }}</td>
+          <td>{{ ligne.prix_propose|default:ligne.prix_unitaire }}</td>
+          <td>{{ ligne.prix_retenu }}</td>
+          <td>{{ ligne.get_statut_ligne_display }}{% if ligne.date_decision and ligne.decide_par %} · {{ ligne.decide_par }}{% endif %}</td>
+          <td>{{ ligne.montant_normal }}</td>
+          <td>{{ ligne.montant_propose }}</td>
+          <td>{{ ligne.montant_retenu }}</td>
+          <td class="{% if ligne.ecart %}text-danger{% endif %}">{{ ligne.ecart }}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="4">Aucun article.</td></tr>
+        <tr><td colspan="11">Aucun article.</td></tr>
         {% endfor %}
       </tbody>
     </table>

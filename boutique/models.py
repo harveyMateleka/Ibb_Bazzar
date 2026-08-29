@@ -712,8 +712,10 @@ class Vente(models.Model):
 
     class Statut(models.TextChoices):
         BROUILLON = 'BROUILLON', 'Brouillon'
-        PENDING_VALIDATION = 'PENDING_VALIDATION', 'En attente de validation'
+        PENDING_VALIDATION = 'PENDING_VALIDATION', 'En attente de traitement'
+        TRAITEE = 'TRAITEE', 'Traitée'
         VALIDEE = 'VALIDEE', 'Validée'
+        CONFIRMEE = 'CONFIRMEE', 'Confirmée'
         ANNULEE = 'ANNULEE', 'Annulée'
 
     class Paiement(models.TextChoices):
@@ -795,8 +797,11 @@ class Vente(models.Model):
         return self.montant_recu - self.total
 
     def recalculer(self):
+        # Seules les lignes VALIDÉES entrent dans le total : une ligne rejetée
+        # par le responsable ne participe ni au sous-total ni à la sortie de stock.
         sous_total = sum(
-            (ligne.total for ligne in self.lignes.all()),
+            (ligne.total for ligne in self.lignes.filter(
+                statut_ligne=VenteLigne.StatutLigne.VALIDEE)),
             start=Decimal('0'),
         )
         total = max(sous_total - self.remise, Decimal('0'))
@@ -830,6 +835,8 @@ class Vente(models.Model):
         Lève une ValidationError (message clair) si le stock est insuffisant.
         """
         for ligne in self.lignes.select_related('variante', 'variante__article'):
+            if ligne.statut_ligne != VenteLigne.StatutLigne.VALIDEE:
+                continue  # ligne rejetée par le responsable : aucune sortie
             if ligne.mouvement_id:
                 continue
             var = ligne.variante
@@ -866,7 +873,12 @@ class Vente(models.Model):
 
 
 class VenteLigne(models.Model):
-    """Ligne de vente : référence une variante et conserve le prix appliqué."""
+    """Ligne de vente : référence une variante, conserve le prix normal
+    (`prix_unitaire`, instantané) et le prix facturé (`prix_propose`)."""
+
+    class StatutLigne(models.TextChoices):
+        VALIDEE = 'VALIDEE', 'Validée'
+        REJETEE = 'REJETEE', 'Rejetée'
 
     vente = models.ForeignKey(
         Vente, on_delete=models.CASCADE, related_name='lignes', verbose_name='vente')
@@ -877,9 +889,21 @@ class VenteLigne(models.Model):
         verbose_name='variante',
     )
     quantite = models.PositiveIntegerField('quantité')
-    prix_unitaire = models.DecimalField('prix unitaire', max_digits=12, decimal_places=2, default=Decimal('0'))
+    prix_unitaire = models.DecimalField('prix unitaire normal', max_digits=12, decimal_places=2, default=Decimal('0'))
+    prix_propose = models.DecimalField('prix proposé', max_digits=12, decimal_places=2, null=True, blank=True)
     remise = models.DecimalField('remise', max_digits=12, decimal_places=2, default=Decimal('0'))
     total = models.DecimalField('total', max_digits=12, decimal_places=2, default=Decimal('0'))
+    # Décision du responsable (traitement ligne par ligne).
+    statut_ligne = models.CharField(
+        'statut de la ligne', max_length=12, choices=StatutLigne.choices,
+        default=StatutLigne.VALIDEE)
+    prix_responsable = models.DecimalField(
+        'prix retenu par le responsable', max_digits=12, decimal_places=2,
+        null=True, blank=True)
+    date_decision = models.DateTimeField('décidé le', null=True, blank=True)
+    decide_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='lignes_decidees', verbose_name='décidé par')
     mouvement = models.OneToOneField(
         MouvementStockBoutique,
         on_delete=models.SET_NULL,
@@ -896,9 +920,40 @@ class VenteLigne(models.Model):
     def __str__(self):
         return f'{self.vente.numero} — {self.variante.article.code} × {self.quantite}'
 
+    def _prix_facture(self):
+        return self.prix_propose if self.prix_propose is not None else self.prix_unitaire
+
     def save(self, *args, **kwargs):
-        self.total = (self.prix_unitaire * self.quantite) - self.remise
+        # Le total est facturé au PRIX RETENU : prix retenu par le responsable
+        # s'il existe, sinon prix proposé, sinon prix normal (voir prix_retenu).
+        # Sans quoi un prix retenu saisi à la confirmation serait écrasé par le
+        # prix proposé d'origine.
+        self.total = (self.prix_retenu * self.quantite) - self.remise
         super().save(*args, **kwargs)
+
+    @property
+    def montant_normal(self):
+        return self.prix_unitaire * self.quantite
+
+    @property
+    def montant_propose(self):
+        return self._prix_facture() * self.quantite
+
+    @property
+    def ecart(self):
+        return self.montant_normal - self.montant_propose
+
+    @property
+    def prix_retenu(self):
+        """Prix appliqué à l'exécution : celui du responsable s'il existe,
+        sinon le prix proposé, sinon le prix normal."""
+        if self.prix_responsable is not None:
+            return self.prix_responsable
+        return self._prix_facture()
+
+    @property
+    def montant_retenu(self):
+        return self.prix_retenu * self.quantite
 
 
 class InventaireBoutique(models.Model):

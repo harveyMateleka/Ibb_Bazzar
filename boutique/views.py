@@ -5,6 +5,10 @@ Périmètre = succursales affectées au domaine BOUTIQUE ; succursale/domaine
 auto + readonly dans les formulaires via `contexte_actif()` / `appliquer_contexte`.
 """
 
+import calendar
+import json
+from decimal import Decimal
+
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -14,7 +18,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from core.models import Domaine, Succursale
+from core.models import Domaine, Succursale, User
 from core.permissions import require_permission, succursales_autorisees
 from core.services import AuditService
 
@@ -34,8 +38,10 @@ from .models import (
     InventaireBoutique,
     MouvementStockBoutique,
     StockBoutique,
+    TypeTissuArticle,
     VarianteArticle,
     Vente,
+    VenteLigne,
 )
 from .services import (
     BonEntreeService,
@@ -490,6 +496,15 @@ def mouvements_report(request):
     )
 
 
+@require_permission('boutique.view_boutique')
+def rapports(request):
+    """Centre des rapports de la boutique."""
+    return render(request, 'boutique/rapports.html', {
+        'utilisateur': request.user,
+        'date_generation': timezone.localtime(),
+    })
+
+
 @require_permission('boutique.view_stock')
 def alertes(request):
     peri = _perimetre(request.user)
@@ -532,38 +547,280 @@ def ventes(request):
 
 @require_permission('boutique.view_vente')
 def ventes_report(request):
-    """Rapport imprimable des ventes (par défaut : les ventes du jour)."""
+    """Rapport des ventes : général, journalier (mode=jour), périodique
+    (mode=periode) ou mensuel (mode=mois). Filtres succursale/statut/paiement/
+    utilisateur toujours bornés au périmètre de l'utilisateur (backend)."""
     peri = _perimetre(request.user)
     qs = Vente.objects.select_related('utilisateur', 'succursale').filter(
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     ).exclude(statut=Vente.Statut.ANNULEE)
+
+    mode = request.GET.get('mode', '')
+    jour = request.GET.get('jour', '')
+    mois = request.GET.get('mois', '')
+    annee = request.GET.get('annee', '')
     date_debut = request.GET.get('date_debut', '')
     date_fin = request.GET.get('date_fin', '')
-    toutes = request.GET.get('toutes') == '1'
-    if not toutes and not date_debut and not date_fin:
+
+    if mode == 'jour' and jour:
+        date_debut = date_fin = jour
+    elif mode == 'mois' and mois and annee:
+        m = int(mois)
+        a = int(annee)
+        date_debut = f'{a}-{m:02d}-01'
+        date_fin = f'{a}-{m:02d}-{calendar.monthrange(a, m)[1]:02d}'
+    elif not date_debut and not date_fin and request.GET.get('toutes') != '1':
         aujourdhui = timezone.localdate().isoformat()
-        date_debut = aujourdhui
-        date_fin = aujourdhui
+        date_debut = date_fin = aujourdhui
+
     if date_debut:
         qs = qs.filter(date_vente__date__gte=date_debut)
     if date_fin:
         qs = qs.filter(date_vente__date__lte=date_fin)
+
+    succursale_id = request.GET.get('succursale', '')
+    statut = request.GET.get('statut', '')
+    paiement = request.GET.get('paiement', '')
+    utilisateur_id = request.GET.get('utilisateur', '')
+    if succursale_id:
+        qs = qs.filter(succursale_id=succursale_id)
+    if statut:
+        qs = qs.filter(statut=statut)
+    if paiement:
+        qs = qs.filter(type_paiement=paiement)
+    if utilisateur_id:
+        qs = qs.filter(utilisateur_id=utilisateur_id)
+
     qs = qs.order_by('date_vente', 'id')
     nb_ventes = qs.count()
-    total_montant = qs.aggregate(t=Sum('total'))['t'] or 0
-    total_recu = qs.aggregate(t=Sum('montant_recu'))['t'] or 0
+    aggs = qs.aggregate(t=Sum('total'), remises=Sum('remise'), recu=Sum('montant_recu'))
+    total_montant = aggs['t'] or 0
+    total_remises = aggs['remises'] or 0
+    total_recu = aggs['recu'] or 0
+    utilisateurs = User.objects.filter(
+        pk__in=Vente.objects.filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ).values('utilisateur_id'),
+    ).order_by('username')
     return render(
         request,
         'boutique/ventes_report.html',
         {
             'ventes': qs,
+            'mode': mode,
+            'jour': jour,
+            'mois': mois,
+            'annee': annee,
             'date_debut': date_debut,
             'date_fin': date_fin,
+            'succursale_id': succursale_id,
+            'succursales': peri['succursales'],
+            'statut': statut,
+            'paiement': paiement,
+            'utilisateur_id': utilisateur_id,
+            'statuts': Vente.Statut.choices,
+            'paiements': Vente.Paiement.choices,
+            'utilisateurs': utilisateurs,
+            'mois_list': range(1, 13),
             'nb_ventes': nb_ventes,
             'total_montant': total_montant,
+            'total_remises': total_remises,
             'total_recu': total_recu,
             'monnaie': max(total_recu - total_montant, 0),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('boutique.view_stock')
+def rapport_articles(request):
+    """Rapport des articles enregistrés (filtres bornés au périmètre)."""
+    peri = _perimetre(request.user)
+    qs = _articles_perimetre(peri)
+    q = request.GET.get('q', '')
+    succursale_id = request.GET.get('succursale', '')
+    if q:
+        qs = qs.filter(Q(code__icontains=q) | Q(designation__icontains=q))
+    if succursale_id:
+        qs = qs.filter(succursale_id=succursale_id)
+    qs = qs.annotate(nb_var=Count('variantes')).order_by('code')
+    return render(
+        request,
+        'boutique/rapport_articles.html',
+        {
+            'articles': qs,
+            'q': q,
+            'succursale_id': succursale_id,
+            'succursales': peri['succursales'],
+            'nb_articles': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('boutique.view_stock')
+def rapport_variantes(request):
+    """Rapport des variantes (avec quantité disponible par variante)."""
+    peri = _perimetre(request.user)
+    qs = _variantes_perimetre(peri)
+    q = request.GET.get('q', '')
+    categorie_id = request.GET.get('categorie', '')
+    tissu_id = request.GET.get('tissu', '')
+    genre = request.GET.get('genre', '')
+    statut = request.GET.get('statut', '')
+    if q:
+        qs = qs.filter(
+            Q(article__code__icontains=q)
+            | Q(article__designation__icontains=q)
+            | Q(code_variante__icontains=q)
+            | Q(couleur__icontains=q)
+            | Q(taille__icontains=q)
+        )
+    if categorie_id:
+        qs = qs.filter(categorie_id=categorie_id)
+    if tissu_id:
+        qs = qs.filter(type_tissu_id=tissu_id)
+    if genre:
+        qs = qs.filter(genre=genre)
+    if statut:
+        qs = qs.filter(statut=statut)
+    qs = qs.order_by('article__code', 'code_variante')
+    stocks = {
+        s.variante_id: s.quantite
+        for s in StockBoutique.objects.filter(
+            variante_id__in=qs.values('id'),
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        )
+    }
+    for v in qs:
+        v.stock_qte = stocks.get(v.pk, 0)
+    return render(
+        request,
+        'boutique/rapport_variantes.html',
+        {
+            'variantes': qs,
+            'q': q,
+            'categorie_id': categorie_id,
+            'tissu_id': tissu_id,
+            'genre': genre,
+            'statut': statut,
+            'categories': CategorieBoutique.objects.filter(actif=True),
+            'tissus': TypeTissuArticle.objects.filter(actif=True),
+            'genres': VarianteArticle.Genre.choices,
+            'statuts': VarianteArticle.Statut.choices,
+            'nb_variantes': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('boutique.view_stock')
+def rapport_variantes_crees(request):
+    """Variantes nouvellement créées sur une période."""
+    peri = _perimetre(request.user)
+    qs = _variantes_perimetre(peri)
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    if date_debut:
+        qs = qs.filter(date_creation__date__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date_creation__date__lte=date_fin)
+    qs = qs.order_by('date_creation')
+    return render(
+        request,
+        'boutique/rapport_variantes_crees.html',
+        {
+            'variantes': qs,
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+            'nb_variantes': qs.count(),
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('boutique.view_stock')
+def rapport_stock(request):
+    """État du stock : quantités, seuils, niveaux, filtre par niveau."""
+    peri = _perimetre(request.user)
+    qs = StockBoutique.objects.select_related(
+        'variante', 'variante__article', 'variante__type_tissu').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    )
+    niveau = request.GET.get('niveau', '')
+    if niveau == 'rupture':
+        qs = qs.filter(quantite__lte=0)
+    elif niveau == 'alerte':
+        qs = qs.filter(seuil_alerte__gt=0, quantite__gt=0, quantite__lte=F('seuil_alerte'))
+    elif niveau == 'vigilance':
+        qs = qs.filter(
+            seuil_alerte__gt=0,
+            quantite__gt=F('seuil_alerte'),
+            quantite__lte=F('seuil_alerte') + 10,
+        )
+    elif niveau == 'disponible':
+        qs = (qs.exclude(quantite__lte=0)
+              .exclude(seuil_alerte__gt=0, quantite__lte=F('seuil_alerte'))
+              .exclude(seuil_alerte__gt=0,
+                       quantite__gt=F('seuil_alerte'),
+                       quantite__lte=F('seuil_alerte') + 10))
+    qs = qs.order_by('variante__article__code', 'variante__code_variante')
+    total_qte = qs.aggregate(t=Sum('quantite'))['t'] or 0
+    return render(
+        request,
+        'boutique/rapport_stock.html',
+        {
+            'stocks': qs,
+            'niveau': niveau,
+            'niveaux': [('', 'Tous'), ('rupture', 'Rupture'), ('alerte', 'Seuil atteint'),
+                        ('vigilance', 'Vigilance'), ('disponible', 'Disponible')],
+            'nb_lignes': qs.count(),
+            'total_qte': total_qte,
+            'utilisateur': request.user,
+            'date_generation': timezone.localtime(),
+        },
+    )
+
+
+@require_permission('boutique.view_stock')
+def rapport_inventaires(request):
+    """Inventaires réalisés : nb de variantes et écarts constatés."""
+    peri = _perimetre(request.user)
+    qs = InventaireBoutique.objects.select_related('succursale', 'responsable').filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    )
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    statut = request.GET.get('statut', '')
+    if date_debut:
+        qs = qs.filter(date_inventaire__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date_inventaire__lte=date_fin)
+    if statut:
+        qs = qs.filter(statut=statut)
+    qs = qs.annotate(
+        nb_lignes=Count('lignes'),
+        ecart_net=Sum(F('lignes__stock_physique') - F('lignes__stock_systeme')),
+    ).order_by('-date_inventaire')
+    return render(
+        request,
+        'boutique/rapport_inventaires.html',
+        {
+            'inventaires': qs,
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+            'statut': statut,
+            'statuts': InventaireBoutique.Statut.choices,
+            'nb_inventaires': qs.count(),
             'utilisateur': request.user,
             'date_generation': timezone.localtime(),
         },
@@ -590,6 +847,33 @@ def vente_nouvelle(request):
         succursale=succursale.pk if succursale else None,
         domaine=domaine.pk if domaine else None,
     )
+
+    # Panneau droit : variantes disponibles dans le contexte, avec leur stock.
+    variantes_qs = _variantes_perimetre(peri)
+    if succursale:
+        variantes_qs = variantes_qs.filter(article__succursale_id=succursale.pk)
+    if domaine:
+        variantes_qs = variantes_qs.filter(article__domaine_id=domaine.pk)
+    stocks = {
+        s.variante_id: s.quantite
+        for s in StockBoutique.objects.filter(
+            variante_id__in=variantes_qs.values('id'),
+            succursale_id=succursale.pk if succursale else None,
+            domaine_id=domaine.pk if domaine else None,
+        )
+    }
+    for v in variantes_qs:
+        v.stock_qte = stocks.get(v.pk, 0)
+    variantes_json = {
+        v.pk: {
+            'label': str(v),
+            'normal': str(v.prix_unitaire),
+            'min': str(v.prix_minimum),
+            'max': str(v.prix_maximum),
+            'stock': stocks.get(v.pk, 0),
+        }
+        for v in variantes_qs
+    }
     if request.method == 'POST' and formulaire.is_valid() and formset.is_valid():
         remise = formulaire.cleaned_data['remise'] or 0
         if remise > 0 and not request.user.has_perm('boutique.apply_remise'):
@@ -602,23 +886,31 @@ def vente_nouvelle(request):
                     utilisateur=request.user,
                     client=formulaire.cleaned_data.get('client', ''),
                     type_paiement=formulaire.cleaned_data['type_paiement'],
-                    montant_recu=formulaire.cleaned_data.get('montant_recu') or 0,
+                    # Le montant reçu n'est plus saisi : posé = total côté service.
                     remise=remise,
                     lignes=formset.lignes_cleaned(),
                     par=request.user,
                 )
             except ValidationError as exc:
+                # Étape 9 : en cas d'erreur, on ré-affiche le formulaire avec le
+                # panier conservé (variantes, quantités, prix proposés) au lieu
+                # de rediriger vers un formulaire vide.
                 messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-                return redirect('boutique:vente_nouvelle')
-            if vente.statut == Vente.Statut.PENDING_VALIDATION:
-                messages.success(request, 'Vente créée et soumise à validation.')
             else:
-                messages.success(request, 'Vente créée avec succès.')
-            return redirect('boutique:vente_detail', pk=vente.pk)
+                if vente.statut == Vente.Statut.PENDING_VALIDATION:
+                    messages.success(request, 'Vente créée et soumise à validation.')
+                else:
+                    messages.success(request, 'Vente créée avec succès.')
+                return redirect('boutique:vente_detail', pk=vente.pk)
     return render(
         request,
         'boutique/vente_form.html',
-        {'form': formulaire, 'formset': formset},
+        {
+            'form': formulaire,
+            'formset': formset,
+            'variantes': variantes_qs,
+            'variantes_json': json.dumps(variantes_json),
+        },
     )
 
 
@@ -663,8 +955,34 @@ def vente_detail(request, pk):
 
 @require_permission('boutique.validate_vente')
 @require_POST
-def vente_approuver(request, pk):
-    """Décision du responsable sur une vente : BROUILLON → valider ; PENDING_VALIDATION → approuver."""
+def vente_decider_ligne(request, pk, ligne_pk):
+    """Le responsable décide d'UNE ligne : valider / rejeter + éventuel prix retenu."""
+    peri = _perimetre(request.user)
+    vente = get_object_or_404(
+        Vente.objects.filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ),
+        pk=pk,
+    )
+    decision = request.POST.get('decision', VenteLigne.StatutLigne.VALIDEE)
+    prix_responsable = request.POST.get('prix_responsable') or None
+    try:
+        if prix_responsable is not None:
+            prix_responsable = Decimal(prix_responsable)
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=ligne_pk, decision=decision,
+            prix_responsable=prix_responsable, par=request.user)
+        messages.success(request, 'Ligne traitée.')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('boutique:vente_detail', pk=vente.pk)
+
+
+@require_permission('boutique.validate_vente')
+@require_POST
+def vente_traiter(request, pk):
+    """Le responsable termine : PENDING_VALIDATION → TRAITEE (aucune sortie de stock)."""
     peri = _perimetre(request.user)
     vente = get_object_or_404(
         Vente.objects.filter(
@@ -674,19 +992,50 @@ def vente_approuver(request, pk):
         pk=pk,
     )
     try:
-        if vente.statut == Vente.Statut.BROUILLON:
-            VenteService.valider(vente, par=request.user)
-        elif vente.statut == Vente.Statut.PENDING_VALIDATION:
-            VenteService.approuver(vente, par=request.user)
-        else:
-            raise ValidationError(
-                f'Cette vente ne peut pas être traitée (statut actuel : '
-                f'{vente.get_statut_display()}).')
-        vente.refresh_from_db()
-        if vente.statut == Vente.Statut.VALIDEE:
-            messages.success(request, f'Vente {vente.numero} validée. Le stock a été diminué.')
-            return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
-        messages.success(request, f'Vente {vente.numero} soumise à validation.')
+        VenteService.traiter_vente(vente=vente, par=request.user)
+        messages.success(request, f'Vente {vente.numero} traitée (en attente de confirmation).')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('boutique:vente_detail', pk=vente.pk)
+
+
+@require_permission('boutique.validate_vente')
+@require_POST
+def vente_modifier_traitement(request, pk):
+    """Le responsable revient sur le traitement : TRAITEE → PENDING_VALIDATION
+    pour revalider/rejeter des lignes. Aucune sortie de stock à ce stade."""
+    peri = _perimetre(request.user)
+    vente = get_object_or_404(
+        Vente.objects.filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ),
+        pk=pk,
+    )
+    try:
+        VenteService.modifier_traitement(vente=vente, par=request.user)
+        messages.success(request, f'Vente {vente.numero} renvoyée en traitement : vous pouvez modifier les décisions de ligne.')
+    except ValidationError as exc:
+        messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    return redirect('boutique:vente_detail', pk=vente.pk)
+
+
+@require_permission('boutique.create_vente')
+@require_POST
+def vente_confirmer(request, pk):
+    """L'opérateur confirme la vente : TRAITEE → CONFIRMEE (sorties de stock)."""
+    peri = _perimetre(request.user)
+    vente = get_object_or_404(
+        Vente.objects.filter(
+            succursale_id__in=peri['succursales_ids'],
+            domaine_id=peri['domaine_id'],
+        ),
+        pk=pk,
+    )
+    try:
+        VenteService.confirmer(vente=vente, par=request.user)
+        messages.success(request, f'Vente {vente.numero} confirmée. Le stock a été diminué.')
+        return redirect(reverse('boutique:vente_imprimer', kwargs={'pk': vente.pk}) + '?auto=1')
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
     return redirect('boutique:vente_detail', pk=vente.pk)
@@ -714,6 +1063,8 @@ def vente_annuler(request, pk):
 
 @require_permission('boutique.view_vente')
 def vente_imprimer(request, pk):
+    """Ticket thermique 80 mm d'une vente. Seule une vente VALIDÉE peut être
+    imprimée (le statut est contrôlé côté backend, pas seulement en frontend)."""
     peri = _perimetre(request.user)
     vente = get_object_or_404(
         Vente.objects.select_related('utilisateur', 'succursale').filter(
@@ -722,6 +1073,12 @@ def vente_imprimer(request, pk):
         ),
         pk=pk,
     )
+    if vente.statut not in (Vente.Statut.VALIDEE, Vente.Statut.CONFIRMEE):
+        messages.error(
+            request,
+            f'La vente {vente.numero} n’est pas confirmée : '
+            'seules les ventes confirmées peuvent être imprimées.')
+        return redirect('boutique:vente_detail', pk=vente.pk)
     return render(
         request,
         'boutique/vente_impression.html',

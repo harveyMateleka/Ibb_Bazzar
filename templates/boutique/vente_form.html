@@ -13,209 +13,384 @@
 
 <form method="post" id="form-vente">
   {% csrf_token %}
+  <div class="commande-layout">
 
-  <section class="panel">
-    <h2>Informations de la vente</h2>
-    <div class="form-grid">
-      {% for field in form %}
-      <div class="field">
-        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-        {{ field }}
-        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
-        {{ field.errors }}
+    <!-- PANNEAU GAUCHE : PANIER -->
+    <section class="panel vente-panel">
+      <h2>Panier</h2>
+      {{ formset.management_form }}
+      {{ formset.non_form_errors }}
+      <div class="table-wrap panier-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Article / Variante</th>
+              <th>Qté</th>
+              <th>Prix normal</th>
+              <th>Prix min</th>
+              <th>Prix proposé</th>
+              <th>Montant normal</th>
+              <th>Montant proposé</th>
+              <th>Écart</th>
+              <th class="no-sort"></th>
+            </tr>
+          </thead>
+          <tbody id="lignes-panier">
+            {% for form in formset %}
+            <tr class="ligne-vente"{% if form.DELETE.value %} style="display:none"{% endif %}>
+              <td>
+                <span style="display:none">{{ form.variante }}</span>
+                <strong data-article-nom>—</strong>
+                {{ form.variante.errors }}
+              </td>
+              <td>
+                <div class="qty-controls">
+                  <button type="button" class="icon-btn js-moins" aria-label="Diminuer">−</button>
+                  {{ form.quantite }}
+                  <button type="button" class="icon-btn js-plus" aria-label="Augmenter">+</button>
+                </div>
+                {{ form.quantite.errors }}
+              </td>
+              <td data-prix-normal>—</td>
+              <td data-prix-min>—</td>
+              <td>
+                <span style="display:none">{{ form.prix_propose }}</span>
+                <span data-prix-propose-affiche>—</span>
+                {{ form.prix_propose.errors }}
+              </td>
+              <td data-montant-normal>0</td>
+              <td data-montant-propose>0</td>
+              <td data-ecart>0</td>
+              <td>
+                <span style="display:none">{{ form.DELETE }}</span>
+                <button type="button" class="btn btn-danger btn-supprimer-ligne" title="Retirer">🗑</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      {% endfor %}
-    </div>
-  </section>
+      <dl class="detail-grid" style="margin-top:1rem;">
+        <dt>Sous-total</dt><dd id="panier-sous-total">0</dd>
+        <dt>Remise totale</dt><dd id="panier-remise-totale">0</dd>
+        <dt>Total</dt><dd><strong id="panier-total">0</strong></dd>
+        <dt>Montant reçu</dt><dd id="panier-montant-recu">0</dd>
+        <dt>Monnaie</dt><dd id="panier-monnaie">0</dd>
+      </dl>
 
-  <section class="panel">
-    <h2>Articles</h2>
-    {{ formset.management_form }}
-    {{ formset.non_form_errors }}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Variante</th>
-            <th>Qté</th>
-            <th>Prix unitaire</th>
-            <th>Montant</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="lignes-panier">
-          {% for form in formset %}
-          <tr class="ligne-vente">
-            <td>
-              {{ form.variante }}
-              <p class="help">Prix normal : <strong data-affiche-prix-normal>—</strong>
-                · Prix minimum : <strong data-affiche-prix-min>—</strong>
-                {{ form.variante.errors }}</p>
-            </td>
-            <td>{{ form.quantite }}{{ form.quantite.errors }}</td>
-            <td>{{ form.prix_unitaire }}{{ form.prix_unitaire.errors }}</td>
-            <td><span class="montant-ligne">0</span></td>
-            <td>
-              <span style="display:none">{{ form.DELETE }}</span>
-              <button type="button" class="btn btn-danger btn-supprimer-ligne" title="Retirer la ligne">🗑</button>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="actions">
-      <button type="button" id="btn-ajouter-ligne" class="btn btn-ghost">+ Ajouter une ligne</button>
-    </div>
-  </section>
+      <div class="form-grid">
+        {% for field in form %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+          {{ field.errors }}
+        </div>
+        {% endfor %}
+      </div>
 
-  <section class="panel">
-    <h2>Totaux</h2>
-    <dl class="detail-grid">
-      <dt>Sous-total</dt><dd id="panier-sous-total">0</dd>
-      <dt>Remise totale</dt><dd id="panier-remise-totale">0</dd>
-      <dt>Total</dt><dd><strong id="panier-total">0</strong></dd>
-      <dt>Montant reçu</dt><dd id="panier-montant-recu">0</dd>
-      <dt>Monnaie</dt><dd id="panier-monnaie">0</dd>
-    </dl>
-    <div class="actions">
-      <button type="submit" class="btn btn-primary">Créer et soumettre</button>
-    </div>
-  </section>
+      <div class="actions">
+        <button type="submit" class="btn btn-primary">Créer et soumettre</button>
+      </div>
+    </section>
+
+    <!-- PANNEAU DROIT : VARIANTES DISPONIBLES (carrousel horizontal de cards) -->
+    <section class="panel vente-panel">
+      <h2>Variantes disponibles</h2>
+      <div class="variantes-recherche">
+        <input class="input" type="search" id="variante-recherche" placeholder="🔍 Rechercher un article (ex. chemise)..." autocomplete="off">
+      </div>
+
+      <div class="variantes-carrousel" id="variantes-carrousel">
+        {% for v in variantes %}
+        <div class="variante-card{% if v.stock_qte <= 0 %} is-rupture{% elif v.seuil_alerte and v.stock_qte <= v.seuil_alerte %} is-alerte{% endif %}"
+             data-pk="{{ v.pk }}"
+             data-search="{{ v.article.code }} {{ v.article.designation }}">
+          <div class="variante-card-head">
+            <strong>{{ v.article.code }}</strong>
+            {% if v.stock_qte <= 0 %}<span class="badge">Rupture</span>
+            {% elif v.seuil_alerte and v.stock_qte <= v.seuil_alerte %}<span class="badge badge-alerte">Alerte</span>{% endif %}
+          </div>
+          <p style="margin:0"><strong>{{ v.label }}</strong></p>
+          <p class="help" style="margin:0">Stock : {{ v.stock_qte }}</p>
+          <p style="margin:0">Prix normal : {{ v.prix_unitaire }}</p>
+          <p style="margin:0">Prix minimum : {{ v.prix_minimum }}</p>
+          <div class="field" style="margin:0">
+            <label for="prix-ajout-{{ v.pk }}">Prix proposé</label>
+            <input type="number" id="prix-ajout-{{ v.pk }}" class="input prix-ajout" value="{{ v.prix_unitaire }}" step="0.01" min="0" {% if v.stock_qte <= 0 %}disabled{% endif %}>
+          </div>
+          <button type="button" class="btn btn-primary btn-ajout" {% if v.stock_qte <= 0 %}disabled{% endif %}>{% if v.stock_qte <= 0 %}Indisponible{% else %}Ajouter{% endif %}</button>
+        </div>
+        {% empty %}
+        <p class="help">Aucune variante disponible.</p>
+        {% endfor %}
+      </div>
+
+      <div class="carrousel-nav">
+        <button type="button" class="icon-btn" id="carrousel-prev" aria-label="Précédent">‹</button>
+        <span class="help" id="variantes-info"></span>
+        <button type="button" class="icon-btn" id="carrousel-next" aria-label="Suivant">›</button>
+      </div>
+    </section>
+
+  </div>
 </form>
 
 <script>
+  var VARIANTES = {{ variantes_json|safe }};
   (function () {
     var form = document.getElementById("form-vente");
     if (!form) return;
     var tbody = document.getElementById("lignes-panier");
-    var btnAjouter = document.getElementById("btn-ajouter-ligne");
     var totalField = form.querySelector("[name='lignes-TOTAL_FORMS']");
     var elSousTotal = document.getElementById("panier-sous-total");
-    var elRemiseTotale = document.getElementById("panier-remise-totale");
+    var elRemise = document.getElementById("panier-remise-totale");
     var elTotal = document.getElementById("panier-total");
-    var elMontantRecu = document.getElementById("panier-montant-recu");
+    var elRecu = document.getElementById("panier-montant-recu");
     var elMonnaie = document.getElementById("panier-monnaie");
-    var montantRecuInput = document.getElementById("id_montant_recu");
-    var remiseHeaderInput = document.getElementById("id_remise");
+    var remiseHeader = document.getElementById("id_remise");
 
-    function indexDe(ligne) {
-      var select = ligne.querySelector("select");
-      var name = select && select.getAttribute("name") || "";
-      var m = name.match(/^lignes-(\d+)-/);
-      return m ? m[1] : "0";
+    /* --- Panier --- */
+    function pkDe(ligne) {
+      var sel = ligne.querySelector("select[name$='-variante']");
+      return sel ? (sel.value || "") : "";
     }
-
-    function majPrix(select) {
-      var ligne = select.closest(".ligne-vente");
-      if (!ligne) return;
-      var affNormal = ligne.querySelector("[data-affiche-prix-normal]");
-      var affMin = ligne.querySelector("[data-affiche-prix-min]");
-      var inputPrix = ligne.querySelector("input[data-prix-ligne]");
-      var opt = select.selectedOptions[0];
-      if (!opt || !opt.dataset.prixNormal) {
-        if (affNormal) affNormal.textContent = "—";
-        if (affMin) affMin.textContent = "—";
-        return;
+    function dataDe(ligne) {
+      var pk = pkDe(ligne);
+      if (pk && VARIANTES[pk]) return VARIANTES[pk];
+      // Secours : lire les prix directement depuis l'option sélectionnée.
+      var sel = ligne.querySelector("select[name$='-variante']");
+      var opt = sel && sel.selectedOptions[0];
+      if (opt && opt.dataset && opt.dataset.prixNormal) {
+        return {
+          label: opt.text,
+          normal: opt.dataset.prixNormal,
+          min: opt.dataset.prixMin,
+          stock: 0
+        };
       }
-      if (affNormal) affNormal.textContent = opt.dataset.prixNormal;
-      if (affMin) affMin.textContent = opt.dataset.prixMin;
-      if (inputPrix) inputPrix.value = opt.dataset.prixNormal;
-      calculerTotaux();
+      return null;
     }
-
-    function calculerTotaux() {
+    function montantPropose(ligne) {
+      var qte = parseFloat(ligne.querySelector("input[name$='-quantite']").value) || 0;
+      var prix = parseFloat(ligne.querySelector("input[name$='-prix_propose']").value) || 0;
+      return qte * prix;
+    }
+    function recalcLigne(ligne) {
+      var data = dataDe(ligne);
+      var qteInput = ligne.querySelector("input[name$='-quantite']");
+      var prixInput = ligne.querySelector("input[name$='-prix_propose']");
+      var elArticle = ligne.querySelector("[data-article-nom]");
+      // cibler les cellules (td), pas les <option> qui portent aussi data-prix-*
+      var elNormal = ligne.querySelector("td[data-prix-normal]");
+      var elMin = ligne.querySelector("td[data-prix-min]");
+      var elProp = ligne.querySelector("[data-prix-propose-affiche]");
+      var elMN = ligne.querySelector("[data-montant-normal]");
+      var elMP = ligne.querySelector("[data-montant-propose]");
+      var elEcart = ligne.querySelector("[data-ecart]");
+      if (elArticle) elArticle.textContent = data ? data.label : "—";
+      if (elNormal) elNormal.textContent = data ? data.normal : "—";
+      if (elMin) elMin.textContent = data ? data.min : "—";
+      if (prixInput && prixInput.value === "" && data) prixInput.value = data.normal;
+      if (elProp) elProp.textContent = prixInput.value || "—";
+      var qte = parseInt(qteInput.value) || 0;
+      if (data && qte > data.stock) qteInput.value = data.stock;
+      var mn = qte * (data ? parseFloat(data.normal) : 0);
+      var mp = qte * (parseFloat(prixInput.value) || 0);
+      if (elMN) elMN.textContent = mn.toLocaleString("fr-FR");
+      if (elMP) elMP.textContent = mp.toLocaleString("fr-FR");
+      if (elEcart) {
+        var ecart = mn - mp;
+        elEcart.textContent = ecart.toLocaleString("fr-FR");
+        elEcart.classList.toggle("text-danger", ecart !== 0);
+      }
+      var plus = ligne.querySelector(".js-plus");
+      if (plus) plus.disabled = !!(data && qte >= data.stock);
+    }
+    function recalcTotaux() {
       var sousTotal = 0;
       Array.prototype.forEach.call(tbody.querySelectorAll(".ligne-vente"), function (ligne) {
         if (ligne.style.display === "none") return;
-        var q = ligne.querySelector("input[name$='-quantite']");
-        var p = ligne.querySelector("input[name$='-prix_unitaire']");
-        var qte = q ? (parseFloat(q.value) || 0) : 0;
-        var prix = p ? (parseFloat(p.value) || 0) : 0;
-        var montant = qte * prix;
-        var span = ligne.querySelector(".montant-ligne");
-        if (span) span.textContent = montant.toLocaleString("fr-FR");
-        sousTotal += montant;
+        sousTotal += montantPropose(ligne);
+        recalcLigne(ligne);
       });
       if (elSousTotal) elSousTotal.textContent = sousTotal.toLocaleString("fr-FR");
-      var remiseTotale = remiseHeaderInput ? (parseFloat(remiseHeaderInput.value) || 0) : 0;
-      if (elRemiseTotale) elRemiseTotale.textContent = remiseTotale.toLocaleString("fr-FR");
-      var total = Math.max(sousTotal - remiseTotale, 0);
+      var remise = remiseHeader ? (parseFloat(remiseHeader.value) || 0) : 0;
+      if (elRemise) elRemise.textContent = remise.toLocaleString("fr-FR");
+      var total = Math.max(sousTotal - remise, 0);
       if (elTotal) elTotal.textContent = total.toLocaleString("fr-FR");
-      var recu = montantRecuInput ? (parseFloat(montantRecuInput.value) || 0) : 0;
-      if (elMontantRecu) elMontantRecu.textContent = recu.toLocaleString("fr-FR");
+      // Montant reçu non saisi : toujours égal au total de la facture (monnaie = 0).
+      var recu = total;
+      if (elRecu) elRecu.textContent = recu.toLocaleString("fr-FR");
       if (elMonnaie) {
         var diff = recu - total;
         elMonnaie.textContent = diff.toLocaleString("fr-FR");
         elMonnaie.classList.toggle("text-danger", diff < 0);
       }
     }
-
+    function indexDe(ligne) {
+      var sel = ligne.querySelector("select[name$='-variante']");
+      var m = sel && sel.getAttribute("name").match(/^lignes-(\d+)-/);
+      return m ? m[1] : "0";
+    }
     function ajouterLigne() {
       var lignes = tbody.querySelectorAll(".ligne-vente");
       var modele = lignes[lignes.length - 1];
-      if (!modele) return;
+      if (!modele) return null;
       var clone = modele.cloneNode(true);
       var ancien = indexDe(modele);
       var nouveau = parseInt(totalField.value, 10) || 0;
-
       clone.querySelectorAll("input, select").forEach(function (champ) {
         var name = champ.getAttribute("name");
         if (name) champ.setAttribute("name", name.replace("lignes-" + ancien + "-", "lignes-" + nouveau + "-"));
         var id = champ.getAttribute("id");
         if (id) champ.setAttribute("id", id.replace("id_lignes-" + ancien + "-", "id_lignes-" + nouveau + "-"));
         if (champ.type === "hidden") champ.value = "";
+        if (champ.type === "number") champ.value = "";
       });
-      clone.querySelectorAll("label").forEach(function (label) {
-        var pour = label.getAttribute("for");
-        if (pour) label.setAttribute("for", pour.replace("id_lignes-" + ancien + "-", "id_lignes-" + nouveau + "-"));
-      });
-      var select = clone.querySelector("select");
-      if (select) select.value = "";
+      var sel = clone.querySelector("select");
+      if (sel) sel.value = "";
       var del = clone.querySelector("input[name$='-DELETE']");
       if (del) del.checked = false;
       clone.style.display = "";
-      var spans = clone.querySelectorAll("[data-affiche-prix-normal], [data-affiche-prix-min]");
-      Array.prototype.forEach.call(spans, function (s) { s.textContent = "—"; });
-      var montant = clone.querySelector(".montant-ligne");
-      if (montant) montant.textContent = "0";
+      var elArticle = clone.querySelector("[data-article-nom]");
+      if (elArticle) elArticle.textContent = "—";
+      ["td[data-prix-normal]", "td[data-prix-min]", "[data-prix-propose-affiche]"].forEach(function (s) {
+        var el = clone.querySelector(s); if (el) el.textContent = "—";
+      });
+      ["[data-montant-normal]", "[data-montant-propose]", "[data-ecart]"].forEach(function (s) {
+        var el = clone.querySelector(s); if (el) el.textContent = "0";
+      });
       totalField.value = nouveau + 1;
       tbody.appendChild(clone);
-      var nouveauSelect = clone.querySelector("select");
-      if (nouveauSelect) nouveauSelect.focus();
-      calculerTotaux();
+      return clone;
     }
-
-    function supprimerLigne(btn) {
+    function retirerLigne(btn) {
       var ligne = btn.closest(".ligne-vente");
       if (!ligne) return;
-      var del = ligne.querySelector("input[name$='-DELETE']");
-      var select = ligne.querySelector("select");
-      if (!select || !select.value) {
+      var sel = ligne.querySelector("select");
+      if (!sel || !sel.value) {
         ligne.remove();
-        totalField.value = (parseInt(totalField.value, 10) || 1) - 1;
+        totalField.value = Math.max((parseInt(totalField.value, 10) || 1) - 1, 1);
       } else {
+        var del = ligne.querySelector("input[name$='-DELETE']");
         if (del) del.checked = true;
         ligne.style.display = "none";
       }
-      calculerTotaux();
+      recalcTotaux();
+    }
+    function ajouterDepuisCarte(btn) {
+      var card = btn.closest(".variante-card");
+      if (!card) return;
+      var pk = card.getAttribute("data-pk");
+      var prix = parseFloat(card.querySelector(".prix-ajout").value) || 0;
+      var data = VARIANTES[pk];
+      if (!data || data.stock <= 0) return;
+      if (prix <= 0) prix = parseFloat(data.normal);
+      // Contrôle côté client (le backend reste la référence) : prix proposé < min → refus.
+      if (prix < parseFloat(data.min)) {
+        alert("Impossible d'ajouter cette variante : le prix proposé est inférieur au prix minimum autorisé (" + data.min + ").");
+        return;
+      }
+      if (prix > parseFloat(data.normal)) {
+        alert("Impossible d'ajouter cette variante : le prix proposé est supérieur au prix de référence autorisé (" + data.normal + ").");
+        return;
+      }
+      var existante = null;
+      Array.prototype.forEach.call(tbody.querySelectorAll(".ligne-vente"), function (l) {
+        if (l.style.display !== "none" && pkDe(l) === String(pk)) existante = l;
+      });
+      if (existante) {
+        var qteInput = existante.querySelector("input[name$='-quantite']");
+        var nouvelle = (parseInt(qteInput.value) || 0) + 1;
+        if (nouvelle > data.stock) nouvelle = data.stock;
+        qteInput.value = nouvelle;
+        existante.querySelector("input[name$='-prix_propose']").value = prix;
+      } else {
+        var ligne = null;
+        Array.prototype.forEach.call(tbody.querySelectorAll(".ligne-vente"), function (l) {
+          if (!ligne && l.style.display !== "none" && !pkDe(l)) ligne = l;
+        });
+        if (!ligne) ligne = ajouterLigne();
+        if (!ligne) return;
+        ligne.querySelector("select[name$='-variante']").value = String(pk);
+        ligne.querySelector("input[name$='-quantite']").value = 1;
+        ligne.querySelector("input[name$='-prix_propose']").value = prix;
+      }
+      recalcTotaux();
     }
 
+    tbody.addEventListener("click", function (event) {
+      var moins = event.target.closest(".js-moins");
+      if (moins) {
+        var ligne = moins.closest(".ligne-vente");
+        var qte = parseInt(ligne.querySelector("input[name$='-quantite']").value) || 1;
+        ligne.querySelector("input[name$='-quantite']").value = Math.max(qte - 1, 1);
+        recalcTotaux();
+        return;
+      }
+      var plus = event.target.closest(".js-plus");
+      if (plus) {
+        var ligne = plus.closest(".ligne-vente");
+        var qte = parseInt(ligne.querySelector("input[name$='-quantite']").value) || 1;
+        var data = dataDe(ligne);
+        var max = data ? data.stock : qte;
+        ligne.querySelector("input[name$='-quantite']").value = Math.min(qte + 1, max);
+        recalcTotaux();
+        return;
+      }
+      var retirer = event.target.closest(".btn-supprimer-ligne");
+      if (retirer) retirerLigne(retirer);
+    });
     form.addEventListener("change", function (event) {
-      if (event.target && event.target.matches("select[data-article-ligne]")) majPrix(event.target);
-      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
+      if (event.target.closest("select[name$='-variante']")) recalcTotaux();
+      if (event.target.matches("input[name$='-quantite'], input[name$='-prix_propose'], input[name='remise']")) recalcTotaux();
     });
     form.addEventListener("input", function (event) {
-      if (event.target && event.target.matches("input[name$='-quantite'], input[name$='-prix_unitaire'], input[name='montant_recu'], input[name='remise']")) calculerTotaux();
-    });
-    if (btnAjouter) btnAjouter.addEventListener("click", ajouterLigne);
-    if (tbody) tbody.addEventListener("click", function (event) {
-      var btn = event.target.closest(".btn-supprimer-ligne");
-      if (btn) supprimerLigne(btn);
+      if (event.target.matches("input[name$='-quantite'], input[name$='-prix_propose'], input[name='remise']")) recalcTotaux();
     });
 
-    Array.prototype.forEach.call(tbody.querySelectorAll("select[data-article-ligne]"), majPrix);
-    calculerTotaux();
+    /* --- Catalogue à droite : recherche (nom d'article) + carrousel horizontal --- */
+    var carrousel = document.getElementById("variantes-carrousel");
+    var toutesCartes = carrousel ? Array.prototype.slice.call(carrousel.querySelectorAll(".variante-card")) : [];
+    var PAR_VUE = 2;
+    var page = 1;
+    var inputRecherche = document.getElementById("variante-recherche");
+    function cartesFiltrees() {
+      var q = (inputRecherche ? inputRecherche.value : "").toLowerCase().trim();
+      return toutesCartes.filter(function (c) {
+        return !q || c.getAttribute("data-search").toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    function afficherCartes() {
+      var filtrees = cartesFiltrees();
+      var totalPages = Math.max(1, Math.ceil(filtrees.length / PAR_VUE));
+      if (page > totalPages) page = totalPages;
+      var debut = (page - 1) * PAR_VUE;
+      var visibles = filtrees.slice(debut, debut + PAR_VUE);
+      toutesCartes.forEach(function (c) { c.style.display = "none"; });
+      visibles.forEach(function (c) { c.style.display = ""; });
+      var info = document.getElementById("variantes-info");
+      if (info) {
+        info.textContent = visibles.length + " variante(s) sur " + filtrees.length;
+        if (totalPages > 1) info.textContent += " · page " + page + "/" + totalPages;
+      }
+      var prev = document.getElementById("carrousel-prev");
+      var next = document.getElementById("carrousel-next");
+      if (prev) prev.disabled = page <= 1;
+      if (next) next.disabled = page >= totalPages;
+    }
+    if (inputRecherche) inputRecherche.addEventListener("input", function () { page = 1; afficherCartes(); });
+    var btnPrev = document.getElementById("carrousel-prev");
+    var btnNext = document.getElementById("carrousel-next");
+    if (btnPrev) btnPrev.addEventListener("click", function () { page = Math.max(1, page - 1); afficherCartes(); });
+    if (btnNext) btnNext.addEventListener("click", function () { page = Math.min(Math.ceil(cartesFiltrees().length / PAR_VUE), page + 1); afficherCartes(); });
+    Array.prototype.forEach.call(document.querySelectorAll(".btn-ajout"), function (b) {
+      b.addEventListener("click", function () { ajouterDepuisCarte(b); });
+    });
+
+    afficherCartes();
+    recalcTotaux();
   })();
 </script>
 {% endblock %}

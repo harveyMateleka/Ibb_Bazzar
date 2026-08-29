@@ -84,6 +84,12 @@ class Immobilisation(models.Model):
         EN_REPARATION = 'EN_REPARATION', 'En réparation'
         DECLASSE = 'DECLASSE', 'Déclassé'
 
+    class StatutValidation(models.TextChoices):
+        BROUILLON = 'BROUILLON', 'Brouillon'
+        EN_ATTENTE = 'EN_ATTENTE', 'En attente de validation'
+        VALIDE = 'VALIDE', 'Validé'
+        REJETE = 'REJETE', 'Rejeté'
+
     code = models.CharField('code', max_length=20, unique=True, editable=False)
     designation = models.CharField('désignation', max_length=200)
     categorie = models.ForeignKey(
@@ -98,7 +104,6 @@ class Immobilisation(models.Model):
     valeur_acquisition = models.DecimalField(
         'valeur d’acquisition', max_digits=14, decimal_places=2, default=Decimal('0'))
     date_acquisition = models.DateField('date d’acquisition', null=True, blank=True)
-    fournisseur = models.CharField('fournisseur', max_length=150, blank=True)
 
     # Contexte centralisé (auto + readonly dans les formulaires).
     succursale = models.ForeignKey(
@@ -122,6 +127,28 @@ class Immobilisation(models.Model):
     statut_administratif = models.CharField(
         'statut administratif', max_length=14, choices=StatutAdministratif.choices,
         default=StatutAdministratif.STOCKE)
+
+    # Cycle de validation : création (Brouillon) → soumission → Validation.
+    statut_validation = models.CharField(
+        'validation', max_length=12, choices=StatutValidation.choices,
+        default=StatutValidation.BROUILLON)
+    soumis_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='biens_soumis', verbose_name='soumis par')
+    date_soumission = models.DateTimeField('soumis le', null=True, blank=True)
+    valide_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='biens_valides', verbose_name='validé par')
+    date_validation = models.DateTimeField('validé le', null=True, blank=True)
+    motif_rejet = models.CharField('motif de rejet', max_length=300, blank=True)
+
+    # Entretien / durée de vie — facultatifs.
+    periode_entretien = models.PositiveIntegerField(
+        'période d’entretien (mois)', null=True, blank=True,
+        help_text='Fréquence d’entretien en mois (facultatif).')
+    duree_vie = models.PositiveIntegerField(
+        'durée de vie (années)', null=True, blank=True,
+        help_text='Durée prévue d’utilisation en années (facultatif).')
 
     service = models.ForeignKey(
         Service,
@@ -157,6 +184,7 @@ class Immobilisation(models.Model):
             ('report_damage_asset', 'Peut déclarer une casse'),
             ('decommission_asset', 'Peut déclasser une immobilisation'),
             ('view_declassified_asset', 'Peut consulter les biens déclassés'),
+            ('validate_asset', 'Peut valider une immobilisation'),
         ]
 
     def __str__(self):
@@ -362,6 +390,8 @@ class Casse(models.Model):
         verbose_name='immobilisation',
     )
     date_casse = models.DateTimeField('date', default=timezone.now)
+    date_dommage = models.DateField('date du dommage', null=True, blank=True,
+                                    help_text='Date à laquelle le dommage est survenu (facultatif).')
     motif = models.CharField('motif', max_length=200)
     description = models.TextField('description', blank=True)
     responsable_dommage = models.CharField(

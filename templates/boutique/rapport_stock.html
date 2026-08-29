@@ -1,0 +1,61 @@
+{% extends "boutique/base.html" %}
+
+{% block title %}État du stock{% endblock %}
+
+{% block app_content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:rapports' %}">← Rapports</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <select class="input" name="niveau">
+    {% for value, label in niveaux %}
+    <option value="{{ value }}" {% if niveau == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>État du stock — Boutique</h1>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+  </div>
+
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr><th>Article</th><th>Variante</th><th>Tissu</th><th>Quantité</th><th>Seuil</th><th>Niveau</th><th>Prix</th><th>Prix min</th></tr>
+        </thead>
+        <tbody>
+          {% for s in stocks %}
+          <tr class="{{ s.classe_stock }}">
+            <td>{{ s.variante.article.code }}</td>
+            <td>{{ s.variante.label }}</td>
+            <td>{{ s.variante.type_tissu|default:"—" }}</td>
+            <td>{{ s.quantite }}</td>
+            <td>{{ s.seuil_alerte }}</td>
+            <td>{{ s.niveau_stock|default:"Normal" }}</td>
+            <td>{{ s.variante.prix_unitaire }}</td>
+            <td>{{ s.variante.prix_minimum }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8">Aucun stock.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bon-sign">
+    <p>Lignes de stock : <strong>{{ nb_lignes }}</strong></p>
+    <p>Quantité totale : <strong>{{ total_qte }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

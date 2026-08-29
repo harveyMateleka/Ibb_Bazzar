@@ -1,690 +1,473 @@
-CONTEXTE
+PROMPT — AJUSTEMENTS DU WORKFLOW DE VENTE
+CONSIGNE GÉNÉRALE — À RESPECTER AVANT CHAQUE ÉTAPE
 
-Nous devons ajuster le workflow de vente du module « Gestion des Boutiques ».
+Avant de commencer chaque modification :
 
-IMPORTANT :
+Lire le code actuellement implémenté.
+Identifier précisément comment fonctionne actuellement :
+Vente ;
+LigneVente ;
+les statuts ;
+le prix normal ;
+le prix minimum ;
+le prix proposé ;
+le prix retenu ;
+le calcul des montants ;
+le panier ;
+la soumission ;
+le traitement par le responsable ;
+la confirmation par l'opérateur ;
+le mouvement de stock.
+Vérifier si la logique demandée existe déjà.
+Réutiliser et corriger la logique existante plutôt que créer une nouvelle logique parallèle.
+Ne pas créer de doublons de champs, fonctions, vues, services ou validations.
+Ne pas casser les fonctionnalités qui fonctionnent déjà.
+Après chaque étape, tester uniquement la partie concernée avant de passer à l'étape suivante.
+ÉTAPE 1 — UNE LIGNE ANNULÉE NE DOIT PAS ÊTRE CONFIRMÉE SANS PRIX RETENU
 
-Le système actuel possède deux interfaces distinctes :
+Corriger la logique de confirmation de la vente.
 
-1. Interface de création de la vente / entête.
-2. Interface de validation dans laquelle les lignes de vente sont ensuite renseignées.
+Une vente ne doit pas pouvoir être confirmée si une ligne destinée à être exécutée ne possède pas de prix retenu valide.
 
-Nous voulons SUPPRIMER cette séparation fonctionnelle.
+Le responsable doit obligatoirement prendre une décision sur chaque ligne qui doit participer à la vente.
 
-La nouvelle logique doit avoir UNE SEULE INTERFACE permettant simultanément :
+Pour chaque ligne, il doit donc exister un prix final/reténu permettant de déterminer le montant réellement facturé.
 
-- de renseigner l'entête de la vente ;
-- d'ajouter les lignes de vente ;
-- de renseigner les variantes ;
-- de renseigner les quantités ;
-- de renseigner les prix unitaires ;
-- de renseigner les remises ;
-- de renseigner les informations de paiement ;
-- d'effectuer tous les contrôles métier ;
-- puis de créer la vente ET de la soumettre à validation dans la même opération.
+Exemple
+Article : Chemise
+Prix normal : 30 000
+Prix minimum : 25 000
+Prix proposé : 27 000
+Prix retenu : 26 000
 
-IMPORTANT :
+Le prix retenu est celui qui sera utilisé pour le montant final.
 
-Ne pas supprimer les règles métier de contrôle déjà implémentées.
+Cas d'une ligne annulée
 
-Il s'agit uniquement de modifier le workflow et l'interface pour regrouper les deux étapes.
+Si une ligne est annulée/invalide et qu'elle ne possède pas de prix retenu alors que cette ligne doit encore être prise en compte dans la vente :
 
-==================================================
-1. NOUVEAU PRINCIPE
-==================================================
+→ la confirmation doit être bloquée.
 
-L'ancien workflow :
+Afficher un message explicite indiquant au responsable/opérateur ce qui manque.
 
-CRÉATION DE L'ENTÊTE
-        ↓
-ENREGISTREMENT
-        ↓
-OUVERTURE D'UNE DEUXIÈME INTERFACE
-        ↓
-AJOUT DES LIGNES
-        ↓
-VALIDATION / SOUMISSION
+Ne pas simplement laisser la vente échouer silencieusement.
 
-DOIT DEVENIR :
+Attention
 
-UNE SEULE INTERFACE
-        ↓
-ENTÊTE + LIGNES + PAIEMENT + REMISE
-        ↓
-CONTRÔLES MÉTIER
-        ↓
-CRÉATION DE LA VENTE
-        ↓
-DEMANDE DE VALIDATION
+Avant d'implémenter cette règle, analyser le comportement actuel des lignes annulées.
 
-La création de la vente et sa demande de validation doivent donc être réalisées dans une seule soumission du formulaire.
+Ne pas supposer qu'une ligne annulée doit toujours bloquer la vente : déterminer dans le code si elle est censée être retirée de la vente finale ou si elle nécessite une décision complémentaire.
 
-==================================================
-2. INFORMATIONS DE L'ENTÊTE
-==================================================
+L'objectif est d'éviter qu'une vente soit confirmée avec une ligne sans prix final exploitable.
 
-Dans la même interface, afficher les informations générales nécessaires à la vente.
+ÉTAPE 2 — LE RESPONSABLE DOIT OBLIGATOIREMENT RETENIR UN PRIX
 
-Par exemple :
+Dans l'interface du responsable, chaque ligne qui doit être exécutée doit permettre au responsable de déterminer clairement le prix retenu.
 
-- client ;
-- informations générales de la vente ;
-- paiement ;
-- remise ;
-- montant reçu ;
-- autres informations déjà prévues par le système.
+Le responsable peut :
 
-IMPORTANT :
+accepter le prix normal ;
+accepter le prix proposé ;
+proposer un autre prix autorisé ;
+invalider/annuler la ligne lorsque le produit ne doit pas être vendu.
 
-Les informations qui sont déterminées automatiquement par l'utilisateur connecté ne doivent PAS être demandées inutilement dans le formulaire.
+Mais au moment où une ligne est destinée à être exécutée :
 
-==================================================
-3. DOMAINE D'ACTIVITÉ ET SUCCURSALE
-==================================================
+prix_retenu ≠ NULL
 
-Le domaine d'activité et la succursale ne doivent pas être des champs que l'utilisateur doit sélectionner manuellement à chaque création de vente lorsqu'ils sont déjà déterminés par son contexte utilisateur.
+et le prix doit être valide selon les règles métier existantes.
 
-Ces informations doivent être récupérées automatiquement en amont à partir du contexte de l'utilisateur connecté.
+Le prix retenu doit être contrôlé par rapport au prix minimum :
 
-Exemple :
+prix_retenu >= prix_minimum
 
-Utilisateur connecté :
+Si cette règle existe déjà, la réutiliser.
 
-Succursale = Succursale A
-Domaine d'activité = Boutique
+ÉTAPE 3 — AJOUTER UNE POSSIBILITÉ DE MODIFIER LE TRAITEMENT
 
-Lorsqu'il ouvre « Nouvelle vente » :
+Le responsable doit pouvoir modifier le traitement d'une vente lorsque cela est nécessaire.
 
-Le système connaît déjà :
+Il faut notamment gérer le cas où :
 
-Succursale = Succursale A
-Domaine = Boutique
+le responsable a invalidé une ligne ;
+il souhaite revenir sur sa décision ;
+il veut modifier le statut d'une ligne ;
+il veut réexaminer une ligne ;
+une erreur a été commise lors du traitement.
 
-Ces valeurs doivent donc être préremplies automatiquement ou directement déterminées côté backend.
+Ajouter une action Modifier dans l'interface du responsable, uniquement si cette action n'existe pas déjà.
 
-Ne pas demander à l'utilisateur de les saisir à nouveau.
+Cette action doit permettre de revenir sur le traitement selon les règles métier autorisées.
 
-IMPORTANT :
+Exemple
+Vente
+ ├── Ligne A → Validée
+ ├── Ligne B → Annulée
+ └── Ligne C → Validée
 
-Le backend doit également déterminer ces informations à partir du contexte utilisateur.
+Le responsable clique sur :
 
-Il ne faut pas faire confiance uniquement aux valeurs envoyées par le frontend.
+Modifier le traitement
 
-Cela permet d'éviter qu'un utilisateur puisse créer une vente dans une autre succursale ou un autre domaine d'activité simplement en modifiant une valeur dans la requête.
+Il peut alors réexaminer les lignes et modifier les décisions autorisées.
 
-==================================================
-4. AJOUT DES LIGNES DE VENTE
-==================================================
+Important
 
-Dans la même interface que l'entête, l'utilisateur doit pouvoir ajouter les lignes de la vente.
+Ne pas permettre de modifier arbitrairement une vente déjà confirmée et ayant déjà généré un mouvement de stock.
 
-Chaque ligne doit permettre de renseigner :
+Il faut vérifier les statuts existants avant de définir les transitions autorisées.
 
-- VarianteArticle ;
-- quantité ;
-- prix unitaire / prix de vente ;
-- remise éventuelle ;
-- montant de la ligne ;
-- autres informations déjà prévues.
+ÉTAPE 4 — CORRIGER DÉFINITIVEMENT LA LOGIQUE DU PRIX RETENU
 
-La ligne doit être ajoutée dynamiquement.
+Il y a actuellement une incohérence importante :
 
-Il ne faut PAS afficher plusieurs groupes de champs identiques inutilement.
+Le prix retenu semble rester égal au prix normal alors que le total de la facture utilise parfois un autre montant.
 
-Le principe doit être :
+Cette incohérence doit être supprimée.
 
-Variante | Quantité | Prix unitaire | Remise | Montant | Action
+Nouvelle règle
+
+Le prix retenu est le prix réellement utilisé pour calculer la vente finale.
+
+Exemple normal :
+
+Prix normal    : 30 000
+Prix minimum   : 25 000
+Prix proposé   : 30 000
+Prix retenu    : 30 000
+
+Montant :
+
+30 000 × quantité
+Exemple avec réduction
+Prix normal    : 30 000
+Prix minimum   : 25 000
+Prix proposé   : 27 000
+Prix retenu    : 27 000
+
+La facture doit alors utiliser :
+
+27 000 × quantité
+
+et non :
+
+30 000 × quantité
+ÉTAPE 5 — LE TOTAL DE LA VENTE DOIT ÊTRE BASÉ SUR LE PRIX RETENU
+
+Corriger le calcul afin d'avoir une seule source de vérité.
+
+Pour chaque ligne :
+
+montant_final = quantité × prix_retenu
 
 Puis :
 
-+ Ajouter une ligne
+total_vente = somme(montant_final de toutes les lignes exécutées)
 
-Chaque nouvelle ligne est ajoutée dynamiquement à la vente.
+Les lignes annulées ne doivent pas entrer dans le montant final de la vente.
 
-==================================================
-5. SÉLECTION DE LA VARIANTE
-==================================================
+Exemple
+Chemise
+Qté : 2
+Prix normal : 30 000
+Prix retenu : 27 000
 
-Lorsque l'utilisateur sélectionne une VarianteArticle :
+Montant normal = 60 000
+Montant final  = 54 000
 
-Le système doit récupérer automatiquement les informations disponibles pour cette variante.
+La facture doit afficher 54 000, pas 60 000.
 
-Notamment :
+ÉTAPE 6 — DISTINGUER LES MONTANTS POUR ÉVITER TOUTE CONFUSION
 
-- stock disponible ;
-- prix unitaire / prix de référence ;
-- prix minimum ;
-- autres informations nécessaires.
+Conserver les informations nécessaires pour permettre au responsable de comprendre l'écart.
 
-Exemple :
+Pour chaque ligne :
 
-Variante sélectionnée :
+Article / Variante
+Quantité
+Prix normal
+Prix minimum
+Prix proposé
+Prix retenu
+Montant normal
+Montant final
+Écart
+Statut
+Exemple
+Prix normal     : 30 000
+Prix proposé    : 27 000
+Prix retenu     : 26 000
 
-Chemise Noir / M / Homme
+Montant normal  : 60 000
+Montant final   : 52 000
+Écart           : 8 000
 
-Le formulaire récupère automatiquement :
+Le prix retenu doit donc être cohérent avec le montant final.
 
-Stock disponible : 40
-Prix de référence : 400
-Prix minimum : 300
+Il ne doit plus être possible d'avoir :
 
-Le prix unitaire doit être automatiquement renseigné avec :
+Prix affiché : 30 000
+Total calculé : 28 000
 
-400
+sans explication.
 
-L'utilisateur peut ensuite modifier ce prix si les règles métier l'autorisent.
+ÉTAPE 7 — SUPPRIMER LA SAISIE DU MONTANT REÇU
 
-==================================================
-6. PRIX UNITAIRE
-==================================================
+Modifier le formulaire de vente afin que l'utilisateur ne saisisse plus manuellement le montant reçu.
 
-Conserver intégralement la logique métier existante concernant les prix.
+Le champ montant reçu ne doit plus être présenté dans l'interface de saisie si cela n'est pas nécessaire.
 
-Le prix unitaire saisi dans la ligne représente le prix réellement appliqué à la vente.
+Nouvelle règle
 
-Le système doit comparer :
+Le montant reçu doit être calculé automatiquement :
 
-Prix de vente saisi
-VS
-Prix de référence de la variante
-VS
-Prix minimum de la variante.
+montant_reçu = total_de_la_facture
 
-==================================================
-7. RÈGLE DU PRIX MINIMUM
-==================================================
+Donc si :
 
-Cette règle reste INCHANGÉE.
-
-Si :
-
-Prix de vente < Prix minimum
-
-→ REFUSER la soumission.
-
-Exemple :
-
-Prix de référence = 400
-Prix minimum = 300
-Prix saisi = 250
-
-Résultat :
-
-REFUS.
-
-Afficher un message clair :
-
-« Cette variante ne peut pas être vendue en dessous de son prix minimum autorisé. »
-
-La vente ne doit pas être créée comme vente valide.
-
-==================================================
-8. PRIX INFÉRIEUR AU PRIX DE RÉFÉRENCE
-==================================================
-
-Cette règle reste également INCHANGÉE.
-
-Si :
-
-Prix minimum <= Prix de vente < Prix de référence
+Total facture = 52 000
 
 alors :
 
-→ la vente est acceptable au niveau du prix minimum ;
-→ mais elle nécessite une validation du responsable.
+Montant reçu = 52 000
 
-Exemple :
+Cela évite les incohérences de saisie.
 
-Prix de référence = 400
-Prix minimum = 300
-Prix saisi = 350
+IMPORTANT
 
-Résultat :
+Si le champ existe déjà en base de données et qu'il est utilisé ailleurs :
 
-→ la vente est créée ;
-→ statut = PENDING_VALIDATION ;
-→ demande de validation envoyée au responsable.
+ne pas le supprimer automatiquement.
 
-==================================================
-9. PRIX NORMAL
-==================================================
+Vérifier d'abord :
 
-Si :
+où il est utilisé ;
+s'il est nécessaire pour les anciennes ventes ;
+s'il est utilisé dans les reçus ;
+s'il est utilisé dans les rapports ;
+s'il est utilisé dans les calculs.
 
-Prix de vente >= Prix de référence
+Si nécessaire, conserver le champ en base mais ne plus permettre sa saisie manuelle dans le nouveau formulaire.
 
-si le prix de vent est egal au prix de reference pas devalidation requise
+ÉTAPE 8 — CONSERVER LES CALCULS EXISTANTS DE MONNAIE
 
-Exemple :
+Vérifier la logique actuelle concernant :
 
-Prix référence = 400
-Prix saisi = 400
+total ;
+montant reçu ;
+monnaie ;
+remise.
+
+Ne pas supprimer les calculs existants sans analyse.
+
+Avec la nouvelle règle :
+
+montant_reçu = total_facture
+
+la monnaie devrait naturellement être cohérente avec cette valeur selon la logique de paiement existante.
+
+Adapter uniquement ce qui est nécessaire.
+
+ÉTAPE 9 — NE JAMAIS VIDER LE PANIER EN CAS D'ERREUR
+
+C'est un point très important pour l'expérience utilisateur.
+
+Actuellement, lorsqu'une soumission du panier rencontre une erreur, le panier peut être vidé.
+
+Corriger ce comportement.
+
+Si la soumission échoue :
+
+Panier avant soumission
+        ↓
+Validation
+        ↓
+ERREUR
+        ↓
+Panier CONSERVÉ
+
+Le panier doit rester exactement avec :
+
+les mêmes variantes ;
+les mêmes quantités ;
+les mêmes prix proposés ;
+les mêmes informations saisies.
+
+L'utilisateur doit pouvoir corriger l'erreur puis resoumettre.
+
+ÉTAPE 10 — TRANSACTION : NE PAS PERSISTER PARTIELLEMENT UNE VENTE EN CAS D'ERREUR
+
+Analyser le processus actuel de création/soumission.
+
+Il ne faut pas avoir un scénario comme :
+
+Ligne 1 enregistrée
+Ligne 2 enregistrée
+Ligne 3 → erreur
+→ panier vidé
 
 ou :
-si le prix de vente est supperieur au prix de reference/unitaire cela doit envoyer un message claire à l'utilisateur () et bloquer la soumission de ce dernier
 
-Prix saisi = 450
-
-
-→ vente normale selon les règles existantes.
-
-==================================================
-10. PLUSIEURS LIGNES
-==================================================
-
-Les contrôles doivent être réalisés sur CHAQUE ligne.
-
-Exemple :
-
-Ligne 1 :
-
-Variante A
-Prix référence = 400
-Prix minimum = 300
-Prix saisi = 400
-
-→ OK
-
-Ligne 2 :
-
-Variante B
-Prix référence = 800
-Prix minimum = 600
-Prix saisi = 700
-
-→ Validation responsable nécessaire.
-
-Ligne 3 :
-
-Variante C
-Prix référence = 1000
-Prix minimum = 700
-Prix saisi = 500
-
-→ Erreur bloquante.
-
-Dans ce cas, la soumission doit être refusée tant qu'une ligne contient une erreur bloquante.
-
-==================================================
-11. CALCULS AUTOMATIQUES
-==================================================
-
-Dans la même interface, calculer automatiquement :
-
-- montant de chaque ligne ;
-- sous-total ;
-- remise totale ;
-- montant total ;
-- montant reçu ;
-- monnaie.
-
-Exemple :
-
-Quantité = 2
-Prix unitaire = 400
-
-Montant ligne :
-
-2 × 400 = 800
-
-Puis calculer le total de la vente selon les règles de remise existantes.
-
-==================================================
-12. MONTANT REÇU ET MONNAIE
-==================================================
-
-Les champs :
-
-- montant reçu ;
-- monnaie
-
-doivent être disponibles directement dans cette même interface.
-
-Ils ne doivent plus être reportés à une deuxième étape.
-
-La monnaie doit être calculée automatiquement.
-
-Exemple :
-
-Total = 800
-Montant reçu = 1 000
-
-Monnaie :
-
-1 000 - 800 = 200
-
-==================================================
-13. SOUMISSION UNIQUE
-==================================================
-
-Le bouton final de l'interface doit réaliser une seule opération logique :
-
-« Créer et soumettre »
-
-ou un libellé équivalent cohérent avec le design existant.
-
-Lorsqu'il est déclenché :
-
-1. valider les données de l'entête ;
-2. valider les lignes ;
-3. vérifier les variantes ;
-4. vérifier les quantités ;
-5. vérifier les stocks disponibles ;
-6. récupérer/contrôler les prix de référence ;
-7. vérifier les prix minimums ;
-8. déterminer si une validation responsable est nécessaire ;
-9. valider les informations de paiement ;
-10. créer la vente ;
-11. créer les lignes de vente ;
-12. déterminer le statut final approprié ;
-13. soumettre la vente au workflow de validation.
-
-Toutes ces opérations doivent être cohérentes et transactionnelles.
-
-==================================================
-14. TRANSACTION BACKEND
-==================================================
-
-La création de l'entête et des lignes doit être effectuée dans une transaction.
-
-Si une validation échoue :
-
-→ ne pas créer une vente partiellement.
-
-Exemple :
-
-L'entête est valide
-Ligne 1 est valide
-Ligne 2 est valide
-Ligne 3 contient un prix inférieur au prix minimum
-
-Résultat :
-
-→ la transaction doit être annulée ;
-→ aucune vente partiellement enregistrée ne doit rester en base.
-
-==================================================
-15. STATUT APRÈS SOUMISSION
-==================================================
-
-Après la soumission :
-
-CAS 1 :
-
-Aucune validation spéciale n'est nécessaire.
-
-→ utiliser le workflow prévu par le système.
-
-CAS 2 :
-
-Une ou plusieurs lignes sont vendues sous leur prix de référence mais au-dessus ou au niveau du prix minimum.
-
-→ vente :
-
-PENDING_VALIDATION
-
-→ responsable habilité doit pouvoir la voir.
-
-IMPORTANT :
-
-Ne pas créer plusieurs systèmes de validation.
-
-Réutiliser le système de validation déjà mis en place.
-
-==================================================
-16. STOCK
-==================================================
-
-La création et la soumission de la vente ne doivent PAS provoquer automatiquement une double sortie de stock.
-
-Le mouvement définitif de sortie doit être déclenché selon le workflow de validation existant.
-
-Si la vente est :
-
-PENDING_VALIDATION
-
-→ ne pas décrémenter définitivement le stock.
-
-Lorsque la vente est APPROVED :
-
-→ vérifier une dernière fois la disponibilité du stock ;
-→ créer les mouvements SORTIE ;
-→ décrémenter les stocks des VarianteArticle concernées ;
-→ recalculer les alertes.
-
-==================================================
-17. DOUBLE VALIDATION / DOUBLE SOUMISSION
-==================================================
-
-Le backend doit empêcher :
-
-- double soumission ;
-- double validation ;
-- double mouvement de sortie ;
-- double décrémentation du stock.
-
-Une vente déjà approuvée ne doit pas pouvoir être approuvée une deuxième fois.
-
-==================================================
-18. UTILISATEUR, SUCCURSALE ET DOMAINE
-==================================================
-
-La vente doit automatiquement être associée au contexte de l'utilisateur connecté :
-
-- utilisateur créateur ;
-- succursale ;
-- domaine d'activité.
-
-Ces informations doivent être déterminées côté backend.
-
-Exemple :
-
-Utilisateur X
-
-Succursale :
-Succursale A
-
-Domaine :
-Boutique
-
-Nouvelle vente :
-
-created_by = X
-succursale = A
-domaine_activite = Boutique
-
-L'utilisateur ne doit pas pouvoir changer ces informations manuellement si elles sont définies par son contexte.
-
-==================================================
-19. EXPÉRIENCE UTILISATEUR
-==================================================
-
-L'utilisateur doit avoir une expérience simple :
-
-Il ouvre :
-
-« Nouvelle vente »
-
-Puis une seule interface contient :
-
----------------------------------------------
-INFORMATIONS DE LA VENTE
----------------------------------------------
-
-Client
-Date
-Paiement
-Remise
-Montant reçu
-Monnaie
-
----------------------------------------------
-ARTICLES
----------------------------------------------
-
-Variante | Quantité | Prix | Remise | Montant
-
-[ Ajouter une ligne ]
-
----------------------------------------------
-TOTAUX
----------------------------------------------
-
-Sous-total
-Remise totale
-Total
-Montant reçu
-Monnaie
-
----------------------------------------------
-
-[ CRÉER ET SOUMETTRE ]
-
-Il ne doit plus être nécessaire :
-
-Créer la vente
-→ quitter l'écran
-→ ouvrir Validation
-→ ajouter les articles
-→ compléter le paiement
-→ soumettre.
-
-Tout doit être réalisé dans une seule interface.
-
-==================================================
-20. MESSAGES DE CONFIRMATION ET D'ERREUR
-==================================================
-
-Après chaque soumission, afficher un retour utilisateur clair.
-
-En cas de succès :
-
-« Vente créée et soumise à validation. »
-
-ou, si aucune validation n'est nécessaire :
-
-« Vente créée avec succès. »
-
-En cas d'erreur :
-
-Afficher précisément l'erreur concernée.
-
-Exemples :
-
-« Le prix de vente de la variante Chemise Noir/M est inférieur au prix minimum autorisé. »
-
-« Stock insuffisant pour la variante Chemise Noir/M. Stock disponible : 4. »
-
-Ne pas afficher uniquement une erreur technique générique lorsque l'erreur métier peut être expliquée clairement.
-
-==================================================
-21. IMPRESSION
-==================================================
-
-Conserver la logique prévue précédemment :
-
-Après validation effective de la vente, l'utilisateur doit pouvoir retrouver la vente dans la liste.
-
-Actions :
-
-- Voir les détails ;
-- Imprimer.
-
-L'impression doit utiliser les données de la vente validée.
-
-==================================================
-22. ANALYSE OBLIGATOIRE AVANT MODIFICATION
-==================================================
-
-Avant toute modification du code :
-
-Analyser l'implémentation actuelle afin d'identifier :
-
-- interface actuelle de création de vente ;
-- interface actuelle de validation ;
-- modèle Vente ;
-- modèle LigneVente ;
-- modèle VarianteArticle ;
-- modèle Stock ;
-- modèle MouvementStock ;
-- logique de prix ;
-- logique de prix minimum ;
-- logique de remise ;
-- logique de paiement ;
-- logique de validation ;
-- logique de stock ;
-- logique d'impression.
-
-Identifier exactement quelles parties doivent être fusionnées.
-
-NE PAS supprimer brutalement la deuxième interface avant d'avoir transféré toutes les fonctionnalités nécessaires dans la nouvelle interface.
-
-==================================================
-RÉSULTAT FINAL
-==================================================
-
-L'ancienne architecture :
-
-ÉCRAN 1
-Création de vente
-    ↓
-ÉCRAN 2
-Validation / ajout des lignes
-
-DOIT DEVENIR :
-
-ÉCRAN UNIQUE
-Création + lignes + paiement + contrôles + soumission
-
-Avec le workflow :
-
-Utilisateur
-    ↓
-Nouvelle vente
-    ↓
-Entête
+Vente créée
 +
-Lignes
+certaines lignes enregistrées
 +
-Variantes
+erreur
 +
-Quantités
-+
-Prix
-+
-Remises
-+
-Paiement
-    ↓
-Contrôles métier
-    ↓
-Création de la vente
-    ↓
-Soumission à validation si nécessaire
-    ↓
+état incohérent
+
+Utiliser la logique transactionnelle déjà présente dans le projet si elle existe.
+
+Si la soumission échoue, l'utilisateur doit pouvoir corriger son panier sans perdre ses données.
+
+ÉTAPE 11 — VALIDATION FINALE AVANT CONFIRMATION
+
+Au moment où l'opérateur clique sur :
+
+Confirmer la vente
+
+le système doit effectuer les contrôles finaux.
+
+Vérifier notamment :
+
+Pour chaque ligne exécutée
+Variante valide
+Quantité valide
+Stock disponible
+Prix retenu présent
+Prix retenu >= prix minimum
+Statut de ligne compatible avec l'exécution
+
+Puis seulement après :
+
+Calcul du total
+        ↓
+Confirmation
+        ↓
+Mouvement SORTIE
+        ↓
+Décrémentation du stock
+ÉTAPE 12 — NE PAS DÉCLENCHER LE STOCK AVANT LA CONFIRMATION
+
+Conserver impérativement la règle déjà définie :
+
 Responsable
     ↓
-APPROVED
+Traite la vente
     ↓
-Mouvement SORTIE
+PAS DE MOUVEMENT STOCK
     ↓
-Décrémentation du Stock de chaque VarianteArticle
+Opérateur
     ↓
-Alerte éventuelle
+Confirme
     ↓
-Historique
+MOUVEMENT SORTIE
     ↓
-Impression
+STOCK DIMINUÉ
 
-RÈGLES EXISTANTES À CONSERVER ABSOLUMENT :
+Le responsable peut donc modifier le traitement sans provoquer prématurément une sortie de stock.
 
-- prix de vente < prix minimum → refus ;
-- prix minimum <= prix de vente < prix de référence → validation responsable ;
-- prix de vente >= prix de référence → workflow normal ;
-- contrôle du stock disponible ;
-- mouvement de stock après validation ;
-- traçabilité ;
-- séparation créateur / validateur ;
-- prévention des doubles mouvements.
+ÉTAPE 13 — TESTS OBLIGATOIRES
 
-La modification demandée porte principalement sur la SUPPRESSION DE LA DOUBLE INTERFACE et la FUSION DE LA CRÉATION ET DE LA SOUMISSION EN UNE SEULE INTERFACE.
+Après les modifications, tester ces scénarios.
+
+Test 1 — Vente normale
+Prix normal = 30 000
+Prix proposé = 30 000
+Prix retenu = 30 000
+
+→ vente confirmable.
+
+Test 2 — Prix proposé inférieur au prix normal
+Prix normal = 30 000
+Prix minimum = 25 000
+Prix proposé = 27 000
+Prix retenu = 27 000
+
+→ total basé sur 27 000.
+
+Test 3 — Prix inférieur au minimum
+Prix normal = 30 000
+Prix minimum = 25 000
+Prix retenu = 20 000
+
+→ confirmation interdite.
+
+Test 4 — Prix retenu absent
+Prix normal = 30 000
+Prix proposé = 27 000
+Prix retenu = NULL
+
+→ confirmation interdite.
+
+Test 5 — Ligne annulée
+
+Une ligne est annulée par le responsable.
+
+→ elle ne doit pas être incluse dans le total final ni dans la sortie de stock si le workflow la retire effectivement de la vente.
+
+Test 6 — Modification du traitement
+
+Le responsable traite une vente.
+
+→ il peut utiliser l'action Modifier pour revenir au traitement lorsque le statut le permet.
+
+Test 7 — Montant reçu
+
+Total :
+
+52 000
+
+→ montant reçu automatiquement :
+
+52 000
+
+→ aucun champ permettant à l'opérateur de saisir arbitrairement une autre valeur.
+
+Test 8 — Erreur pendant la soumission
+
+Ajouter plusieurs articles puis provoquer volontairement une erreur.
+
+Résultat attendu :
+
+❌ Soumission refusée
+✅ Message d'erreur clair
+✅ Panier conservé
+✅ Quantités conservées
+✅ Prix proposés conservés
+Test 9 — Confirmation
+
+Après traitement responsable :
+
+Aucun mouvement de stock
+
+Après confirmation opérateur :
+
+Mouvement SORTIE créé
+Stock diminué
+Vente confirmée
+CONSIGNE FINALE
+
+Ne réalise pas toutes ces modifications en une seule fois.
+
+Travaille exactement dans cet ordre :
+
+1. Prix retenu obligatoire
+        ↓
+2. Traitement/modification responsable
+        ↓
+3. Correction du calcul prix retenu → montant final
+        ↓
+4. Suppression de la saisie montant reçu
+        ↓
+5. Conservation du panier en cas d'erreur
+        ↓
+6. Vérification du workflow stock
+        ↓
+7. Tests complets
+
+Après chaque étape :
+
+Lire le code existant → modifier uniquement ce qui est nécessaire → tester → vérifier qu'aucun doublon ni régression n'a été introduit → seulement ensuite passer à l'étape suivante.
+
+Ne change surtout pas le fonctionnement du stock ou des mouvements existants sans avoir identifié exactement où et quand ils sont actuellement déclenchés.

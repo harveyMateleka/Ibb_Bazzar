@@ -281,8 +281,9 @@ class Command(BaseCommand):
             v1, self._variante_par('TSHIRT', 'Noir', 'M', 'HOMME'), 2, 20000)
         VenteService.ajouter_ligne(
             v1, self._variante_par('JEAN', 'Bleu', '32', 'HOMME'), 1, 35000)
-        VenteService.valider(v1, par=self.responsable)
-        self.stdout.write(f'  vente validée : {v1.numero} (client {v1.client}, total {v1.total}).')
+        VenteService.valider(v1, par=self.responsable)          # → TRAITEE
+        VenteService.confirmer(vente=v1, par=self.responsable)  # → CONFIRMEE + stock
+        self.stdout.write(f'  vente confirmée : {v1.numero} (client {v1.client}, total {v1.total}).')
 
         # Vente brouillon (caissier)
         v2 = VenteService.creer(
@@ -298,7 +299,8 @@ class Command(BaseCommand):
             remise=5000, client='Patrick Mbuyi', type_paiement='ESPECES', montant_recu=100000)
         VenteService.ajouter_ligne(
             v3, self._variante_par('CHEMISE', 'Blanche', 'M', 'HOMME'), 3, 30000)
-        VenteService.valider(v3, par=self.responsable)
+        VenteService.valider(v3, par=self.responsable)          # → TRAITEE
+        VenteService.confirmer(vente=v3, par=self.responsable)  # → CONFIRMEE + stock
         self.stdout.write(f'  vente avec remise : {v3.numero} (client {v3.client}, total {v3.total}).')
 
     # --- Entrées en brouillon (validation responsable) ----------------------

@@ -247,14 +247,43 @@ class TestVenteService(BoutiqueBase):
             utilisateur=self.responsable, client='Jean Kalala')
         self.assertEqual(vente.client, 'Jean Kalala')
 
+    def test_ligne_prix_normal_propose_et_montants(self):
+        """La ligne conserve le prix normal (instantané) et le prix proposé ;
+        total = prix proposé × qté ; montants normal/proposé/écart calculés."""
+        self._entrer(self.var_noir_m, 10)
+        vente = VenteService.creer(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable)
+        VenteService.ajouter_ligne(vente, self.var_noir_m, 2, prix_propose=13)  # normal=15, min=12
+        ligne = vente.lignes.get()
+        self.assertEqual(ligne.prix_unitaire, Decimal('15'))   # normal (instantané)
+        self.assertEqual(ligne.prix_propose, Decimal('13'))
+        self.assertEqual(ligne.total, Decimal('26'))           # 13 × 2
+        self.assertEqual(ligne.montant_normal, Decimal('30'))  # 15 × 2
+        self.assertEqual(ligne.montant_propose, Decimal('26'))
+        self.assertEqual(ligne.ecart, Decimal('4'))            # 30 − 26
+
+    def test_soumettre_enregistre_prix_normal_et_propose(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = VenteService.soumettre(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable,
+            client='Test', montant_recu=26,
+            lignes=[(self.var_noir_m, 2, Decimal('13'))],  # 13 : entre min(12) et normal(15)
+            par=self.responsable)
+        self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
+        ligne = vente.lignes.get()
+        self.assertEqual(ligne.prix_unitaire, Decimal('15'))
+        self.assertEqual(ligne.prix_propose, Decimal('13'))
+        self.assertEqual(vente.total, Decimal('26'))
+
     def test_validation_diminue_le_stock_de_la_variante(self):
         """La vente diminue le stock de la variante vendue, pas une autre."""
         self._entrer(self.var_noir_m, 60)
         self._entrer(self.var_noir_l, 60)
         vente = self._vente(quantite=3)  # var_noir_m
-        VenteService.valider(vente)
+        VenteService.valider(vente)              # → TRAITEE (aucun stock)
+        VenteService.confirmer(vente=vente)      # → CONFIRMEE + SORTIE
         vente.refresh_from_db()
-        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
         self.assertEqual(
             StockBoutique.objects.get(variante=self.var_noir_m).quantite, 57)
         # La variante non vendue reste intacte.
@@ -268,8 +297,9 @@ class TestVenteService(BoutiqueBase):
     def test_stock_insuffisant_refuse(self):
         self._entrer(self.var_noir_m, 5)
         vente = self._vente(quantite=99)
+        VenteService.valider(vente)  # la soumission ne touche pas au stock
         with self.assertRaises(ValidationError):
-            VenteService.valider(vente)
+            VenteService.confirmer(vente=vente)  # le stock est vérifié à la confirmation
         self.assertEqual(
             StockBoutique.objects.get(variante=self.var_noir_m).quantite, 5)
 
@@ -324,6 +354,7 @@ class TestVenteService(BoutiqueBase):
         self._entrer(self.var_noir_m, 60)
         vente = self._vente(quantite=3)
         VenteService.valider(vente)
+        VenteService.confirmer(vente=vente)
         self.assertEqual(MouvementStockAppro.objects.count(), 0)
         self.assertEqual(ArticleAppro.objects.count(), 0)
         self.assertEqual(
@@ -511,7 +542,7 @@ class TestPermissionsEtRemises(BoutiqueBase):
     def _post_vente(self, data_extra):
         data = {
             'client': 'Client test', 'type_paiement': 'ESPECES',
-            'montant_recu': '100', 'remise': '0',
+            'remise': '0',
             'lignes-TOTAL_FORMS': '1', 'lignes-INITIAL_FORMS': '0',
             'lignes-MIN_NUM_FORMS': '1', 'lignes-MAX_NUM_FORMS': '1000',
             'lignes-0-variante': str(self.var_noir_m.pk),
@@ -535,12 +566,27 @@ class TestPermissionsEtRemises(BoutiqueBase):
         self.assertEqual(resp.status_code, 302)
         vente = Vente.objects.first()
         self.assertEqual(vente.remise, 10)
+        # Le montant reçu n'est plus saisi : il vaut automatiquement le total.
+        self.assertEqual(vente.montant_recu, vente.total)
+
+    def test_panier_conserve_si_erreur_soumission(self):
+        """Étape 9 / test 8 : une erreur de soumission (prix < min) ré-affiche le
+        formulaire avec le panier conservé — aucune vente partielle persistée."""
+        self._entrer(self.var_noir_m, 5)
+        self.client.force_login(self.caissier)
+        resp = self._post_vente({'lignes-0-prix_propose': '10'})  # < min 12
+        self.assertEqual(resp.status_code, 200)  # pas de redirection vers un form vide
+        self.assertEqual(Vente.objects.count(), 0)  # rien n'est persisté
+        # Le panier saisi est conservé dans le formulaire ré-affiché.
+        self.assertContains(resp, 'lignes-0-variante')
+        self.assertContains(resp, 'lignes-0-prix_propose')
+        self.assertContains(resp, 'lignes-0-quantite')
 
     def test_approbation_sans_permission_forbidden(self):
         vente = self._vente(user=self.caissier)
         self.client.force_login(self.caissier)
         resp = self.client.post(
-            reverse('boutique:vente_approuver', kwargs={'pk': vente.pk}))
+            reverse('boutique:vente_traiter', kwargs={'pk': vente.pk}))
         self.assertEqual(resp.status_code, 403)
 
 
@@ -566,11 +612,19 @@ class TestVenteWorkflow(BoutiqueBase):
                 variante=self.var_noir_m, type='SORTIE').exists())
 
     def test_soumettre_prix_egal_reference_validee(self):
-        """Prix == référence → VALIDEE + sorties immédiates."""
+        """Prix == référence → TRAITEE (aucune sortie), puis confirmation → CONFIRMEE + sorties."""
         self._entrer(self.var_noir_m, 10)
         vente = self._soumettre([(self.var_noir_m, 2, 15)])
         vente.refresh_from_db()
-        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        self.assertEqual(vente.statut, Vente.Statut.TRAITEE)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 10)
+        self.assertFalse(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='SORTIE').exists())
+        VenteService.confirmer(vente=vente)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
         self.assertEqual(
             StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
         self.assertTrue(
@@ -601,13 +655,13 @@ class TestVenteWorkflow(BoutiqueBase):
         self.assertEqual(VenteLigne.objects.count(), 0)
 
     def test_approuver_vente_pending(self):
-        """Approuver une PENDING_VALIDATION crée les sorties et passe VALIDEE."""
+        """Approuver une PENDING_VALIDATION la traite puis la confirme (sorties)."""
         self._entrer(self.var_noir_m, 10)
         vente = self._soumettre([(self.var_noir_m, 2, 13)])
         self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
         VenteService.approuver(vente, par=self.responsable)
         vente.refresh_from_db()
-        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
         self.assertEqual(
             StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
         self.assertTrue(
@@ -615,10 +669,10 @@ class TestVenteWorkflow(BoutiqueBase):
                 variante=self.var_noir_m, type='SORTIE').exists())
 
     def test_approuver_deja_validee_refuse(self):
-        """Une vente déjà approuvée ne peut pas être ré-approuvée (anti-double)."""
+        """Une vente déjà traitée ne peut pas être ré-approuvée (anti-double)."""
         self._entrer(self.var_noir_m, 10)
         vente = self._soumettre([(self.var_noir_m, 2, 15)])
-        self.assertEqual(vente.statut, Vente.Statut.VALIDEE)
+        self.assertEqual(vente.statut, Vente.Statut.TRAITEE)
         with self.assertRaises(ValidationError):
             VenteService.approuver(vente, par=self.responsable)
 
@@ -630,6 +684,230 @@ class TestVenteWorkflow(BoutiqueBase):
         vente.refresh_from_db()
         self.assertEqual(vente.statut, Vente.Statut.ANNULEE)
         self.assertEqual(vente.commentaire, 'Prix jugé incohérent')
+
+
+class TestVenteTraitementLigne(BoutiqueBase):
+    """Traitement responsable ligne par ligne → TRAITEE ; confirmation opérateur → CONFIRMEE."""
+
+    def _soumettre(self, lignes, montant_recu=999999, client='Traitement'):
+        return VenteService.soumettre(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable,
+            client=client, montant_recu=montant_recu,
+            lignes=lignes, par=self.responsable)
+
+    def test_traitement_ligne_et_prix_responsable(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # min=12, normal=15
+        self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
+        ligne = vente.lignes.get()
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=ligne.pk, decision='VALIDEE',
+            prix_responsable=14, par=self.responsable)
+        ligne.refresh_from_db()
+        self.assertEqual(ligne.statut_ligne, 'VALIDEE')
+        self.assertEqual(ligne.prix_responsable, Decimal('14'))
+        self.assertEqual(ligne.prix_retenu, Decimal('14'))
+        self.assertEqual(ligne.montant_retenu, Decimal('28'))
+
+    def test_traitement_ligne_rejetee(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])
+        ligne = vente.lignes.get()
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=ligne.pk, decision='REJETEE', par=self.responsable)
+        ligne.refresh_from_db()
+        self.assertEqual(ligne.statut_ligne, 'REJETEE')
+
+    def test_confirmation_sans_prix_responsable_utilise_prix_propose(self):
+        """Repli (test 2) : valider une ligne sans retenir de prix → le total est
+        basé sur le prix proposé (qui reste ≥ prix minimum)."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # PENDING, total 26
+        ligne = vente.lignes.get()
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=ligne.pk, decision='VALIDEE', par=self.responsable)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.total, Decimal('26'))  # prix proposé 13 × 2
+        self.assertEqual(vente.montant_recu, Decimal('26'))
+
+    def test_traitement_prix_responsable_sous_minimum_refuse(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])
+        ligne = vente.lignes.get()
+        with self.assertRaises(ValidationError):
+            VenteService.traiter_ligne(
+                vente=vente, ligne_pk=ligne.pk, decision='VALIDEE',
+                prix_responsable=11, par=self.responsable)  # 11 < min 12
+
+    def test_traiter_vente_sans_stock_puis_confirmer_avec_stock(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])
+        ligne = vente.lignes.get()
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=ligne.pk, decision='VALIDEE', par=self.responsable)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.TRAITEE)
+        # Aucune sortie de stock après le traitement.
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 10)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
+        self.assertTrue(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='SORTIE').exists())
+
+    def test_double_confirmation_une_seule_sortie(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 15)])
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
+        VenteService.confirmer(vente=vente, par=self.responsable)  # idempotent
+        vente.refresh_from_db()
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
+        self.assertEqual(
+            MouvementStockBoutique.objects.filter(
+                variante=self.var_noir_m, type='SORTIE').count(), 1)
+
+    def test_ligne_rejetee_non_executee(self):
+        self._entrer(self.var_noir_m, 10)
+        self._entrer(self.var_noir_l, 10)
+        vente = self._soumettre([
+            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)])
+        lignes = {l.variante_id: l for l in vente.lignes.all()}
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=lignes[self.var_noir_m.pk].pk,
+            decision='VALIDEE', par=self.responsable)
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=lignes[self.var_noir_l.pk].pk,
+            decision='REJETEE', par=self.responsable)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        # Seule la ligne validée sort du stock.
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_l).quantite, 10)
+        self.assertEqual(
+            MouvementStockBoutique.objects.filter(type='SORTIE').count(), 1)
+
+    def test_traiter_vente_sans_decision_refuse(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # ligne sous le normal
+        with self.assertRaises(ValidationError):
+            VenteService.traiter_vente(vente=vente, par=self.responsable)
+
+    def test_confirmer_vente_non_traitee_refuse(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # PENDING
+        with self.assertRaises(ValidationError):
+            VenteService.confirmer(vente=vente, par=self.responsable)
+
+    def test_confirmer_stock_insuffisant_refuse(self):
+        self._entrer(self.var_noir_m, 2)
+        vente = self._soumettre([(self.var_noir_m, 3, 15)])
+        self.assertEqual(vente.statut, Vente.Statut.TRAITEE)
+        with self.assertRaises(ValidationError):
+            VenteService.confirmer(vente=vente, par=self.responsable)
+
+    def test_montant_recu_egal_total_apres_soumission(self):
+        """Montant reçu non saisi : posé automatiquement = total de la facture."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 15)])  # TRAITEE, total 30
+        vente.refresh_from_db()
+        self.assertEqual(vente.total, Decimal('30'))
+        self.assertEqual(vente.montant_recu, Decimal('30'))
+        self.assertEqual(vente.monnaie, Decimal('0'))
+
+    def test_montant_recu_suit_le_total_apres_traitement(self):
+        """Le prix retenu par le responsable fait évoluer le total → montant reçu."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # total 26, PENDING
+        vente.refresh_from_db()
+        self.assertEqual(vente.montant_recu, Decimal('26'))
+        ligne = vente.lignes.get()
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=ligne.pk, decision='VALIDEE',
+            prix_responsable=14, par=self.responsable)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.total, Decimal('28'))  # 14 × 2
+        self.assertEqual(vente.montant_recu, Decimal('28'))
+
+    def test_ligne_rejetee_exclue_du_total(self):
+        """Une ligne rejetée n'entre ni dans le total ni dans la sortie de stock."""
+        self._entrer(self.var_noir_m, 10)
+        self._entrer(self.var_noir_l, 10)
+        vente = self._soumettre([
+            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)])
+        lignes = {l.variante_id: l for l in vente.lignes.all()}
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=lignes[self.var_noir_m.pk].pk,
+            decision='VALIDEE', prix_responsable=13, par=self.responsable)
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=lignes[self.var_noir_l.pk].pk,
+            decision='REJETEE', par=self.responsable)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.total, Decimal('26'))  # 13 × 2, ligne rejetée exclue
+        self.assertEqual(vente.montant_recu, Decimal('26'))
+        self.assertEqual(
+            MouvementStockBoutique.objects.filter(type='SORTIE').count(), 1)
+
+    def test_modifier_traitement_renvoie_en_attente(self):
+        """TRAITEE → PENDING_VALIDATION : le responsable peut re-traiter puis confirmer."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 15)])  # TRAITEE directement
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.TRAITEE)
+        VenteService.modifier_traitement(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
+        VenteService.traiter_vente(vente=vente, par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
+
+    def test_modifier_traitement_confirmee_refuse(self):
+        """Une vente confirmée (mouvements de stock déjà générés) ne se modifie pas."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 15)])
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
+        with self.assertRaises(ValidationError):
+            VenteService.modifier_traitement(vente=vente, par=self.responsable)
+
+    def test_modifier_traitement_pending_refuse(self):
+        """Une vente déjà en attente de traitement n'a pas à être « modifiée »."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])  # PENDING
+        with self.assertRaises(ValidationError):
+            VenteService.modifier_traitement(vente=vente, par=self.responsable)
+
+    def test_detail_vente_pending_affiche_panneau_traitement(self):
+        """Rendu : le panneau de traitement (PENDING) affiche le sélecteur de
+        décision (Valider/Rejeter), le champ prix retenu et les montants/écart."""
+        self._entrer(self.var_noir_m, 10)
+        vente = self._soumettre([(self.var_noir_m, 2, 13)])
+        self.client.force_login(self.responsable)
+        resp = self.client.get(reverse('boutique:vente_detail', kwargs={'pk': vente.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Traitement des lignes')
+        self.assertContains(resp, 'REJETEE')           # option « Rejeter »
+        self.assertContains(resp, 'prix_responsable')  # champ prix retenu
+        self.assertContains(resp, 'Montant retenu')    # colonne montant/écart
+        self.assertContains(resp, 'Écart')
 
 
 class TestPerimetreBoutique(BoutiqueBase):

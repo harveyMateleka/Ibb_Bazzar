@@ -1,0 +1,59 @@
+{% extends "boutique/base.html" %}
+
+{% block title %}Variantes créées{% endblock %}
+
+{% block app_content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:rapports' %}">← Rapports</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <input class="input" type="date" name="date_debut" value="{{ date_debut }}" title="Date début">
+  <input class="input" type="date" name="date_fin" value="{{ date_fin }}" title="Date fin">
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>Variantes créées sur la période — Boutique</h1>
+    <p class="bon-meta">
+      Période : du <strong>{{ date_debut|default:"—" }}</strong> au <strong>{{ date_fin|default:"—" }}</strong>
+    </p>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+  </div>
+
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr><th>Article</th><th>Code variante</th><th>Variante</th><th>Créée le</th><th>Prix</th><th>Prix min</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+          {% for v in variantes %}
+          <tr>
+            <td>{{ v.article.code }}</td>
+            <td>{{ v.code_variante }}</td>
+            <td>{{ v.label }}</td>
+            <td>{{ v.date_creation|date:"d/m/Y H:i" }}</td>
+            <td>{{ v.prix_unitaire }}</td>
+            <td>{{ v.prix_minimum }}</td>
+            <td>{{ v.get_statut_display }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7">Aucune variante créée sur la période.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bon-sign">
+    <p>Nombre de variantes : <strong>{{ nb_variantes }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

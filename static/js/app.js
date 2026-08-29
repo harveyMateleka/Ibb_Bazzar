@@ -15,6 +15,15 @@
     $(root || document).find('table[data-datatable]').each(function () {
       var table = $(this);
       if ($.fn.DataTable.isDataTable(table)) return;
+      // Les lignes « Aucune… » à <td colspan=N> provoquent l'erreur DataTable
+      // « Incorrect column count » (tn/18) : on les retire avant l'init
+      // (DataTable affiche alors « Aucun résultat » via zeroRecords).
+      table.find('tbody tr').each(function () {
+        var $td = $(this).children('td');
+        if ($td.length === 1 && $td.attr('colspan')) {
+          $(this).remove();
+        }
+      });
       table.DataTable({
         paging: true,
         searching: true,
@@ -37,13 +46,15 @@
     });
   }
 
-  /* --- Select2 : recherche dans les listes déroulantes des formulaires.
-     Exclus les selects des lignes dynamiques de vente (JS vanilla dédié) et la
-     barre de filtres (mise en page `.filters` conservée). */
+  /* --- Select2 : recherche dans toutes les listes déroulantes des formulaires
+     (article, variante, succursale, service, etc.). Seule la barre de filtres
+     (mise en page `.filters`) est conservée telle quelle. */
   function initSelect2(root) {
     if (!$ || !$.fn || !$.fn.select2) return;
-    $(root || document).find('select.input')
-      .not('[data-article-ligne]')
+    var $root = $(root || document);
+    var $selects = $root.is('select') ? $root : $root.find('select');
+    $selects
+      .not('[data-article-ligne]')  // lignes de vente : sélection via le panneau droit
       .filter(function () { return !$(this).closest('.filters').length; })
       .each(function () {
         var $sel = $(this);
@@ -52,14 +63,20 @@
       });
   }
 
+  function signalerSelect2Pret() {
+    document.dispatchEvent(new CustomEvent('ibbs:select2:init'));
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       initDataTables(document);
       initSelect2(document);
+      signalerSelect2Pret();
     });
   } else {
     initDataTables(document);
     initSelect2(document);
+    signalerSelect2Pret();
   }
 
   window.initSelect2 = initSelect2;
