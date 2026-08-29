@@ -390,7 +390,10 @@ textarea {
 
 .commande-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr) : les deux colonnes restent ÉGALES même si un contenu
+     (ex. le tableau du panier) impose une grande largeur minimale — sinon
+     la colonne 1fr se contente de min-content et rétrécit le panneau droit. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1.5rem;
   /* Hauteurs égales des deux panneaux (alignement vertical parfait). */
   align-items: stretch;
