@@ -1,173 +1,186 @@
-je veux que tu enregistre ces nouvelles exigences fonctionnelles et UX pour les intégrer ensuite au prompt, sans encore réécrire toute l'architecture.
+PROMPT — Ajustements du montant retenu et de l’interface de traitement
+Consigne générale obligatoire
 
-Voici précisément ce qui est ajouté à la logique de création/validation d'une vente Boutique :
+Avant toute modification :
 
-1. Vente en deux étapes
+Analyse d’abord le code existant concernant :
+le modèle de vente ;
+les lignes de vente ;
+le traitement/validation des ventes ;
+le calcul des montants ;
+les totaux dans le détail d’une vente ;
+l’affichage des lignes de vente ;
+le champ prix proposé ;
+le champ prix retenu ;
+le ticket/facture.
+Identifie précisément où et comment les montants sont actuellement calculés.
+Vérifie si une logique existe déjà avant d’en créer une nouvelle.
+Ne crée pas de doublon.
+Ne reconstruis pas une logique qui fonctionne déjà.
+Ne supprime pas une logique métier existante sans nécessité.
+Réutilise les fonctions, méthodes, propriétés, modèles et composants existants lorsque cela est pertinent.
+Fais les modifications étape par étape, problème par problème.
+Après chaque modification, vérifie que les autres règles métier existantes continuent de fonctionner.
+ÉTAPE 1 — Utiliser le montant retenu pour TOUS les totaux finaux
 
-Étape 1 — Informations générales de la vente
+Il existe actuellement une incohérence dans le calcul des totaux après le traitement d’une vente.
 
-Afficher uniquement les informations qui peuvent être renseignées avant de connaître les articles :
+Situation actuelle
 
-client ;
-succursale / contexte Boutique ;
-mode de paiement ;
-autres informations générales nécessaires.
-NB:supprime le champs montant_reçus  dans l'etape premiere 
+Une ligne de vente possède notamment :
 
-Étape 2 — Articles et validation
-
-Cette étape contient :
-
-ajout des articles ;
-quantité ;
-prix unitaire ;
-montant total ;
-montant reçu ;
-reste / monnaie à rendre ;
-validation finale.
-etc.....
-
-Le montant reçu saisi par l'utilisateur doit être enregistré avec la vente.
-Le système doit calculer automatiquement :
-Monnaie = Montant reçu - Total vente
-et contrôler que le paiement est cohérent.
-
-NB: actuellement meme si le montant recus est inferieur au total prix cela passe au lieu que le system bloque cela avec un message à l'utilisateur
-
-3. Message après chaque opération
-
-Chaque soumission importante doit produire immédiatement un retour visuel clair.
-
-Exemples :
-
-Succès :
-
-Vente enregistrée avec succès.
-
-Erreur :
-
-Impossible d'enregistrer la vente. Veuillez vérifier les informations saisies.
-
-Cela doit être appliqué aux opérations pertinentes, pas uniquement à la vente :
-
-création ;
-modification ;
-suppression ;
-ajout ;
-validation ;
-entrée stock ;
-sortie stock ;
-inventaire ;
-etc.
-
-L'utilisateur doit toujours savoir si son opération a réussi ou échoué.
-
-4. Prix unitaire automatiquement prérempli
-
-Dans l'ajout d'un article :
-
-Article
+Article / variante
 Quantité
-Prix unitaire
+Prix unitaire normal
+Prix minimum
+Prix proposé par l'opérateur/client
+Prix retenu par le responsable
+Montant proposé
+Montant retenu
+Statut de la ligne
 
-Lorsqu'un article est sélectionné :
+Lorsqu’une vente est traitée par le responsable, celui-ci peut retenir un prix différent du prix proposé.
 
-afficher le prix normal ;
-afficher le prix minimum ;
-afficher éventuellement le prix maximum ;
-préremplir automatiquement le champ Prix unitaire avec le prix normal de l'article.
+Le prix retenu devient alors le prix définitif de cette ligne.
 
-Actuellement, le composant affiche les prix mais ne renseigne pas automatiquement le prix unitaire : corriger ce comportement.
+Règle à appliquer
 
-L'utilisateur pourra éventuellement modifier le prix unitaire selon ses permissions et les règles métier, notamment le contrôle du prix minimum.
+Le système doit distinguer clairement :
 
+Montant proposé :
 
-5. Ne pas afficher trois lignes d'articles par défaut
+quantité × prix proposé
 
-Actuellement, l'interface affiche plusieurs blocs identiques pour ajouter les articles.
+Montant retenu :
 
-Ce comportement doit être supprimé.
+quantité × prix retenu
 
-Il doit y avoir une seule ligne de saisie initiale :
+Une fois que le responsable a traité la ligne, le montant retenu devient la référence pour le calcul final de la vente.
 
-Article | Quantité | Prix unitaire | Montant | Action
+Modification demandée
 
-L'utilisateur ajoute son premier article.
+Dans le détail d’une vente, lorsque le responsable modifie/traite une ligne :
 
-Puis :
+le prix retenu doit être enregistré ;
+le montant retenu doit être recalculé ;
+la ligne doit afficher son nouveau montant retenu ;
+le total de la vente doit être recalculé à partir des montants retenus, et non plus à partir des montants proposés.
+Très important
 
-+ Ajouter un article
+Il ne doit plus être possible d'avoir une situation incohérente comme :
 
-permet d'ajouter dynamiquement une nouvelle ligne.
+Article : 30 000 FC
+Total : 28 000 FC
 
-Exemple :
+si le prix retenu de cet article est bien de 30 000 FC.
 
-┌──────────────────────────────────────────────────────┐
-│ Article     Quantité   Prix unitaire   Montant       │
-│ T-shirt M      2          20 000       40 000   🗑   │
-└──────────────────────────────────────────────────────┘
+Le système doit toujours respecter :
 
+Total vente = somme des montants retenus des lignes
 
-[ + Ajouter un article ]
+Lorsque plusieurs lignes existent :
 
-Puis après ajout :
+Total vente =
+    montant retenu ligne 1
+  + montant retenu ligne 2
+  + montant retenu ligne 3
+  + ...
+Cas où aucun prix réduit n’est appliqué
 
-T-shirt M       2    20 000    40 000
-Jean bleu       1    35 000    35 000
-Polo blanc      3    15 000    45 000
+Si :
 
-Les lignes sont donc créées dynamiquement, et non préaffichées trois fois.
+prix retenu = prix normal
 
-Le bouton de suppression doit permettre de retirer une ligne du panier.
+alors :
 
-6. Logique UX recherchée
+montant retenu = quantité × prix normal
+Cas où le responsable accepte un prix inférieur
 
-Le fonctionnement doit être proche d'un panier :
+Si :
 
-Sélectionner article
-        ↓
-Quantité
-        ↓
-Prix automatiquement prérempli
-        ↓
-Ajouter au panier
-        ↓
-Article ajouté
-        ↓
-Nouvelle ligne disponible
-        ↓
-Ajouter éventuellement un autre article
+prix proposé < prix normal
 
-Le formulaire reste donc compact et ne prend pas inutilement de place.
+et que le responsable retient finalement :
 
-7. Résultat attendu
+prix retenu = prix proposé
 
-La deuxième étape devrait globalement être organisée ainsi :
+alors :
 
-┌─────────────────────────────────────────────┐
-│ ARTICLES                                    │
-│                                             │
-│ Article | Qté | Prix | Montant | Action     │
-│ T-shirt |  2  | 20k  | 40k     | 🗑         │
-│ Jean    |  1  | 35k  | 35k     | 🗑         │
-│                                             │
-│ [+ Ajouter un article]                      │
-└─────────────────────────────────────────────┘
+montant retenu = quantité × prix retenu
 
+Le total doit immédiatement prendre ce montant retenu en considération.
 
-Total :             75 000 FC
-Montant reçu :      80 000 FC
-Monnaie :             5 000 FC
+À vérifier également
 
+Cette même logique doit être cohérente dans :
 
-             [ Valider la vente ]
+le détail de la vente ;
+les lignes affichées après traitement ;
+les totaux de la vente ;
+le ticket/facture final ;
+toute autre vue utilisant le montant final de la vente.
 
-Et après validation réussie :
+Ne modifie pas le montant proposé : il doit rester conservé comme historique de la proposition initiale.
 
-Vente enregistrée avec succès.
+Il faut donc conserver la distinction :
 
-8. le controle du saisie du prix unitaire ne se fait pas, meme quand le prix et inférieur au prix minimal ou suppérieur au prix maximal , le system n'intercepte rien jusque la pour bloquer cette erreur.
+Prix proposé     → proposition initiale
+Prix retenu      → prix finalement accepté
+Montant proposé  → historique de la proposition
+Montant retenu   → montant définitif utilisé pour la vente
+ÉTAPE 2 — Agrandir l’input du prix retenu dans le traitement
 
-Le formulaire doit ensuite être remis dans un état cohérent pour permettre une nouvelle vente, selon le comportement actuel de l'application.
+Dans l’interface de traitement d’une ligne de vente, il existe actuellement un champ permettant au responsable de saisir/modifier le prix retenu, accompagné d’un bouton d’action, par exemple :
 
-J'ai donc bien séparé dans cette logique les informations générales de la vente, le panier dynamique, le paiement et le retour utilisateur après opération.
+[ Prix retenu ] [ Valider ]
+
+Actuellement, l’input du prix retenu est trop petit.
+
+Modification demandée
+
+Le conteneur parent qui contient :
+
+l'input prix retenu ;
+le bouton Valider ;
+
+doit être divisé en deux parties égales.
+
+┌───────────────────────────────┐
+│ [     Prix retenu     ]       │
+│       50 %                    │
+│                               │
+│              [   Valider   ]  │
+│                  50 %         │
+└───────────────────────────────┘
+
+Plus précisément, sur une même ligne :
+
+[──────── 50% ────────][──── 50% ────]
+      Input                 Bouton
+   Prix retenu             Valider
+
+L'input doit donc occuper 50 % de la largeur disponible et le bouton 50 %.
+
+Contraintes
+Les deux éléments doivent avoir une largeur visuellement équilibrée.
+Ils doivent rester dans le même conteneur.
+Le bouton ne doit pas être réduit inutilement.
+L'input doit être suffisamment large pour afficher/saisir correctement un montant monétaire.
+Conserver le responsive design existant.
+Ne pas casser les autres composants de l’interface de traitement.
+CONTRAINTE FINALE
+
+Avant de coder, inspecte impérativement l’implémentation actuelle pour déterminer :
+
+où est calculé le montant proposé ;
+où est calculé le montant retenu ;
+comment le total de la vente est actuellement calculé ;
+quelles vues utilisent encore le montant proposé pour calculer le total ;
+comment le prix retenu est enregistré lors du traitement ;
+comment le ticket récupère le montant final.
+
+Ensuite, applique la correction au niveau approprié de la logique métier, plutôt que de mettre simplement des calculs différents dans chaque template.
+
+Objectif final : une seule source de vérité pour le montant final de la vente : le montant retenu.
+
+Ne touche à aucune autre fonctionnalité qui n’est pas nécessaire à ces deux ajustements.
