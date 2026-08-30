@@ -1,0 +1,20 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Rapports</p>
+    <h1>Centre de rapports — Immobilisations</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <ul class="rapport-list">
+    <li><a href="{% url 'immobilisations:rapport_immobilisations' %}">Immobilisations</a></li>
+    <li><a href="{% url 'immobilisations:rapport_affectations' %}">Affectations</a></li>
+    <li><a href="{% url 'immobilisations:rapport_deplacements' %}">Déplacements</a></li>
+    <li><a href="{% url 'immobilisations:rapport_casses' %}">Biens cassés</a></li>
+    <li><a href="{% url 'immobilisations:rapport_etats' %}">État des biens</a></li>
+  </ul>
+</section>
+{% endblock %}

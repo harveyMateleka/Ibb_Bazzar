@@ -32,9 +32,12 @@ urlpatterns = [
     path('', home, name='home'),
     path('connexion/', auth_views.LoginView.as_view(authentication_form=ConnexionForm), name='login'),
     path('deconnexion/', auth_views.LogoutView.as_view(), name='logout'),
+    path('core/', include('core.urls')),
     path('approvisionnement/', include('approvisionnement.urls')),
     path('restauration/', include('restauration.urls')),
     path('facturation/', include('facturation.urls')),
+    path('boutique/', include('boutique.urls')),
+    path('immobilisations/', include('immobilisations.urls')),
     path('admin/', admin.site.urls),
 ]
 

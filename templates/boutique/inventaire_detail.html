@@ -1,0 +1,145 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Inventaires</p>
+    <h1>{{ inventaire.numero }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:inventaires' %}">← Retour</a>
+    {% if inventaire.statut == 'BROUILLON' %}
+      {% if perms.boutique.adjust_stock %}
+      <form action="{% url 'boutique:inventaire_valider' inventaire.pk %}" method="post" class="inline-form">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">Valider l'inventaire</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Date</dt><dd>{{ inventaire.date_inventaire|date:"d/m/Y" }}</dd>
+    <dt>Succursale</dt><dd>{{ inventaire.succursale }}</dd>
+    <dt>Domaine</dt><dd>{{ inventaire.domaine|default:"—" }}</dd>
+    <dt>Responsable</dt><dd>{{ inventaire.responsable }}</dd>
+    <dt>Périmètre</dt><dd>{{ inventaire.get_portee_display }}</dd>
+    <dt>Statut</dt><dd>{{ inventaire.get_statut_display }}</dd>
+    {% if inventaire.commentaire %}<dt>Commentaire</dt><dd>{{ inventaire.commentaire }}</dd>{% endif %}
+  </dl>
+</section>
+
+{% if inventaire.statut == 'BROUILLON' and formset %}
+<section class="panel">
+  <h2>Lignes d'inventaire — comptage</h2>
+  <p class="help">Saisissez le stock physique et le motif dans chaque ligne. L'écart est calculé automatiquement.</p>
+  <form method="post" id="form-lignes-inventaire">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Article</th>
+            <th>Stock système</th>
+            <th>Stock physique</th>
+            <th>Écart</th>
+            <th>Motif</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for form in formset %}
+          <tr class="ligne-inventaire">
+            <td>{{ form.id }}{{ form.instance.variante.article.code }} — {{ form.instance.variante.article.designation }}</td>
+            <td class="stock-systeme">{{ form.instance.stock_systeme }}</td>
+            <td>{{ form.stock_physique }}{{ form.stock_physique.errors }}</td>
+            <td class="ecart">{{ form.instance.ecart }}</td>
+            <td>{{ form.motif }}{{ form.motif.errors }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5">Aucune ligne à inventorier.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Enregistrer les quantités</button>
+    </div>
+  </form>
+</section>
+
+<script>
+  (function () {
+    var form = document.getElementById("form-lignes-inventaire");
+    if (!form) return;
+    form.addEventListener("input", function (event) {
+      var target = event.target;
+      if (target && target.matches("input[name$='-stock_physique']")) {
+        var ligne = target.closest(".ligne-inventaire");
+        if (!ligne) return;
+        var systeme = parseFloat(ligne.querySelector(".stock-systeme").textContent) || 0;
+        var physique = parseFloat(target.value) || 0;
+        var ecart = physique - systeme;
+        var cell = ligne.querySelector(".ecart");
+        if (cell) {
+          cell.textContent = (ecart > 0 ? "+" : "") + ecart;
+          cell.classList.toggle("text-danger", ecart !== 0);
+        }
+      }
+    });
+  })();
+</script>
+{% else %}
+<section class="panel">
+  <h2>Lignes d'inventaire</h2>
+  <form method="get" class="filters">
+    <input class="input" type="search" name="q" value="{{ q }}" placeholder="Article...">
+    <select class="input" name="categorie">
+      <option value="">Toutes les catégories</option>
+      {% for c in categories %}
+      <option value="{{ c.pk }}" {% if categorie == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.nom }}</option>
+      {% endfor %}
+    </select>
+    <select class="input" name="ecart">
+      <option value="">Écart (tous)</option>
+      <option value="avec" {% if ecart == 'avec' %}selected{% endif %}>Avec écart</option>
+      <option value="sans" {% if ecart == 'sans' %}selected{% endif %}>Sans écart</option>
+    </select>
+    <input class="input" type="search" name="motif" value="{{ motif }}" placeholder="Motif...">
+    <button type="submit" class="btn btn-primary">Rechercher</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Stock système</th>
+          <th>Stock physique</th>
+          <th>Écart</th>
+          <th>Motif</th>
+          <th>Mouvement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td>{{ ligne.variante.article.code }} — {{ ligne.variante.article.designation }}</td>
+          <td>{{ ligne.stock_systeme }}</td>
+          <td>{{ ligne.stock_physique }}</td>
+          <td>{{ ligne.ecart }}</td>
+          <td>{{ ligne.motif|default:"—" }}</td>
+          <td>{{ ligne.mouvement.type|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucune ligne.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endif %}
+{% endblock %}

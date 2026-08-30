@@ -1,0 +1,55 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Entrées de stock</p>
+    <h1>{{ bon.numero }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:entrees_validation' %}">← Retour</a>
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Article</dt><dd>{{ bon.article.code }} — {{ bon.article.designation }} ({{ bon.get_devise_display }})</dd>
+    <dt>Variante</dt><dd>{{ bon.couleur }}/{{ bon.taille }}/{{ bon.get_genre_display }}{% if bon.type_tissu %} · {{ bon.type_tissu }}{% endif %}</dd>
+    <dt>Quantité</dt><dd>{{ bon.quantite }}</dd>
+    <dt>Prix d'achat</dt><dd>{{ bon.prix_achat }}</dd>
+    <dt>Prix unitaire</dt><dd>{{ bon.prix_unitaire }}</dd>
+    <dt>Prix minimum</dt><dd>{{ bon.prix_minimum }}</dd>
+    <dt>Seuil d'alerte</dt><dd>{{ bon.seuil_alerte }}</dd>
+    <dt>Emplacement</dt><dd>{{ bon.rayon }} · {{ bon.etagere }} · {{ bon.emplacement }}</dd>
+    <dt>Créé par</dt><dd>{{ bon.cree_par }} ({{ bon.date_creation|date:"d/m/Y H:i" }})</dd>
+    <dt>Statut</dt>
+    <dd>
+      {% if bon.statut == 'BROUILLON' %}Brouillon — en attente de validation
+      {% elif bon.statut == 'ANNULEE' %}Annulé par le responsable
+      {% else %}Validé par {{ bon.valide_par }} ({{ bon.date_validation|date:"d/m/Y H:i" }}){% endif %}
+    </dd>
+    {% if bon.statut == 'ANNULEE' and bon.commentaire %}
+    <dt>Raison de l'annulation</dt><dd>{{ bon.commentaire }}</dd>
+    {% endif %}
+  </dl>
+</section>
+
+{% if bon.statut == 'BROUILLON' and perms.boutique.validate_entree %}
+<section class="panel">
+  <h2>Décision</h2>
+  <div class="form-grid">
+    <form action="{% url 'boutique:entree_valider' bon.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Valider la demande</button>
+    </form>
+    <form action="{% url 'boutique:entree_annuler' bon.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <label for="id_commentaire">Raison de l'annulation (obligatoire)</label>
+      <input class="input" type="text" id="id_commentaire" name="commentaire" required
+             placeholder="Motif de l'annulation de la demande">
+      <button type="submit" class="btn btn-danger">Annuler la demande</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

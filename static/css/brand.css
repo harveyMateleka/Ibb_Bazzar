@@ -211,7 +211,7 @@ a {
   min-width: 1.4rem;
   height: 1.4rem;
   padding: 0 0.35rem;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--brand-maroon);
   color: var(--brand-white);
   font-size: 0.68rem;
@@ -455,6 +455,20 @@ textarea {
   font: inherit;
 }
 
+.input:disabled,
+input[type="text"]:disabled,
+input[type="password"]:disabled,
+input[type="number"]:disabled,
+input[type="date"]:disabled,
+input[type="datetime-local"]:disabled,
+input[type="search"]:disabled,
+input[type="email"]:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 textarea {
   min-height: 90px;
 }
@@ -487,6 +501,187 @@ textarea {
   display: flex;
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.commande-layout {
+  display: grid;
+  /* minmax(0, 1fr) : les deux colonnes restent ÉGALES même si un contenu
+     (ex. le tableau du panier) impose une grande largeur minimale — sinon
+     la colonne 1fr se contente de min-content et rétrécit le panneau droit. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  /* Hauteurs égales des deux panneaux (alignement vertical parfait). */
+  align-items: stretch;
+}
+
+@media (max-width: 1000px) {
+  .commande-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.qty-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.icon-btn {
+  border: 1px solid var(--brand-line);
+  background: var(--brand-white);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Sélection des variantes : cards (pas de DataTable) --- */
+.variantes-recherche {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.variantes-recherche input[type="search"] {
+  flex: 1;
+  min-width: 180px;
+}
+
+.variantes-recherche select {
+  width: auto;
+  min-width: 120px;
+}
+
+/* Panneaux de la vente : séparation nette + neumorphisme doux + marge intérieure. */
+.vente-panel {
+  background: #ffffff;
+  padding: 1.25rem;
+  border-radius: 10px;
+  box-shadow: 9px 9px 16px rgba(163, 177, 198, 0.6),
+              -9px -9px 16px rgba(255, 255, 255, 0.8);
+}
+
+/* Panier : hauteur limitée + défilement interne si beaucoup de lignes. */
+.panier-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+#form-vente .input,
+#form-vente .variante-card {
+  border-radius: 8px;
+}
+
+/* Traitement d'une ligne : input prix retenu (50 %) + bouton (50 %) côte à côte. */
+.prix-decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.prix-decision .input {
+  width: 100%;
+  min-height: 44px;
+}
+.prix-decision .btn {
+  /* Marge verticale neutralisée pour rester aligné avec l'input dans la grille. */
+  margin: 0;
+  min-height: 44px;
+  padding: 0 0.6rem;
+}
+
+.variantes-carrousel {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.variante-card {
+  flex: 0 0 calc(50% - 0.5rem);
+  border: 1px solid var(--brand-line);
+  background: var(--brand-white);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.carrousel-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+
+.variante-card.is-rupture {
+  border-color: var(--brand-maroon);
+  background: var(--brand-maroon-soft);
+}
+
+.variante-card.is-alerte {
+  border-color: #d97706;
+  background: #fff7e6;
+}
+
+.variante-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 8px;
+  background: var(--brand-maroon);
+  color: var(--brand-white);
+}
+
+.badge.badge-alerte {
+  background: #d97706;
+}
+
+.variante-card .prix-ajout,
+.variante-card .qte-ajout {
+  width: 100%;
+}
+
+.rapport-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.rapport-list li {
+  border-bottom: 1px solid var(--brand-line);
+}
+
+.rapport-list a {
+  display: block;
+  padding: 0.7rem 0.3rem;
+  color: var(--brand-maroon);
+  font-family: var(--font-display);
+  text-decoration: none;
+}
+
+.rapport-list a:hover {
+  background: var(--brand-maroon-soft);
 }
 
 @media (max-width: 800px) {
@@ -632,12 +827,47 @@ textarea {
   font-size: 1.05rem;
 }
 
+/* En-tête de rapport : nom d'entreprise, titre et méta — centrés. */
+.report-doc .bon-head {
+  display: block;
+  text-align: center;
+}
+
+.report-doc .bon-head::before {
+  content: "IBBS BAZAR";
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brand-maroon);
+  margin-bottom: 0.5rem;
+}
+
+.report-doc .bon-meta {
+  display: block;
+  text-align: center;
+}
+
 @media print {
   .site-header,
   .site-footer,
   .subnav,
   .flash-wrap,
+  .page-head,
+  .actions,
   .no-print {
+    display: none !important;
+  }
+
+  /* Masquer l'interface (filtres, DataTable, pagination, recherche, boutons). */
+  .filters,
+  .print-toolbar,
+  .dataTables_wrapper .dataTables_filter,
+  .dataTables_wrapper .dataTables_length,
+  .dataTables_wrapper .dataTables_info,
+  .dataTables_wrapper .dataTables_paginate {
     display: none !important;
   }
 
@@ -760,6 +990,75 @@ textarea {
   }
 }
 
+@media print {
+  /* Neutraliser le « shell » applicatif et le wrapper DataTable à l'impression. */
+  .app-shell,
+  .section-inner,
+  .dataTables_wrapper {
+    background: transparent;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Pas de barre de scroll à l'impression (tableaux, pagination). */
+  .table-wrap,
+  .dataTables_wrapper {
+    overflow: visible !important;
+  }
+
+  /* Panels des résultats : tableau simple, sans chrome d'interface. */
+  .panel {
+    box-shadow: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+  }
+
+  /* En-tête de rapport : logo, entreprise, titre, période — centrés. */
+  .report-doc .bon-head {
+    display: block;
+    text-align: center;
+    border-bottom: 2px solid #8a0b27;
+  }
+
+  .report-doc .bon-head h1,
+  .report-doc .bon-head .bon-numero,
+  .report-doc .bon-meta {
+    text-align: center;
+  }
+
+  .report-doc .bon-meta {
+    display: block;
+  }
+
+  /* RENDU INFAILLIBLE : sur une page de rapport, tout est masqué sauf le
+     document `.report-doc` (site, nav, filtres, DataTable, boutons…).
+     `:has()` est géré par les navigateurs modernes ; sinon, les règles
+     explicites ci-dessus s'appliquent déjà. */
+  body:has(.report-doc) * {
+    visibility: hidden;
+  }
+  body:has(.report-doc) .report-doc,
+  body:has(.report-doc) .report-doc * {
+    visibility: visible;
+  }
+  body:has(.report-doc) .report-doc {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  /* Dans le rapport, masquer les contrôles DataTable et l'interface résiduelle. */
+  body:has(.report-doc) .report-doc .dataTables_wrapper .dataTables_filter,
+  body:has(.report-doc) .report-doc .dataTables_wrapper .dataTables_length,
+  body:has(.report-doc) .report-doc .dataTables_wrapper .dataTables_info,
+  body:has(.report-doc) .report-doc .dataTables_wrapper .dataTables_paginate,
+  body:has(.report-doc) .report-doc .no-print,
+  body:has(.report-doc) .report-doc .actions {
+    display: none !important;
+  }
+}
+
 .hero {
   background:
     radial-gradient(circle at top right, rgba(138, 11, 39, 0.12), transparent 42%),
@@ -818,13 +1117,16 @@ h1 {
   justify-content: center;
   min-height: 46px;
   padding: 0 1.2rem;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 2px solid transparent;
   font-family: var(--font-display);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  /* Règle design : aucun bouton collé (≥ 5px de marge verticale). */
+  margin-top: 5px;
+  margin-bottom: 5px;
 }
 
 .btn-primary {
@@ -1234,3 +1536,39 @@ h1 {
   color: var(--brand-muted);
   font-size: 0.85rem;
 }
+
+/* --- Module utilisateurs --- */
+.inline-form { display: inline; }
+.btn-danger {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid #c0392b;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  /* Règle design : aucun bouton collé (≥ 5px de marge verticale). */
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+.btn-danger:hover { background: #c0392b; }
+.statut {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.statut-ok { background: #e8f6ef; color: #1e8449; }
+.statut-stop { background: #fdecea; color: #b03a2e; }
+.detail-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.detail-grid dt { font-weight: 700; color: #555; }
+.detail-grid dd { margin: 0; }

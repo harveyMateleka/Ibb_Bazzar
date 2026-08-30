@@ -1,0 +1,69 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Biens</p>
+    <h1>Liste des immobilisations</h1>
+  </div>
+  {% if perms.immobilisations.create_asset %}
+  <a class="btn btn-primary" href="{% url 'immobilisations:bien_nouveau' %}">Nouveau bien</a>
+  {% endif %}
+</div>
+
+<form method="get" class="filters">
+  <select class="input" name="etat">
+    <option value="">Tous les états physiques</option>
+    {% for value, label in etats %}
+    <option value="{{ value }}" {% if etat == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  {% if peut_voir_declasses %}
+  <label class="filter-check">
+    <input type="checkbox" name="declasses" value="1" {% if afficher %}checked{% endif %}>
+    Inclure les biens déclassés
+  </label>
+  {% endif %}
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>N° série</th>
+          <th>Catégorie</th>
+          <th>Valeur</th>
+          <th>État</th>
+          <th>Statut</th>
+          <th>Validation</th>
+          <th>Emplacement</th>
+          <th class="no-sort"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in biens %}
+        <tr>
+          <td>{{ b.code }}</td>
+          <td>{{ b.designation }}</td>
+          <td>{{ b.numero_serie|default:"—" }}</td>
+          <td>{{ b.categorie|default:"—" }}</td>
+          <td>{{ b.valeur_acquisition }}</td>
+          <td>{{ b.get_etat_physique_display }}</td>
+          <td>{{ b.get_statut_administratif_display }}</td>
+          <td>{{ b.get_statut_validation_display }}</td>
+          <td>{{ b.emplacement|default:"—" }}</td>
+          <td class="actions"><a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' b.pk %}">Voir</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="10">Aucun bien dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

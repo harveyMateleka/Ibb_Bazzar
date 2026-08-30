@@ -1,0 +1,125 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Gestion</p>
+    <h1>Boutique</h1>
+  </div>
+  <div class="actions">
+    {% if perms.boutique.adjust_stock %}
+    <a class="btn btn-ghost" href="{% url 'boutique:entree' %}">Nouvelle entrée</a>
+    {% endif %}
+    {% if perms.boutique.create_vente %}
+    <a class="btn btn-primary" href="{% url 'boutique:vente_nouvelle' %}">Nouvelle vente</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="stats">
+  <article class="stat"><span>Articles</span><strong>{{ nb_articles }}</strong></article>
+  <article class="stat"><span>Stock total</span><strong>{{ stock_total }}</strong></article>
+  <article class="stat {% if nb_alertes %}stat-alert{% endif %}"><span>Alertes stock</span><strong>{{ nb_alertes }}</strong></article>
+  <article class="stat"><span>Ventes du jour</span><strong>{{ ventes_jour }}</strong></article>
+</div>
+
+<section class="panel">
+  <h2>État des stocks</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Variante</th>
+          <th>Catégorie</th>
+          <th>Prix</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Niveau</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock in stocks %}
+        <tr class="{{ stock.classe_stock }}">
+          <td>{{ stock.variante.article.code }}</td>
+          <td>{{ stock.variante.article.designation }}</td>
+          <td>{{ stock.variante.label }}</td>
+          <td>{{ stock.variante.categorie }}</td>
+          <td>{{ stock.variante.prix_unitaire }}</td>
+          <td>{{ stock.quantite }}</td>
+          <td>{{ stock.seuil_alerte }}</td>
+          <td>{{ stock.niveau_stock }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8">Aucun stock dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Alertes actives</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Type</th>
+          <th>Quantité</th>
+          <th>Seuil</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alerte in alertes %}
+        <tr class="{{ alerte.classe_stock }}">
+          <td>{{ alerte.variante.article.code }}</td>
+          <td>{{ alerte.niveau_stock }}</td>
+          <td>{{ alerte.quantite_actuelle }}</td>
+          <td>{{ alerte.seuil }}</td>
+          <td>{{ alerte.date_creation|date:"d/m/Y H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucune alerte active.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Dernières ventes</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>N°</th>
+          <th>Client</th>
+          <th>Total</th>
+          <th>Paiement</th>
+          <th>Utilisateur</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in dernieres_ventes %}
+        <tr>
+          <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
+          <td>{{ v.numero }}</td>
+          <td>{{ v.client|default:"—" }}</td>
+          <td>{{ v.total }}</td>
+          <td>{{ v.get_type_paiement_display }}</td>
+          <td>{{ v.utilisateur }}</td>
+          <td>{{ v.get_statut_display }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucune vente pour le moment.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

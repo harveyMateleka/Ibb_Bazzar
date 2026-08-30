@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Rapport des mouvements{% endblock %}
+
+{% block content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:mouvements' %}">← Retour à l'historique</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>Rapport des mouvements de stock — Boutique</h1>
+    <p class="bon-meta">
+      Période : {% if date_debut or date_fin %}
+        du <strong>{{ date_debut|default:"début" }}</strong> au <strong>{{ date_fin|default:"aujourd'hui" }}</strong>
+      {% else %}toute période{% endif %}
+    </p>
+    <p class="bon-meta">Type : {{ type|default:"tous" }}</p>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+    <p class="bon-meta"><strong>{{ nb_mouvements }}</strong> mouvement(s) ·
+      Entrées : <strong>{{ total_entrees }}</strong> · Sorties : <strong>{{ total_sorties }}</strong></p>
+  </div>
+
+  <table class="bon-table" data-datatable>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Article</th>
+        <th>Type</th>
+        <th>Quantité</th>
+        <th>Stock avant</th>
+        <th>Stock après</th>
+        <th>Référence</th>
+        <th>Motif</th>
+        <th>Utilisateur</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in mouvements %}
+      <tr>
+        <td>{{ m.date_mouvement|date:"d/m/Y H:i" }}</td>
+        <td>{{ m.variante.article.code }}</td>
+        <td>{{ m.get_type_display }}</td>
+        <td>{{ m.quantite }}</td>
+        <td>{{ m.stock_avant|default:"—" }}</td>
+        <td>{{ m.stock_apres|default:"—" }}</td>
+        <td>{{ m.reference|default:"—" }}</td>
+        <td>{{ m.motif|default:"—" }}</td>
+        <td>{{ m.utilisateur }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9">Aucun mouvement sur cette période.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="bon-sign">
+    <p>Total mouvements : <strong>{{ nb_mouvements }}</strong></p>
+    <p>Total entrées : <strong>{{ total_entrees }}</strong></p>
+    <p>Total sorties : <strong>{{ total_sorties }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

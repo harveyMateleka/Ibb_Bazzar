@@ -1,0 +1,2 @@
+- les succurssal et le domaine d'activité doit etre rempli ou chargé automatiquement dans le formulaire selon l'utilisateur connecté, et ce champs doit etre en readonly pour ne pas modifier les information de l'utilisateur qui pose l'action en fin d'evité les incoherence
+- donné la possibilité de modifier la quantité et le fournissuer de chaque ligne,  dans la validation de bon d'approvisionement , chaque quantité et le foournisseur peuvent etre modifier  

@@ -46,10 +46,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'core',
     'approvisionnement',
     'restauration',
     'facturation',
+    'boutique',
+    'immobilisations',
 ]
+
+# Utilisateur central : tous les modules partagent le même modèle.
+AUTH_USER_MODEL = 'core.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -1,0 +1,42 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Déplacements</p>
+    <h1>Historique des déplacements</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Bien</th>
+          <th>De</th>
+          <th>Vers</th>
+          <th>Motif</th>
+          <th>Par</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in deplacements %}
+        <tr>
+          <td>{{ d.date_deplacement|date:"d/m/Y H:i" }}</td>
+          <td>{{ d.immobilisation.code }}</td>
+          <td>{{ d.ancienne_succursale|default:"—" }} · {{ d.ancien_service|default:"—" }} · {{ d.ancien_emplacement|default:"—" }}</td>
+          <td>{{ d.nouvelle_succursale|default:"—" }} · {{ d.nouveau_service|default:"—" }} · {{ d.nouvel_emplacement|default:"—" }}</td>
+          <td>{{ d.motif|default:"—" }}</td>
+          <td>{{ d.par }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucun déplacement.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Organisation</p>
+    <h1>Succursales</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Succursale</th>
+          <th>Code</th>
+          <th>Adresse</th>
+          <th>Affectations</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in succursales %}
+        <tr>
+          <td>{{ s.nom }}</td>
+          <td>{{ s.code }}</td>
+          <td>{{ s.adresse|default:"—" }}</td>
+          <td>{{ s.nb_utilisateurs }}</td>
+          <td>{% if s.actif %}<span class="statut statut-ok">Active</span>{% else %}<span class="statut statut-stop">Inactive</span>{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucune succursale.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

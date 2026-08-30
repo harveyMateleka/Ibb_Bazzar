@@ -1,0 +1,67 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Validation</p>
+    <h1>Biens à valider</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'immobilisations:biens' %}">← Retour aux biens</a>
+  </div>
+</div>
+
+<form method="post" action="{% url 'immobilisations:biens_valider_lot' %}">
+  {% csrf_token %}
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr>
+            <th class="no-sort"><input type="checkbox" id="tout-cocher" title="Tout cocher"></th>
+            <th>Code</th>
+            <th>Désignation</th>
+            <th>Catégorie</th>
+            <th>Succursale</th>
+            <th>Valeur</th>
+            <th>Soumis par</th>
+            <th class="no-sort"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in biens %}
+          <tr>
+            <td><input type="checkbox" name="biens" value="{{ b.pk }}"></td>
+            <td>{{ b.code }}</td>
+            <td>{{ b.designation }}</td>
+            <td>{{ b.categorie|default:"—" }}</td>
+            <td>{{ b.succursale }}</td>
+            <td>{{ b.valeur_acquisition }}</td>
+            <td>{{ b.soumis_par|default:"—" }}</td>
+            <td class="actions"><a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' b.pk %}">Voir</a></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8">Aucun bien en attente de validation.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Valider la sélection</button>
+    </div>
+    {% include "boutique/_pagination.html" %}
+  </section>
+</form>
+
+<script>
+  (function () {
+    var tout = document.getElementById("tout-cocher");
+    if (!tout) return;
+    tout.addEventListener("change", function () {
+      document.querySelectorAll("input[name='biens']").forEach(function (box) {
+        box.checked = tout.checked;
+      });
+    });
+  })();
+</script>
+{% endblock %}

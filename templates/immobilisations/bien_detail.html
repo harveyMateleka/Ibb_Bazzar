@@ -1,0 +1,234 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Biens</p>
+    <h1>{{ bien.code }} — {{ bien.designation }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'immobilisations:biens' %}">← Retour</a>
+    {% if perms.immobilisations.assign_asset %}
+    <a class="btn btn-primary" href="{% url 'immobilisations:affectation_nouvelle' bien.pk %}">Affecter</a>
+    {% endif %}
+    {% if perms.immobilisations.move_asset %}
+    <a class="btn btn-ghost" href="{% url 'immobilisations:deplacement_nouveau' bien.pk %}">Déplacer</a>
+    {% endif %}
+    {% if perms.immobilisations.repair_asset %}
+    <a class="btn btn-ghost" href="{% url 'immobilisations:reparation_declarer' bien.pk %}">Réparer</a>
+    {% endif %}
+    {% if perms.immobilisations.report_damage_asset %}
+    <a class="btn btn-ghost" href="{% url 'immobilisations:casse_declarer' bien.pk %}">Déclarer une casse</a>
+    {% endif %}
+    {% if perms.immobilisations.update_asset %}
+    <a class="btn btn-danger" href="{% url 'immobilisations:declassement_demander' bien.pk %}">Déclasser</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Désignation</dt><dd>{{ bien.designation }}</dd>
+    <dt>Catégorie</dt><dd>{{ bien.categorie|default:"—" }}</dd>
+    <dt>N° de série</dt><dd>{{ bien.numero_serie|default:"—" }}</dd>
+    <dt>Valeur d'acquisition</dt><dd>{{ bien.valeur_acquisition }}</dd>
+    <dt>Date d'acquisition</dt><dd>{{ bien.date_acquisition|default:"—" }}</dd>
+    <dt>Succursale</dt><dd>{{ bien.succursale }}</dd>
+    <dt>Domaine</dt><dd>{{ bien.domaine|default:"—" }}</dd>
+    <dt>État physique</dt><dd>{{ bien.get_etat_physique_display }}</dd>
+    <dt>Statut administratif</dt><dd>{{ bien.get_statut_administratif_display }}</dd>
+    <dt>Validation</dt><dd>{{ bien.get_statut_validation_display }}</dd>
+    {% if bien.statut_validation == 'REJETE' and bien.motif_rejet %}<dt>Motif de rejet</dt><dd>{{ bien.motif_rejet }}</dd>{% endif %}
+    <dt>Période d'entretien</dt><dd>{% if bien.periode_entretien %}{{ bien.periode_entretien }} mois{% else %}—{% endif %}</dd>
+    <dt>Durée de vie</dt><dd>{% if bien.duree_vie %}{{ bien.duree_vie }} an(s){% else %}—{% endif %}</dd>
+    <dt>Service</dt><dd>{{ bien.service|default:"—" }}</dd>
+    <dt>Emplacement</dt><dd>{{ bien.emplacement|default:"—" }}</dd>
+    <dt>Affectation courante</dt>
+    <dd>
+      {% if affectation_courante %}
+        {{ affectation_courante.succursale }}{% if affectation_courante.service %} · {{ affectation_courante.service }}{% endif %}{% if affectation_courante.emplacement %} · {{ affectation_courante.emplacement }}{% endif %}
+      {% else %}—{% endif %}
+    </dd>
+    {% if bien.observation %}<dt>Observation</dt><dd>{{ bien.observation }}</dd>{% endif %}
+  </dl>
+</section>
+
+{% if bien.statut_validation == 'BROUILLON' and perms.immobilisations.update_asset %}
+<section class="panel">
+  <h2>Validation</h2>
+  <p>Ce bien est en <strong>brouillon</strong> : soumettez-le pour validation.</p>
+  <form action="{% url 'immobilisations:bien_soumettre' bien.pk %}" method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">Soumettre pour validation</button>
+  </form>
+</section>
+{% elif bien.statut_validation == 'EN_ATTENTE' and perms.immobilisations.validate_asset %}
+<section class="panel">
+  <h2>Validation</h2>
+  <p>Ce bien est <strong>en attente de validation</strong>.</p>
+  <div class="actions">
+    <form action="{% url 'immobilisations:bien_valider' bien.pk %}" method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">Valider le bien</button>
+    </form>
+    <form action="{% url 'immobilisations:bien_rejeter' bien.pk %}" method="post" class="field">
+      {% csrf_token %}
+      <input class="input" type="text" name="motif" placeholder="Motif de rejet (obligatoire)">
+      <button type="submit" class="btn btn-danger">Rejeter</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Affectations</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr><th>Date</th><th>Succursale</th><th>Service</th><th>Emplacement</th><th>Par</th><th>Statut</th></tr>
+      </thead>
+      <tbody>
+        {% for a in affectations %}
+        <tr>
+          <td>{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+          <td>{{ a.succursale }}</td>
+          <td>{{ a.service|default:"—" }}</td>
+          <td>{{ a.emplacement|default:"—" }}</td>
+          <td>{{ a.par }}</td>
+          <td>{% if a.actif %}Active{% else %}Clôturée{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucune affectation.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Déplacements</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr><th>Date</th><th>De</th><th>Vers</th><th>Motif</th><th>Par</th></tr>
+      </thead>
+      <tbody>
+        {% for d in deplacements %}
+        <tr>
+          <td>{{ d.date_deplacement|date:"d/m/Y H:i" }}</td>
+          <td>{{ d.ancienne_succursale|default:"—" }} · {{ d.ancien_emplacement|default:"—" }}</td>
+          <td>{{ d.nouvelle_succursale|default:"—" }} · {{ d.nouvel_emplacement|default:"—" }}</td>
+          <td>{{ d.motif|default:"—" }}</td>
+          <td>{{ d.par }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucun déplacement.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Réparations</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr><th>Date</th><th>Motif</th><th>Coût</th><th>Statut</th><th>Par</th><th class="no-sort"></th></tr>
+      </thead>
+      <tbody>
+        {% for r in reparations %}
+        <tr>
+          <td>{{ r.date_reparation|date:"d/m/Y H:i" }}</td>
+          <td>{{ r.motif }}</td>
+          <td>{{ r.cout }}</td>
+          <td>{{ r.get_statut_display }}</td>
+          <td>{{ r.par }}</td>
+          <td class="actions">
+            {% if r.statut == 'EN_COURS' and perms.immobilisations.repair_asset %}
+            <form action="{% url 'immobilisations:reparation_terminer' bien.pk r.pk %}" method="post" class="inline-form">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary">Terminer</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucune réparation.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Casses</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr><th>Date</th><th>Date du dommage</th><th>Motif</th><th>Responsable du dommage</th><th>Décision</th><th>Par</th><th class="no-sort"></th></tr>
+      </thead>
+      <tbody>
+        {% for c in casses %}
+        <tr>
+          <td>{{ c.date_casse|date:"d/m/Y H:i" }}</td>
+          <td>{{ c.date_dommage|default:"—" }}</td>
+          <td>{{ c.motif }}</td>
+          <td>{{ c.responsable_dommage|default:"—" }}</td>
+          <td>{{ c.get_decision_display|default:"—" }}</td>
+          <td>{{ c.par }}</td>
+          <td class="actions">
+            {% if not c.decision and perms.immobilisations.report_damage_asset %}
+            <form action="{% url 'immobilisations:casse_evaluer' bien.pk c.pk %}" method="post" class="inline-form">
+              {% csrf_token %}
+              <select class="input" name="decision">
+                <option value="REPARABLE">Réparable</option>
+                <option value="REMPLACEMENT">Remplacement</option>
+                <option value="DECLASSEMENT">Déclassement</option>
+              </select>
+              <input class="input" type="text" name="observation" placeholder="Observation">
+              <button type="submit" class="btn btn-primary">Évaluer</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucune casse.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Déclassements</h2>
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr><th>Demande le</th><th>Motif</th><th>Statut</th><th>Demandé par</th><th>Validé par</th><th class="no-sort"></th></tr>
+      </thead>
+      <tbody>
+        {% for d in declassements %}
+        <tr>
+          <td>{{ d.date_demande|date:"d/m/Y H:i" }}</td>
+          <td>{{ d.motif }}</td>
+          <td>{{ d.get_statut_display }}</td>
+          <td>{{ d.par }}</td>
+          <td>{{ d.valide_par|default:"—" }}</td>
+          <td class="actions">
+            {% if d.statut == 'DEMANDE' and perms.immobilisations.decommission_asset %}
+            <form action="{% url 'immobilisations:declassement_valider' bien.pk d.pk %}" method="post" class="inline-form">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary">Valider le déclassement</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucun déclassement.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

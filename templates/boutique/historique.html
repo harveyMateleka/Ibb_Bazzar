@@ -1,0 +1,74 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Boutique</p>
+    <h1>Historique des mouvements</h1>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Article, référence, motif">
+  <select class="input" name="type">
+    <option value="">Tous les types</option>
+    {% for value, label in types %}
+    <option value="{{ value }}" {% if type == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <input class="input" type="date" name="date_debut" value="{{ date_debut }}" title="Date début">
+  <input class="input" type="date" name="date_fin" value="{{ date_fin }}" title="Date fin">
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+  <a class="btn btn-ghost"
+     href="{% url 'boutique:mouvements_report' %}?type={{ type|urlencode }}&q={{ q|urlencode }}&date_debut={{ date_debut|urlencode }}&date_fin={{ date_fin|urlencode }}"
+     title="Imprimer le rapport de tous les mouvements filtrés">Imprimer le rapport</a>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Article</th>
+          <th>Type</th>
+          <th>Quantité</th>
+          <th>Stock avant</th>
+          <th>Stock après</th>
+          <th>Référence</th>
+          <th>Motif</th>
+          <th>Utilisateur</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in mouvements %}
+        <tr>
+          <td>{{ m.date_mouvement|date:"d/m/Y H:i" }}</td>
+          <td>{{ m.variante.article.code }}</td>
+          <td>{{ m.get_type_display }}</td>
+          <td>{{ m.quantite }}</td>
+          <td>{{ m.stock_avant|default:"—" }}</td>
+          <td>{{ m.stock_apres|default:"—" }}</td>
+          <td>{{ m.reference|default:"—" }}</td>
+          <td>{{ m.motif|default:"—" }}</td>
+          <td>{{ m.utilisateur }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="9">Aucun mouvement de stock.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if mouvements.has_other_pages %}
+  <div class="pagination">
+    {% if mouvements.has_previous %}
+    <a href="?page={{ mouvements.previous_page_number }}&type={{ type }}&q={{ q }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}">Précédent</a>
+    {% endif %}
+    <span>Page {{ mouvements.number }} / {{ mouvements.paginator.num_pages }}</span>
+    {% if mouvements.has_next %}
+    <a href="?page={{ mouvements.next_page_number }}&type={{ type }}&q={{ q }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}">Suivant</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,1217 @@
+PROMPT — ADAPTATION DE L'INTERFACE DE VENTE BOUTIQUE À PARTIR DU CODE RESTAURATION
+OBJECTIF
+
+Je vais te fournir le code actuel d'une page du module RESTAURATION, se retouvre deja à la racine, restoration.html
+
+Tu dois d'abord LIRE ET ANALYSER ce code minutieusement afin d'identifier les composants, structures d'interface, interactions utilisateur et patterns UX qui peuvent être réutilisés dans le module BOUTIQUE.
+
+IMPORTANT :
+
+Le code RESTAURATION est fourni comme RÉFÉRENCE D'INTERFACE ET D'INTERACTION.
+
+Il ne faut PAS copier sa logique métier dans la Boutique.
+
+La Boutique possède sa propre logique métier, ses propres modèles, ses propres relations et ses propres règles de stock, variantes et ventes.
+
+Avant toute modification du module Boutique :
+
+1. Lire le code Boutique existant.
+2. Lire le code RESTAURATION fourni.
+3. Comparer les deux.
+4. Identifier exactement les éléments réutilisables.
+5. Vérifier si une fonctionnalité existe déjà dans Boutique.
+6. Réutiliser la logique existante lorsqu'elle fonctionne.
+7. Ne pas créer de doublon.
+8. Ne pas remplacer une logique métier fonctionnelle uniquement pour reproduire la structure de Restauration.
+9. Ne pas casser les fonctionnalités existantes.
+
+==================================================
+1. CE QU'IL FAUT EXTRAIRE DU CODE RESTAURATION
+==================================================
+
+À partir du code fourni, analyser notamment :
+
+- la structure de l'en-tête ;
+- la disposition des informations à gauche ;
+- la disposition des actions à droite ;
+- la séparation en panneaux ;
+- le panneau principal contenant les éléments sélectionnés ;
+- le panneau secondaire contenant les éléments disponibles ;
+- la recherche ;
+- les filtres ;
+- la pagination ;
+- les boutons d'ajout ;
+- les boutons d'augmentation/diminution de quantité ;
+- les actions de suppression ;
+- les messages utilisateur ;
+- les dialogues d'erreur ;
+- la gestion visuelle des états ;
+- l'organisation des tableaux ;
+- les classes CSS réutilisables ;
+- les composants JavaScript réutilisables ;
+- les patterns UX permettant de sélectionner un élément puis de l'ajouter dans une liste.
+
+Extraire uniquement ce qui est pertinent pour la Boutique.
+
+==================================================
+2. STRUCTURE DE LA BOUTIQUE
+==================================================
+
+Adapter cette structure à la vente Boutique.
+
+L'interface doit être organisée en deux grandes zones.
+
+PANNEAU GAUCHE :
+
+Contient les variantes/articles actuellement sélectionnés pour la vente.
+
+PANNEAU DROIT :
+
+Contient les variantes disponibles pouvant être recherchées, filtrées et ajoutées à la vente.
+
+L'objectif est d'avoir une expérience similaire à :
+
+Restauration :
+Menu → ajout au ticket
+
+Boutique :
+Variantes → ajout au panier/vente
+
+Mais les données et les règles métier restent celles de la Boutique.
+
+==================================================
+3. PANNEAU DROIT — RECHERCHE DES VARIANTES
+==================================================
+
+Le panneau droit doit permettre de rechercher une variante existante.
+
+Lorsqu'une recherche est effectuée, afficher clairement les informations permettant d'identifier la variante.
+
+Une variante doit notamment permettre d'identifier :
+
+- l'article parent ;
+- les caractéristiques de la variante ;
+- couleur ;
+- taille ;
+- genre ; 
+- type de tissu si ce champ existe déjà ;
+- prix normal;
+- prix minimum;
+
+NE PAS recréer les champs qui existent déjà.
+
+Lire les modèles existants pour déterminer les informations réellement disponibles.
+
+==================================================
+4. VÉRIFICATION DE L'EXISTENCE DE LA VARIANTE
+==================================================
+
+Avant de créer ou d'ajouter une variante :
+
+VÉRIFIER SI ELLE EXISTE DÉJÀ.
+
+Ne pas créer une nouvelle variante lorsqu'une variante identique existe déjà.
+
+La vérification doit respecter les règles d'identification des variantes déjà définies dans le projet.
+
+Analyser le modèle VarianteArticle et les contraintes existantes avant d'ajouter une nouvelle logique.
+
+Si une logique de détection existe déjà :
+
+→ la réutiliser.
+
+Ne pas créer une deuxième logique de comparaison.
+
+==================================================
+5. AJOUT D'UNE VARIANTE À LA VENTE
+==================================================
+
+Lorsqu'une variante est sélectionnée dans le panneau droit, l'utilisateur doit pouvoir renseigner les informations nécessaires avant de l'ajouter à la vente.
+
+Les informations principales de la ligne sont :
+
+- Article ;
+- Variante ;
+- Quantité ;
+- Prix unitaire normal ;
+- Prix minimum ;
+- Prix proposé ;
+- Montant normal ;
+- Montant proposé.
+
+IMPORTANT :
+
+Le prix unitaire normal est récupéré automatiquement depuis la variante.
+
+Le prix minimum est récupéré automatiquement depuis la variante.
+
+Le prix proposé est saisi par l'utilisateur.
+
+Le prix proposé ne doit PAS remplacer le prix unitaire normal.
+
+==================================================
+6. QUANTITÉ
+==================================================
+
+Lorsqu'une variante est ajoutée :
+
+Afficher un contrôle permettant de :
+
+- diminuer la quantité ;
+- augmenter la quantité.
+
+La représentation peut reprendre le principe du code RESTAURATION :
+
+[ − ] quantité [ + ]
+
+Mais adapter le composant à la Boutique.
+
+La logique métier existante concernant le stock doit rester intacte.
+
+Avant d'autoriser l'augmentation :
+
+vérifier le stock disponible de la variante.
+
+Ne jamais permettre :
+
+quantité demandée > stock disponible.
+
+Ne jamais permettre une quantité conduisant à un stock négatif.
+
+Si la variante est en rupture :
+
+→ empêcher son ajout.
+
+Si la variante est au seuil d'alerte :
+
+→ afficher l'état d'alerte mais permettre la vente dans la limite du stock disponible.
+
+==================================================
+7. PRIX PROPOSÉ
+==================================================
+
+Le panneau droit doit contenir un champ permettant de saisir :
+
+PRIX PROPOSÉ
+
+Exemple :
+
+Prix normal : 8 000
+Prix minimum : 5 000
+
+Prix proposé :
+[ 6 000 ]
+
+[Ajouter]
+
+Le prix proposé est le prix auquel cette variante sera proposée/vendue dans cette transaction.
+
+Il doit être enregistré au niveau de la ligne de vente.
+
+Ne pas modifier le prix normal de la variante.
+
+==================================================
+8. RÈGLE DE PRIX
+==================================================
+
+Conserver les règles métier déjà définies.
+
+Comparer :
+
+prix proposé
+
+avec :
+
+prix unitaire normal
+prix minimum
+
+Cas 1 :
+
+prix proposé = prix normal
+
+→ aucune validation particulière liée au prix.
+
+Cas 2 :
+
+prix minimum <= prix proposé < prix normal
+
+→ la vente est possible mais nécessite une validation du responsable.
+
+Cas 3 :
+
+prix proposé < prix minimum
+prix proposé > prix normal
+→ vente interdite.
+
+Afficher un message clair à l'utilisateur.
+
+Ces contrôles doivent être effectués côté BACKEND.
+
+Les contrôles frontend peuvent être utilisés pour améliorer l'expérience utilisateur mais ne doivent jamais remplacer les contrôles backend.
+
+==================================================
+9. PANNEAU GAUCHE — VARIANTES SÉLECTIONNÉES
+==================================================
+
+Lorsqu'une variante est ajoutée depuis le panneau droit, elle doit apparaître immédiatement dans le panneau gauche.
+
+Chaque ligne doit permettre de voir clairement :
+
+Article
+Variante
+Quantité
+Prix unitaire normal
+Prix minimum
+Prix proposé
+Montant normal
+Montant proposé
+Actions
+Statut
+
+Ne pas afficher inutilement les informations qui ne sont pas pertinentes.
+
+La disposition doit rester lisible même avec plusieurs variantes.
+
+==================================================
+10. CALCUL DES MONTANTS
+==================================================
+
+Conserver et vérifier la logique de calcul existante avant toute modification.
+
+Le système doit permettre de distinguer :
+
+MONTANT NORMAL :
+
+quantité × prix unitaire normal
+
+MONTANT PROPOSÉ :
+
+quantité × prix proposé
+
+Exemple :
+
+Quantité = 2
+Prix normal = 8 000
+Prix proposé = 6 000
+
+Montant normal = 16 000
+Montant proposé = 12 000
+
+Écart = 4 000
+
+IMPORTANT :
+
+Avant d'implémenter cette logique, vérifier comment les montants sont actuellement calculés dans le code existant.
+
+Si une logique de calcul existe déjà :
+
+→ l'analyser ;
+→ la réutiliser si possible ;
+→ l'adapter uniquement si nécessaire.
+
+Ne pas créer une deuxième logique de calcul parallèle inutilement.
+
+==================================================
+11. MODIFICATION DE LA QUANTITÉ
+==================================================
+
+Les boutons :
+
+[ − ]
+
+et
+
+[ + ]
+
+doivent modifier la quantité de la ligne.
+
+Après modification :
+
+recalculer les montants concernés.
+
+Exemple :
+
+Quantité = 2
+Prix normal = 8 000
+Prix proposé = 6 000
+
+→ montant normal = 16 000
+→ montant proposé = 12 000
+
+Si quantité passe à 3 :
+
+→ montant normal = 24 000
+→ montant proposé = 18 000
+
+Le stock doit également être contrôlé conformément à la logique existante.
+
+==================================================
+12. SUPPRESSION D'UNE LIGNE
+==================================================
+
+Conserver une action permettant de retirer une variante du panier/vente.
+
+Cette action doit supprimer uniquement la ligne de vente en cours.
+
+Elle ne doit pas supprimer :
+
+- l'article ;
+- la variante ;
+- le stock ;
+- l'historique.
+
+==================================================
+13. RECHERCHE, FILTRAGE ET PAGINATION
+==================================================
+
+Le panneau droit doit supporter :
+
+- recherche ;
+- filtrage ;
+- pagination.
+
+Le panneau gauche doit également être capable de gérer correctement un grand nombre de lignes si cela est nécessaire.
+
+Utiliser les composants DataTable déjà présents dans le projet lorsqu'ils existent.
+
+Ne pas installer ou recréer inutilement une autre solution si DataTable est déjà disponible.
+
+Même principe pour Select2 :
+
+si Select2 est déjà intégré au projet, réutiliser l'intégration existante.
+
+==================================================
+14. ÉTAT DU STOCK
+==================================================
+
+Respecter les états existants.
+
+RUPTURE :
+
+- afficher visuellement la variante en rouge ;
+- empêcher l'ajout ;
+- afficher un message clair.
+
+SEUIL D'ALERTE :
+
+- afficher visuellement la variante en orange ;
+- autoriser l'ajout ;
+- empêcher de dépasser la quantité réellement disponible.
+
+STOCK NORMAL :
+
+- affichage normal ;
+- ajout autorisé dans la limite du stock.
+
+Ne pas confondre :
+
+SEUIL D'ALERTE
+
+avec :
+
+RUPTURE.
+
+Le seuil indique un stock critique, pas nécessairement une interdiction de vente.
+
+==================================================
+15. VALIDATION DE LA VENTE
+==================================================
+
+Conserver la logique de validation déjà implémentée.
+
+Une vente doit nécessiter une validation lorsqu'une règle métier l'impose.
+
+Notamment :
+
+- prix proposé inférieur au prix normal mais supérieur ou égal au prix minimum ;
+- montant reçu inférieur au montant attendu selon la logique existante ;
+- autres règles de validation déjà présentes.
+
+Si une ligne est sous le prix minimum , ou s'il est supérieur au prix normal:
+
+→ la vente doit être refusée.
+
+==================================================
+16. INFORMATIONS VISIBLES PAR LE RESPONSABLE
+==================================================
+
+Lorsqu'une vente arrive en validation, le responsable doit pouvoir voir pour chaque ligne :
+
+Article
+Variante
+Quantité
+Prix unitaire normal
+Prix minimum
+Prix proposé
+Montant normal
+Montant proposé
+Écart
+
+Exemple :
+
+Chemise rouge — Homme — XS
+
+Quantité : 2
+Prix normal : 8 000
+Prix minimum : 5 000
+Prix proposé : 6 000
+
+Montant normal : 16 000
+Montant proposé : 12 000
+Écart : 4 000
+
+Le responsable doit pouvoir comprendre immédiatement pourquoi la vente nécessite une validation.
+
+==================================================
+17. PERSISTANCE DES DONNÉES
+==================================================
+
+Avant d'ajouter des champs en base :
+
+chercher s'ils existent déjà.
+
+Vérifier notamment :
+
+- Vente ;
+- LigneVente ;
+- VarianteArticle ;
+- Stock ;
+- MouvementStock.
+
+Le prix proposé est une donnée propre à la ligne de vente.
+
+S'il n'existe pas encore de champ équivalent, l'ajouter au niveau de LigneVente.
+
+Ne pas stocker inutilement cette même donnée dans plusieurs tables.
+
+Le prix normal doit rester rattaché à la variante selon l'architecture existante.
+
+==================================================
+18. IMPRESSION
+==================================================
+
+Conserver la logique d'impression existante.
+
+Le ticket de vente doit continuer à respecter le format 80 mm déjà défini dans le projet.
+
+Ne pas modifier cette logique simplement pour adapter l'interface.
+
+==================================================
+19. PRINCIPLE DE NON-RÉGRESSION
+==================================================
+
+Avant toute modification :
+
+ANALYSER.
+
+Ensuite :
+
+IDENTIFIER.
+
+Ensuite :
+
+RÉUTILISER.
+
+Ensuite seulement :
+
+MODIFIER OU AJOUTER.
+
+Ne pas :
+
+- recréer un modèle existant ;
+- recréer une fonction existante ;
+- recréer une validation existante ;
+- recréer un calcul existant ;
+- recréer une logique de stock existante ;
+- recréer une logique de prix existante ;
+- créer des doublons frontend/backend.
+
+Le code RESTAURATION sert principalement de référence pour :
+
+- la disposition ;
+- les panneaux ;
+- les interactions ;
+- la recherche ;
+- la sélection ;
+- l'ajout ;
+- les contrôles de quantité ;
+- les messages utilisateur ;
+- la pagination.
+
+La logique métier de la Boutique reste prioritaire.
+
+==================================================
+20. LIVRABLE ATTENDU
+==================================================
+
+Après analyse du code existant, avant de modifier :
+
+présenter brièvement :
+
+1. Les modèles existants concernés.
+2. Les champs déjà disponibles.
+3. Les calculs existants.
+4. Les validations existantes.
+5. La logique de stock existante.
+6. Les composants frontend réutilisables.
+7. Les éléments du code RESTAURATION qui peuvent être réutilisés.
+8. Les éléments qui ne doivent PAS être copiés.
+9. Les champs qui manquent réellement.
+10. Les modifications minimales nécessaires.
+
+Puis seulement implémenter.
+
+L'objectif est d'obtenir une interface Boutique inspirée de la structure et de l'expérience de la page RESTAURATION, mais avec 100 % de la logique métier propre à la Boutique.
+
+
+Oui. Ici, la modification est essentiellement une refonte de la présentation de l’interface de vente, sans refaire la logique métier déjà fonctionnelle.
+
+L’objectif est très clair : le panier à gauche, le catalogue des variantes disponibles à droite, mais la partie droite ne doit surtout pas être présentée comme une DataTable classique.
+
+Voici le prompt que tu peux donner à ton agent.
+
+PROMPT — Refonte de l’interface « Nouvelle vente » : panier à gauche / variantes disponibles à droite
+1. Consigne préalable obligatoire : analyser avant de modifier
+
+Avant toute modification, analyse minutieusement le code existant de la fonctionnalité de vente, notamment :
+
+modèles Django concernés ;
+vues ;
+formulaires ;
+URLs ;
+templates ;
+JavaScript ;
+CSS ;
+logique AJAX éventuelle ;
+calculs des montants ;
+gestion des quantités ;
+gestion du stock ;
+règles de prix ;
+logique de validation ;
+logique de soumission ;
+messages de succès/erreur ;
+impression du ticket 80 mm.
+
+Ne recrée aucune logique qui existe déjà.
+
+Si une logique métier existe et fonctionne déjà, conserve-la et adapte uniquement son intégration à la nouvelle interface.
+
+Ne supprime pas une logique existante simplement parce que l'interface change.
+
+Avant de coder, identifie clairement :
+
+ce qui existe déjà ;
+ce qui doit être conservé ;
+ce qui doit être déplacé dans l'interface ;
+ce qui doit être uniquement ajusté ;
+ce qui manque réellement.
+
+L'objectif est d'éviter :
+
+les doublons ;
+les réimplémentations inutiles ;
+les régressions ;
+la duplication des règles métier.
+2. Nouvelle organisation générale de l'écran
+
+La page Nouvelle vente doit être organisée en deux grandes zones fonctionnelles :
+
+GAUCHE : PANIER / VENTE EN COURS
+
+Cette zone contient uniquement les éléments qui ont déjà été sélectionnés et ajoutés à la vente.
+
+DROITE : VARIANTES DISPONIBLES
+
+Cette zone permet de rechercher, filtrer, consulter et ajouter une variante disponible.
+
+La séparation doit être visuellement claire avec des panels, conformément au design déjà utilisé dans l'application.
+
+Le principe visuel doit être similaire à la logique du template de restauration fourni précédemment :
+
+┌───────────────────────────────────────────────────────────────┐
+│ Informations de la vente                         Actions      │
+├──────────────────────────────┬────────────────────────────────┤
+│                              │                                │
+│ PANIER / VENTE               │ VARIANTES DISPONIBLES          │
+│                              │                                │
+│ Articles sélectionnés        │ Recherche                      │
+│                              │ Filtres                        │
+│                              │                                │
+│ Ligne 1                      │ Card variante 1                │
+│ Ligne 2                      │ Card variante 2                │
+│ Ligne 3                      │ Card variante 3                │
+│                              │ Card variante 4                │
+│                              │                                │
+│ Totaux                       │ Pagination                     │
+└──────────────────────────────┴────────────────────────────────┘
+3. Zone gauche : panier
+
+La partie gauche représente la vente en cours.
+
+Lorsqu'une variante est sélectionnée et ajoutée depuis la partie droite, elle doit être transférée dans le panier à gauche.
+
+Le panier doit afficher les informations suivantes :
+
+Article ;
+Variante ;
+Quantité ;
+Prix unitaire normal ;
+Prix minimum ;
+Prix proposé ;
+Montant normal ;
+Montant proposé ;
+Écart ;
+Action de suppression ;
+Statut si nécessaire.
+
+La structure métier attendue est donc :
+
+ARTICLE / VARIANTE
+QTÉ
+PRIX UNITAIRE NORMAL
+PRIX MINIMUM
+PRIX PROPOSÉ
+MONTANT NORMAL
+MONTANT PROPOSÉ
+ÉCART
+ACTION
+4. Très important : le prix proposé NE doit PAS être modifiable dans le panier
+
+Dans la partie gauche, ne mets pas de champ input pour le prix proposé.
+
+Le prix proposé est déterminé dans la partie droite.
+
+Le fonctionnement doit être :
+
+DROITE
+↓
+Sélection de la variante
+↓
+Saisie du prix proposé
+↓
+Contrôles métier
+↓
+Clic sur "Ajouter"
+↓
+La variante est ajoutée au panier
+↓
+GAUCHE
+
+Une fois ajoutée au panier, le prix proposé affiché à gauche devient une donnée de la ligne de vente et n'est plus modifiable directement depuis le panier.
+
+Cela évite que l'utilisateur contourne les contrôles réalisés lors de l'ajout.
+
+5. Quantité dans le panier
+
+La quantité doit rester modifiable depuis le panier.
+
+Utiliser une représentation compacte :
+
+−   1   +
+
+avec :
+
+bouton − pour diminuer ;
+quantité actuelle au centre ;
+bouton + pour augmenter.
+
+Conserver la logique métier existante concernant :
+
+quantité minimale ;
+disponibilité du stock ;
+quantité maximale ;
+impossibilité de dépasser le stock disponible ;
+impossibilité d'obtenir un stock négatif.
+
+Le changement de quantité doit recalculer automatiquement les montants concernés.
+
+6. La partie droite ne doit PAS être une DataTable
+
+C'est un point très important.
+
+La partie « Variantes disponibles » à droite ne doit pas utiliser la présentation DataTable classique avec :
+
+colonnes ;
+lignes horizontales ;
+boutons « Ajouter » répétés ;
+affichage type tableau administratif.
+
+Le DataTable reste utile pour les vraies tables administratives de l'application, mais pas pour cette zone de sélection des variantes.
+
+La partie droite doit avoir une présentation plus ergonomique sous forme de cards / blocs de variantes.
+
+7. Recherche des variantes à droite
+
+En haut de la zone droite, prévoir un espace de recherche.
+
+Exemple :
+
+VARIANTES DISPONIBLES
+
+[ 🔍 Rechercher une variante... ]
+
+Filtres :
+[ Article ▼ ] [ Genre ▼ ] [ Couleur ▼ ] [ Taille ▼ ] [ Type ▼ ]
+
+La recherche doit pouvoir retrouver une variante à partir de ses informations pertinentes :
+
+code article ;
+nom de l'article parent ;
+variante ;
+couleur ;
+taille ;
+genre ;
+type d'article / type de vêtement ;
+autres informations pertinentes déjà présentes dans le modèle.
+
+Ne recrée pas un système de recherche si un système existe déjà : réutilise-le et adapte seulement son affichage.
+
+8. Affichage d'une variante
+
+Chaque variante disponible doit être affichée sous forme de card.
+
+Exemple conceptuel :
+
+┌─────────────────────────────────┐
+│ CHEMISE                          │
+│ Coton · Blanche · M · Homme     │
+│ Type : Chemise                  │
+│                                 │
+│ Stock : 16                      │
+│ Prix normal : 30 000            │
+│ Prix minimum : 26 000           │
+│                                 │
+│ Prix proposé                    │
+│ [ 28 000                 ]      │
+│                                 │
+│              [ AJOUTER ]        │
+└─────────────────────────────────┘
+
+Le nom de la variante doit être suffisamment explicite pour que l'utilisateur puisse immédiatement comprendre ce qu'il sélectionne.
+
+Par exemple :
+
+CHEMISE — Coton — Blanche — M — Homme
+
+ou selon les champs réellement disponibles dans le modèle.
+
+9. Le prix proposé est saisi uniquement dans la card de droite
+
+C'est une règle essentielle.
+
+Dans chaque card de variante, prévoir :
+
+Prix normal : 30 000
+Prix minimum : 26 000
+
+Prix proposé :
+[____________]
+
+[ AJOUTER ]
+
+L'utilisateur saisit ici le prix auquel le client va effectivement payer cette variante.
+
+Ce prix proposé doit être enregistré dans la ligne de vente.
+
+10. Contrôle du prix proposé
+
+Le prix proposé doit être contrôlé avant l'ajout.
+
+Conserver les règles métier existantes.
+
+Cas 1 — Prix proposé ≥ prix normal
+
+La vente peut continuer normalement.
+
+Cas 2 — Prix proposé < prix normal mais ≥ prix minimum
+
+La variante peut être ajoutée, mais la vente doit être identifiée comme nécessitant une validation du responsable.
+
+Exemple :
+
+Prix normal : 30 000
+Prix minimum : 26 000
+Prix proposé : 28 000
+
+→ Autorisé
+→ Demande de validation requise
+Cas 3 — Prix proposé < prix minimum
+
+L'ajout doit être refusé.
+
+Afficher un message clair :
+
+Impossible d'ajouter cette variante : le prix proposé est inférieur au prix minimum autorisé.
+
+Ne jamais permettre une vente sous le prix minimum.
+
+Vérifier d'abord si cette règle existe déjà dans le backend et la réutiliser.
+
+11. Gestion de la rupture de stock
+
+Lorsqu'une variante est en rupture :
+
+Stock : 0
+
+elle doit être visuellement identifiable, par exemple :
+
+card en rouge ;
+badge « Rupture de stock ».
+
+Et surtout :
+
+le bouton Ajouter doit être désactivé.
+
+L'utilisateur ne doit pas pouvoir ajouter cette variante.
+
+Un message explicite doit également être prévu si une tentative d'ajout est effectuée :
+
+Cette variante est en rupture de stock et ne peut pas être ajoutée à la vente.
+
+12. Gestion du seuil d'alerte
+
+Si la variante a atteint son seuil d'alerte, elle doit être affichée en orange.
+
+Exemple :
+
+Stock : 4
+Seuil d'alerte : 4
+
+→ Variante en alerte.
+
+Mais elle reste vendable.
+
+Cependant, l'utilisateur ne peut jamais demander une quantité supérieure au stock réellement disponible.
+
+Exemple :
+
+Stock disponible : 4
+
+Quantité demandée : 5
+→ REFUS
+
+Message :
+
+Quantité indisponible. Stock disponible : 4.
+
+Le système ne doit jamais permettre :
+
+Stock = -1
+13. Le stock doit toujours rester la source de vérité
+
+La sélection d'une variante doit récupérer son stock réel depuis la logique existante.
+
+Ne pas créer une nouvelle logique parallèle de calcul du stock côté frontend.
+
+Le frontend doit uniquement afficher l'information fournie par le backend.
+
+Les contrôles définitifs doivent rester côté backend afin qu'ils ne puissent pas être contournés.
+
+14. Calculs du panier
+
+Conserver les calculs existants.
+
+Pour chaque ligne :
+
+Montant normal
+quantité × prix unitaire normal
+Montant proposé
+quantité × prix proposé
+Écart
+montant normal − montant proposé
+
+Ces valeurs doivent être recalculées automatiquement lorsqu'une quantité change.
+
+15. Informations visibles dans le panier
+
+Après ajout d'une variante, la ligne doit ressembler conceptuellement à :
+
+Article / Variante
+CHEMISE
+Coton / Blanche / M / Homme
+
+Qté
+−  2  +
+
+Prix unitaire normal
+30 000
+
+Prix minimum
+26 000
+
+Prix proposé
+28 000
+
+Montant normal
+60 000
+
+Montant proposé
+56 000
+
+Écart
+4 000
+
+[Supprimer]
+
+Aucun input de prix proposé ne doit apparaître ici.
+
+16. L'ajout doit être effectué depuis la partie droite
+
+Le bouton :
+
+AJOUTER
+
+doit être situé dans la card de la variante, après la saisie du prix proposé.
+
+Le bouton ne doit pas être placé dans le panier.
+
+Le panier ne sert qu'à :
+
+consulter ;
+augmenter la quantité ;
+diminuer la quantité ;
+supprimer ;
+consulter les montants.
+17. Après clic sur « Ajouter »
+
+Lorsque l'utilisateur clique sur Ajouter :
+
+vérifier que la variante existe ;
+vérifier qu'elle est toujours disponible ;
+vérifier le stock ;
+vérifier la quantité ;
+vérifier le prix proposé ;
+vérifier le prix minimum ;
+déterminer si une validation est nécessaire ;
+ajouter la ligne au panier ;
+enregistrer le prix proposé ;
+recalculer les montants ;
+mettre à jour les totaux ;
+afficher un message de succès ou d'erreur.
+
+Ne pas considérer le frontend comme suffisant pour ces contrôles.
+
+Les contrôles critiques doivent être effectués côté backend.
+
+18. Conserver la logique de validation des ventes
+
+La nouvelle interface ne doit absolument pas supprimer la logique de validation existante.
+
+Une demande de validation doit notamment être déclenchée lorsque :
+
+Prix proposé inférieur au prix normal
+prix proposé < prix normal
+
+tout en restant ≥ au prix minimum.
+
+Et également lorsque :
+
+Montant reçu insuffisant
+montant reçu < montant total de la vente
+
+Dans ces situations, la vente doit être envoyée au responsable selon la logique de validation déjà existante.
+
+Réutiliser la logique actuelle si elle existe.
+
+19. Informations générales de la vente
+
+Les informations générales de la vente restent conservées.
+
+Notamment :
+
+client ;
+domaine d'activité ;
+succursale ;
+mode de paiement ;
+remise ;
+montant reçu ;
+monnaie ;
+autres champs déjà présents.
+
+Les champs qui sont déterminés automatiquement par l'utilisateur connecté, sa succursale, son domaine d'activité ou son contexte ne doivent pas inutilement être redemandés dans le formulaire.
+
+20. Pagination de la zone droite
+
+La partie droite peut contenir beaucoup de variantes.
+
+Elle doit donc disposer d'une pagination.
+
+Exemple :
+
+[ < Précédent ]   1  2  3  4  5   [ Suivant > ]
+
+20 variantes affichées sur 125
+
+La pagination doit fonctionner avec :
+
+recherche ;
+filtres ;
+stock ;
+variantes ;
+article ;
+genre ;
+couleur ;
+taille ;
+type.
+
+La recherche et les filtres doivent fonctionner ensemble.
+
+21. Ne pas confondre DataTable et catalogue de sélection
+
+Pour être précis :
+
+Tables administratives
+
+Utiliser DataTable pour :
+
+liste des ventes ;
+liste des articles ;
+liste des variantes ;
+stocks ;
+inventaires ;
+historiques ;
+immobilisations ;
+rapports structurés si nécessaire.
+Sélection des variantes pendant une vente
+
+Utiliser :
+
+recherche ;
+filtres ;
+cards ;
+pagination ;
+
+mais pas une DataTable classique.
+
+22. Design
+
+Conserver strictement le design général déjà utilisé dans l'application :
+
+même thème ;
+mêmes couleurs ;
+mêmes boutons ;
+mêmes typographies ;
+mêmes espacements ;
+mêmes panels ;
+même style des messages ;
+même style des actions.
+
+La nouvelle interface doit s'intégrer naturellement au reste de l'application.
+
+Ne crée pas un nouveau design indépendant.
+
+23. Réutilisation du code de référence fourni
+
+Le template de référence fourni précédemment contient notamment une logique intéressante de séparation :
+
+<section class="panel">
+    ...
+</section>
+
+<section class="panel">
+    ...
+</section>
+
+ainsi que :
+
+page-head ;
+informations à gauche ;
+actions à droite ;
+panels ;
+recherche ;
+pagination ;
+contrôles de quantité ;
+messages d'indisponibilité ;
+actions contextualisées.
+
+Analyse ce code de référence et récupère uniquement les principes UI/UX pertinents.
+
+Ne copie pas aveuglément toute sa logique métier, car il s'agit d'un autre module.
+
+24. Résultat attendu
+
+L'écran final doit être conceptuellement organisé ainsi :
+
+                         NOUVELLE VENTE
+
+┌─────────────────────────────────────────────────────────────┐
+│ Informations vente                              Actions    │
+├───────────────────────────────┬─────────────────────────────┤
+│                               │                             │
+│ PANIER                        │ VARIANTES DISPONIBLES       │
+│                               │                             │
+│ Recherche panier              │ Recherche variante         │
+│                               │ [______________]            │
+│ Article / Variante            │                             │
+│ Qté | P.U. | P.Min | P.Prop. │ Filtres                     │
+│ M.Normal | M.Prop. | Écart    │ [Article] [Genre] [Taille] │
+│                               │                             │
+│ Chemise                       │ ┌─────────────────────────┐ │
+│ Coton / Blanche / M / Homme   │ │ CHEMISE                 │ │
+│ −  2  +                       │ │ Coton / Blanche / M     │ │
+│ 30 000 | 26 000 | 28 000     │ │ Stock : 16              │ │
+│ 60 000 | 56 000 | 4 000      │ │ Normal : 30 000         │ │
+│                               │ │ Minimum : 26 000        │ │
+│ [Supprimer]                   │ │                         │ │
+│                               │ │ Prix proposé            │ │
+│                               │ │ [ 28 000 ] [AJOUTER]    │ │
+│                               │ └─────────────────────────┘ │
+│                               │                             │
+│                               │ ┌─────────────────────────┐ │
+│                               │ │ AUTRE VARIANTE           │ │
+│                               │ │ ...                      │ │
+│                               │ └─────────────────────────┘ │
+│                               │                             │
+│ Sous-total                    │ Pagination                  │
+│ Remise                        │                             │
+│ Total                         │                             │
+└───────────────────────────────┴─────────────────────────────┘
+Règle fondamentale
+
+À gauche = ce qui est déjà dans la vente.
+
+À droite = ce qui est disponible pour être ajouté à la vente.
+
+Et surtout :
+
+Le prix proposé est saisi à droite, lors de l'ajout de la variante. Une fois la variante ajoutée, le prix proposé est affiché dans le panier à gauche mais n'est plus un champ modifiable.
+
+Enfin, ne touche pas à la logique métier existante tant qu'elle n'a pas été analysée. Si le backend possède déjà les contrôles de stock, de prix minimum, de validation, de calcul des montants ou de création des lignes de vente, réutilise-les et adapte uniquement ce qui est nécessaire à cette nouvelle organisation de l'interface.
+
+
+
+Objectif général
+Réorganiser la logique de recherche, l’affichage des résultats et les actions disponibles, afin de gagner en pertinence, en fluidité et en lisibilité.
+
+Modifications demandées
+
+Suppression des filtres superflus
+
+Retirer tous les champs de filtrage actuels (tous les articles, tous les genres, toutes les couleurs, tous les cas).
+
+La recherche doit désormais s’effectuer uniquement sur le nom de l’article, directement dans la table des variantes.
+
+Lorsque l’utilisateur saisit un nom (ex. “chemise”), le système interroge cette table et remonte toutes les variantes associées à l’article parent correspondant.
+
+Affichage horizontal des résultats (slider)
+
+Les cartes produits ne doivent plus s’afficher en colonne verticale.
+
+Implémenter un carrousel horizontal avec navigation gauche/droite (flèches ou swipe).
+
+Justification : éviter le défilement interminable en cas de nombreux résultats.
+
+Correction de l’affichage des prix dans les cartes
+
+Les prix (normal et minimum) ne s’affichent actuellement que sous forme de traits dans les cartes de gauche.
+
+Ils doivent être chargés et affichés correctement, comme c’est déjà le cas dans la partie droite de l’interface.
+
+Suppression du bouton “Ajouter au panier” à gauche
+
+Ce bouton est redondant et inutile.
+
+Conserver uniquement le bouton d’ajout au panier situé à droite.
+
+Résultat attendu
+Une interface épurée, avec une recherche rapide par nom de variante, un affichage horizontal fluide, des prix correctement renseignés, et une seule action d’ajout au panier clairement positionnée.

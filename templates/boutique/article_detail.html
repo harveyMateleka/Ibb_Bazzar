@@ -1,0 +1,67 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Articles</p>
+    <h1>{{ article.code }} — {{ article.designation }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'boutique:articles' %}">← Retour</a>
+    {% if perms.boutique.adjust_stock %}
+    <a class="btn btn-primary" href="{% url 'boutique:entree' %}">Entrée en stock</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Code</dt><dd>{{ article.code }}</dd>
+    <dt>Désignation</dt><dd>{{ article.designation }}</dd>
+    <dt>Succursale</dt><dd>{{ article.succursale }}</dd>
+    <dt>Domaine</dt><dd>{{ article.domaine|default:"—" }}</dd>
+    <dt>Nombre de variantes</dt><dd>{{ variantes|length }}</dd>
+    <dt>Stock total</dt><dd><strong>{{ article.stock_total }}</strong></dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Variantes</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code variante</th>
+          <th>Variante</th>
+          <th>Catégorie</th>
+          <th>Tissu</th>
+          <th>Prix vente</th>
+          <th>Devise</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Niveau</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in variantes %}
+        {% with v=item.variante stock=item.stock %}
+        <tr class="{{ stock.classe_stock }}">
+          <td>{{ v.code_variante }}</td>
+          <td>{{ v.label }}</td>
+          <td>{{ v.categorie|default:"—" }}</td>
+          <td>{{ v.type_tissu|default:"—" }}</td>
+          <td>{{ v.prix_unitaire }}</td>
+          <td>{{ v.get_devise_display }}</td>
+          <td>{{ stock.quantite|default:"0" }}</td>
+          <td>{{ stock.seuil_alerte|default:"0" }}</td>
+          <td>{{ stock.niveau_stock }}</td>
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr><td colspan="9">Aucune variante. Créez-en une via l'entrée en stock.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

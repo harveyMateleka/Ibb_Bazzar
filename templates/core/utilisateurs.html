@@ -1,0 +1,64 @@
+{% extends "core/base.html" %}
+
+{% block app_title %}Utilisateurs{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Administration</p>
+    <h1>Utilisateurs</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="get" class="filters">
+    <input type="search" name="q" value="{{ recherche }}" class="input" placeholder="Rechercher (nom, login, e-mail, téléphone…)">
+    <button type="submit" class="btn btn-ghost">Rechercher</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Utilisateur</th>
+          <th>Identifiant</th>
+          <th>Téléphone</th>
+          <th>Fonction</th>
+          <th>Rôles</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in utilisateurs %}
+        <tr>
+          <td>{{ u.get_full_name|default:u.username }}</td>
+          <td>{{ u.username }}</td>
+          <td>{{ u.telephone|default:"—" }}</td>
+          <td>{{ u.fonction|default:"—" }}</td>
+          <td>
+            {% for role in u.roles.all %}{{ role.nom }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+          </td>
+          <td>
+            {% if u.is_active %}
+              <span class="statut statut-ok">Actif</span>
+            {% else %}
+              <span class="statut statut-stop">Désactivé</span>
+            {% endif %}
+          </td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'core:utilisateur_detail' u.pk %}">Profil</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">Aucun utilisateur.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

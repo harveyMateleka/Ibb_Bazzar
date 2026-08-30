@@ -1,0 +1,573 @@
+Voici le prompt proprement structuré :
+
+PROMPT — HARMONISATION UI DES 3 MODULES AVEC L'INTERFACE APPROVISIONNEMENT
+Contexte
+
+L'application possède déjà un module Approvisionnement dont l'interface frontend est actuellement la référence visuelle principale de l'application.
+
+Je fournis une capture d'écran de cette interface.
+
+Cette interface doit servir de référence stricte pour la conception des trois nouveaux modules suivants :
+
+Gestion des utilisateurs
+Gestion de la boutique
+Gestion des immobilisations
+
+Le frontend existe déjà et doit être adapté/complété à partir de cette logique.
+
+1. RÈGLE PRINCIPALE : CONSERVER EXACTEMENT LE DESIGN EXISTANT
+
+Les trois modules doivent reprendre le même langage visuel que le module Approvisionnement.
+
+Il ne faut PAS créer trois nouveaux designs différents.
+
+Il ne faut PAS introduire :
+
+une nouvelle palette de couleurs ;
+un nouveau style de boutons ;
+de nouvelles cartes ;
+une nouvelle typographie ;
+une nouvelle structure de dashboard ;
+un nouveau style de tableaux ;
+un nouveau système de navigation ;
+un nouveau thème graphique.
+
+L'objectif est que l'utilisateur ait l'impression d'utiliser une seule et même application, et non quatre applications différentes.
+
+Référence obligatoire
+
+Utiliser l'interface Approvisionnement fournie comme référence visuelle maître.
+
+Reproduire notamment :
+
+la structure générale de la page ;
+le header ;
+la navigation principale ;
+la navigation secondaire ;
+les espacements ;
+la typographie ;
+les tailles de titres ;
+les couleurs ;
+les bordures ;
+les cartes ;
+les boutons ;
+les tableaux ;
+les badges ;
+les états ;
+les alignements ;
+les marges ;
+les proportions ;
+les interactions ;
+les états vides ;
+les messages ;
+le comportement responsive.
+2. CE QUI DOIT ÊTRE IDENTIQUE
+
+Pour les trois modules, conserver le même système visuel que l'Approvisionnement.
+
+Header
+
+Même :
+
+hauteur ;
+positionnement ;
+logo ;
+navigation ;
+typographie ;
+espacements ;
+style des liens ;
+état actif ;
+bouton de déconnexion.
+Navigation secondaire
+
+Reprendre le même principe que :
+
+TABLEAU DE BORD
+ENTRÉE STOCK
+SORTIE STOCK
+HISTORIQUE
+INVENTAIRE
+
+Mais adapter les intitulés au module concerné.
+
+Exemple Boutique :
+
+TABLEAU DE BORD
+ARTICLES
+STOCK
+VENTES
+INVENTAIRE
+HISTORIQUE
+
+Exemple Immobilisations :
+
+TABLEAU DE BORD
+BIENS
+AFFECTATIONS
+DÉPLACEMENTS
+ÉTATS
+HISTORIQUE
+
+Exemple Utilisateurs :
+
+TABLEAU DE BORD
+UTILISATEURS
+RÔLES
+PERMISSIONS
+SUCCURSALES
+AUDIT
+
+Le principe visuel doit rester identique.
+
+3. STRUCTURE DES DASHBOARDS
+
+Le dashboard Approvisionnement utilise une structure claire :
+
+Titre du module
+        ↓
+Boutons d'action
+        ↓
+Cartes statistiques
+        ↓
+Section principale
+        ↓
+Tableau
+        ↓
+Dernières opérations / historique
+
+Les trois nouveaux modules doivent reprendre exactement cette logique de présentation.
+
+Cependant, les informations affichées doivent rester propres à chaque module.
+
+4. MODULE GESTION DES UTILISATEURS
+
+Créer une interface visuellement identique à Approvisionnement, mais dédiée aux utilisateurs.
+
+Dashboard
+
+Exemple de structure :
+
+GESTION
+UTILISATEURS
+
+
+[NOUVEL UTILISATEUR]
+
+
+┌──────────────┐
+│ Utilisateurs │
+│      0       │
+└──────────────┘
+
+
+┌──────────────┐
+│ Actifs       │
+│      0       │
+└──────────────┘
+
+
+┌──────────────┐
+│ Inactifs     │
+│      0       │
+└──────────────┘
+
+Puis :
+
+UTILISATEURS
+
+
+Nom | Identifiant | Rôle | Succursale | Domaine | Statut | Dernière connexion
+
+Et une section :
+
+DERNIÈRES ACTIVITÉS
+
+avec :
+
+Date | Utilisateur | Action | Module | Succursale
+Sous-modules
+
+Prévoir les interfaces :
+
+Utilisateurs
+Profils
+Rôles
+Permissions
+Succursales
+Domaines d'activité
+Audit
+
+Tout doit reprendre le même style que l'Approvisionnement.
+
+5. MODULE GESTION DE LA BOUTIQUE
+
+La Boutique doit avoir son propre contenu métier, mais utiliser exactement le même design.
+
+Dashboard
+
+Structure similaire :
+
+GESTION
+BOUTIQUE
+
+
+[NOUVELLE VENTE] [NOUVELLE ENTRÉE]
+
+
+┌──────────────┐
+│ Articles     │
+│      0       │
+└──────────────┘
+
+
+┌──────────────┐
+│ Stock total  │
+│      0       │
+└──────────────┘
+
+
+┌──────────────┐
+│ Ventes jour  │
+│      0       │
+└──────────────┘
+
+Puis :
+
+ÉTAT DES STOCKS
+
+Tableau adapté aux articles de boutique :
+
+CODE
+DÉSIGNATION
+TAILLE
+COULEUR
+CATÉGORIE
+PRIX
+STOCK
+SEUIL
+NIVEAU
+
+Puis :
+
+DERNIÈRES VENTES
+
+avec :
+
+DATE
+N°
+CLIENT
+TOTAL
+PAIEMENT
+UTILISATEUR
+6. MODULE GESTION DES IMMOBILISATIONS
+
+Même principe.
+
+Dashboard
+GESTION
+IMMOBILISATIONS
+
+
+[NOUVEAU BIEN] [NOUVELLE AFFECTATION]
+
+
+┌──────────────┐
+│ Biens        │
+│      0       │
+└──────────────┘
+
+
+┌──────────────┐
+│ En service   │
+│      0       │
+└──────────────┘
+
+
+┌──────────────┐
+│ En réparation │
+│      0       │
+└──────────────┘
+
+Puis :
+
+LISTE DES IMMOBILISATIONS
+
+Tableau :
+
+CODE
+DÉSIGNATION
+CATÉGORIE
+ÉTAT
+EMPLACEMENT
+AFFECTÉ À
+VALEUR
+STATUT
+
+Puis :
+
+DERNIERS MOUVEMENTS
+
+avec :
+
+DATE
+TYPE
+BIEN
+ORIGINE
+DESTINATION
+UTILISATEUR
+7. ATTENTION : MÊME DESIGN ≠ MÊMES DONNÉES
+
+Il faut respecter une règle fondamentale :
+
+Le design est commun, mais les données, champs, tableaux, formulaires et fonctionnalités restent propres à chaque module.
+
+Ne pas copier les champs de l'Approvisionnement dans les trois modules.
+
+Par exemple :
+
+Boutique
+
+doit gérer :
+
+articles ;
+variantes ;
+tailles ;
+couleurs ;
+prix ;
+ventes ;
+stock ;
+inventaires ;
+etc.
+Immobilisations
+
+doit gérer :
+
+biens ;
+numéro d'identification ;
+numéro de série ;
+valeur ;
+état ;
+affectation ;
+emplacement ;
+déplacement ;
+casse ;
+réparation ;
+déclassement ;
+historique.
+Utilisateurs
+
+doit gérer :
+
+utilisateurs ;
+profils ;
+rôles ;
+permissions ;
+activation ;
+désactivation ;
+succursales ;
+domaines ;
+audit.
+
+Le design est commun, les données sont différentes.
+
+8. NE PAS CRÉER UN NOUVEAU DESIGN SYSTEM
+
+Avant de développer, analyser les composants déjà utilisés dans l'interface Approvisionnement.
+
+Identifier et réutiliser :
+
+composants de navigation ;
+boutons ;
+cartes statistiques ;
+tableaux ;
+formulaires ;
+modales ;
+badges ;
+filtres ;
+pagination ;
+messages ;
+états vides ;
+notifications ;
+composants responsive.
+
+Si ces composants existent déjà dans le projet frontend, les réutiliser plutôt que les recréer.
+
+Si un composant doit être amélioré, modifier le composant commun afin que les améliorations profitent aux différents modules.
+
+9. CONSERVER LA COHÉRENCE DES ACTIONS
+
+Les boutons principaux doivent conserver le même style que :
+
+NOUVELLE ENTRÉE
+NOUVELLE SORTIE
+
+dans Approvisionnement.
+
+Adapter uniquement leur libellé et leur action.
+
+Exemples :
+
+NOUVEL UTILISATEUR
+NOUVELLE VENTE
+NOUVELLE ENTRÉE
+NOUVEAU BIEN
+NOUVELLE AFFECTATION
+
+Les boutons secondaires doivent également conserver le même style.
+
+10. FILTRAGE PAR UTILISATEUR / SUCCURSALE / DOMAINE
+
+Le frontend doit respecter la logique backend de centralisation.
+
+Les données affichées doivent dépendre de :
+
+UTILISATEUR
+     ↓
+RÔLE
+     ↓
+PERMISSIONS
+     ↓
+SUCCURSALE
+     ↓
+DOMAINE D'ACTIVITÉ
+     ↓
+DONNÉES ACCESSIBLES
+
+Exemple :
+
+Un utilisateur rattaché à :
+
+Succursale : Kinshasa
+Domaine : Boutique
+
+doit voir les données de la Boutique correspondant à son périmètre.
+
+Il ne doit pas voir automatiquement :
+
+Restaurant
+Immobilisations
+Autres succursales
+
+s'il n'en possède pas les droits.
+
+Le frontend ne doit toutefois pas être considéré comme le mécanisme de sécurité.
+
+Le backend reste responsable du contrôle d'accès.
+
+11. APPROVISIONNEMENT RESTE TRANSVERSAL
+
+Ne pas transformer Approvisionnement en domaine d'activité.
+
+Approvisionnement est un module fonctionnel transversal.
+
+Il peut être utilisé par différents domaines :
+
+Restaurant
+Boutique
+Immobilisations
+Autres domaines futurs
+
+L'interface d'Approvisionnement reste donc cohérente avec cette logique.
+
+Les données affichées doivent être filtrées selon :
+
+Succursale
++
+Domaine
++
+Permissions
+
+Ainsi, un utilisateur Boutique peut utiliser l'Approvisionnement tout en voyant uniquement les opérations correspondant à son périmètre.
+
+12. NE PAS TOUCHER INUTILEMENT À L'INTERFACE APPROVISIONNEMENT
+
+L'interface actuelle d'Approvisionnement est la référence visuelle validée.
+
+Ne pas la modifier simplement pour faire fonctionner les nouveaux modules.
+
+Si une amélioration est nécessaire, vérifier d'abord qu'elle ne dégrade pas l'interface existante.
+
+Les trois nouveaux modules doivent s'adapter au design Approvisionnement, et non l'inverse.
+
+13. RESPONSIVE DESIGN
+
+Les trois modules doivent également reprendre le comportement responsive de l'application existante.
+
+Vérifier :
+
+desktop ;
+tablette ;
+mobile ;
+tableaux ;
+navigation ;
+boutons ;
+cartes ;
+formulaires ;
+modales.
+
+Ne pas introduire un comportement responsive différent selon les modules.
+
+14. RÈGLE DE DÉVELOPPEMENT
+
+Avant de modifier ou créer une interface :
+
+analyser l'interface Approvisionnement existante ;
+identifier les composants réutilisables ;
+identifier les styles existants ;
+réutiliser les composants ;
+adapter uniquement les données et fonctionnalités ;
+vérifier visuellement la cohérence avec Approvisionnement.
+15. CRITÈRE FINAL DE VALIDATION
+
+Lorsque les trois modules seront terminés, un utilisateur doit pouvoir passer de :
+
+APPROVISIONNEMENT
+
+à :
+
+BOUTIQUE
+
+puis :
+
+IMMOBILISATIONS
+
+puis :
+
+UTILISATEURS
+
+sans avoir l'impression de changer d'application.
+
+La seule chose qui doit changer est :
+
+le contenu ;
+les données ;
+les champs ;
+les fonctionnalités ;
+les tableaux ;
+les actions métier.
+
+Le langage visuel doit rester identique.
+
+CONTRAINTE FINALE
+
+NE PAS INVENTER UN NOUVEAU DESIGN.
+
+NE PAS UTILISER UN AUTRE TEMPLATE.
+
+NE PAS CHANGER DE PALETTE.
+
+NE PAS CRÉER UN STYLE DE BOUTONS DIFFÉRENT.
+
+NE PAS CRÉER UNE NOUVELLE STRUCTURE DE DASHBOARD.
+
+Prendre l'interface Approvisionnement fournie comme référence visuelle absolue et construire les trois modules autour du même système UI.
+
+Même application → même design system → données et fonctionnalités propres à chaque module.
+
+Le backend doit rester la source de vérité pour les permissions, le filtrage par succursale/domaine et la sécurité.
+
+NB: à la fin liste moi les url de la boutique, explique moi un scénario complet d'utilisation d'une expérirnce utilisateur en commença a faire un bon d'approvisionement et sa validation, entrer stock des article de la boutique , ventes ,les historique ,affichage stock ...
+
+les succurssal et le domaine d'activité doit etre rempli  automatiquement dans le formulaire selon l'utilisateur connecté et ce 
+champs doit etre en readonly pour ne pas modifier les information de l'utilisateur qui pose l'action en fin d'evité les incoherence
+donné la possibilité de modifier la quantité le fournissuer  dans la validation de bon d'approvisionement , chaque quantité et le foournisseur peuvent etre modifier 

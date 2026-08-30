@@ -1,0 +1,60 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Stock</p>
+    <h1>État des stocks</h1>
+  </div>
+  {% if perms.boutique.adjust_stock %}
+  <a class="btn btn-primary" href="{% url 'boutique:entree' %}">Nouvelle entrée</a>
+  {% endif %}
+</div>
+
+<form method="get" class="filters">
+  <select class="input" name="etat">
+    <option value="">Tous les états</option>
+    <option value="rupture" {% if etat == 'rupture' %}selected{% endif %}>Rupture</option>
+    <option value="alerte" {% if etat == 'alerte' %}selected{% endif %}>Seuil atteint</option>
+    <option value="vigilance" {% if etat == 'vigilance' %}selected{% endif %}>Vigilance</option>
+    <option value="disponible" {% if etat == 'disponible' %}selected{% endif %}>Disponible</option>
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Variante</th>
+          <th>Catégorie</th>
+          <th>Prix</th>
+          <th>Stock</th>
+          <th>Seuil</th>
+          <th>Niveau</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock in stocks %}
+        <tr class="{{ stock.classe_stock }}">
+          <td>{{ stock.variante.article.code }}</td>
+          <td>{{ stock.variante.article.designation }}</td>
+          <td>{{ stock.variante.label }}</td>
+          <td>{{ stock.variante.categorie }}</td>
+          <td>{{ stock.variante.prix_unitaire }}</td>
+          <td>{{ stock.quantite }}</td>
+          <td>{{ stock.seuil_alerte }}</td>
+          <td>{{ stock.niveau_stock }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8">Aucun stock dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

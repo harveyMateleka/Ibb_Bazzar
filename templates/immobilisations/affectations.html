@@ -1,0 +1,44 @@
+{% extends "immobilisations/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Affectations</p>
+    <h1>Historique des affectations</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Bien</th>
+          <th>Succursale</th>
+          <th>Service</th>
+          <th>Emplacement</th>
+          <th>Par</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in affectations %}
+        <tr>
+          <td>{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+          <td>{{ a.immobilisation.code }}</td>
+          <td>{{ a.succursale }}</td>
+          <td>{{ a.service|default:"—" }}</td>
+          <td>{{ a.emplacement|default:"—" }}</td>
+          <td>{{ a.par }}</td>
+          <td>{% if a.actif %}Active{% else %}Clôturée{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucune affectation.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

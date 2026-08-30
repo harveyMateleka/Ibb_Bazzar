@@ -1,0 +1,49 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Inventaires</p>
+    <h1>Inventaires boutique</h1>
+  </div>
+  {% if perms.boutique.adjust_stock %}
+  <a class="btn btn-primary" href="{% url 'boutique:inventaire_nouveau' %}">Nouvel inventaire</a>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>N°</th>
+          <th>Date</th>
+          <th>Succursale</th>
+          <th>Périmètre</th>
+          <th>Lignes</th>
+          <th>Statut</th>
+          <th class="no-sort"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in inventaires %}
+        <tr>
+          <td>{{ i.numero }}</td>
+          <td>{{ i.date_inventaire|date:"d/m/Y" }}</td>
+          <td>{{ i.succursale }}</td>
+          <td>{{ i.get_portee_display }}</td>
+          <td>{{ i.nb_lignes }}</td>
+          <td>{{ i.get_statut_display }}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'boutique:inventaire_detail' i.pk %}">Ouvrir</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucun inventaire.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

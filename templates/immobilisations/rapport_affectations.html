@@ -1,0 +1,64 @@
+{% extends "immobilisations/base.html" %}
+
+{% block title %}Rapport des affectations{% endblock %}
+
+{% block app_content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'immobilisations:rapports' %}">← Rapports</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <input class="input" type="date" name="date_debut" value="{{ date_debut }}" title="Date début">
+  <input class="input" type="date" name="date_fin" value="{{ date_fin }}" title="Date fin">
+  <select class="input" name="statut">
+    {% for value, label in statuts %}
+    <option value="{{ value }}" {% if statut == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>Rapport des affectations</h1>
+    <p class="bon-meta">
+      Période : du <strong>{{ date_debut|default:"—" }}</strong> au <strong>{{ date_fin|default:"—" }}</strong>
+    </p>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+  </div>
+
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr><th>Date</th><th>Bien</th><th>Succursale</th><th>Service</th><th>Emplacement</th><th>Par</th><th>Statut</th></tr>
+        </thead>
+        <tbody>
+          {% for a in affectations %}
+          <tr>
+            <td>{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+            <td>{{ a.immobilisation.code }}</td>
+            <td>{{ a.succursale }}</td>
+            <td>{{ a.service|default:"—" }}</td>
+            <td>{{ a.emplacement|default:"—" }}</td>
+            <td>{{ a.par }}</td>
+            <td>{% if a.actif %}Active{% else %}Clôturée{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7">Aucune affectation.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bon-sign">
+    <p>Nombre d'affectations : <strong>{{ nb_affectations }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

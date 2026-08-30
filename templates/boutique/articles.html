@@ -1,0 +1,53 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Stock</p>
+    <h1>Articles boutique</h1>
+  </div>
+  <div class="actions">
+    {% if perms.boutique.adjust_stock %}
+    <a class="btn btn-primary" href="{% url 'boutique:article_nouveau' %}">Nouvel arrivage</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Désignation</th>
+          <th>Nb variantes</th>
+          <th>Variantes</th>
+          <th>Stock total</th>
+          <th class="no-sort"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in articles %}
+        {% with a=item.article %}
+        <tr>
+          <td>{{ a.code }}</td>
+          <td>{{ a.designation }}</td>
+          <td>{{ item.article.nb_variantes }}</td>
+          <td>
+            {% for label in item.variantes %}{{ label }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+          </td>
+          <td>{{ a.stock_total }}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'boutique:article_detail' a.pk %}">Voir les variantes</a>
+          </td>
+        </tr>
+        {% endwith %}
+        {% empty %}
+        <tr><td colspan="6">Aucun article boutique dans votre périmètre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

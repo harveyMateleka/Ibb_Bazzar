@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Ticket {{ vente.numero }}</title>
+  <style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      width: 80mm;
+      margin: 0 auto;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #000;
+    }
+    .ticket { padding: 2mm; }
+    .center { text-align: center; }
+    .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+    /* table-layout fixed + largeurs explicites : les montants ne débordent pas
+       du ticket 80 mm, le libellé article se coupe proprement sur plusieurs lignes. */
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    td, th { vertical-align: top; padding: 0; }
+    th { font-size: 10px; }
+    .num { text-align: right; white-space: nowrap; font-size: 10px; }
+    .libelle { padding-right: 1mm; word-wrap: break-word; }
+    .sous-ligne { font-size: 10px; word-wrap: break-word; }
+    .total td { font-weight: bold; }
+    .toolbar { margin-top: 6mm; }
+    .toolbar a, .toolbar button {
+      font-family: inherit; font-size: 12px;
+      border: 1px solid #000; background: #fff;
+      padding: 4px 8px; cursor: pointer;
+      text-decoration: none; color: #000;
+    }
+    @media print {
+      .toolbar { display: none !important; }
+      /* Le document imprimé reste un ticket de 80 mm (jamais élargi en A4). */
+      html, body { width: 80mm; margin: 0; }
+    }
+  </style>
+</head>
+<body onload="window.print()">
+  <div class="ticket">
+    <div class="center">
+      <strong>IBBS BAZAR</strong><br>
+      {{ vente.succursale }}
+    </div>
+    <div class="sep"></div>
+
+    <div>N° VENTE : {{ vente.numero }}</div>
+    <div>DATE : {{ vente.date_vente|date:"d/m/Y H:i" }}</div>
+    <div>UTILISATEUR : {{ vente.utilisateur }}</div>
+    {% if vente.client %}<div>CLIENT : {{ vente.client }}</div>{% endif %}
+    <div>PAIEMENT : {{ vente.get_type_paiement_display }}</div>
+
+    <div class="sep"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>ARTICLE</th>
+          <th class="num" style="width:8mm">QTÉ</th>
+          <th class="num" style="width:17mm">PRIX</th>
+          <th class="num" style="width:17mm">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in lignes %}
+        <tr>
+          <td class="libelle">
+            {{ ligne.variante.article.code }}
+            {% if ligne.variante.label %}<br><span class="sous-ligne">{{ ligne.variante.label }}</span>{% endif %}
+          </td>
+          <td class="num">{{ ligne.quantite }}</td>
+          <td class="num">{{ ligne.prix_retenu }}</td>
+          <td class="num">{{ ligne.total }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="sep"></div>
+    <table>
+      <tr><td class="libelle">SOUS-TOTAL</td><td class="num">{{ vente.sous_total }}</td></tr>
+      <tr><td class="libelle">REMISE</td><td class="num">{{ vente.remise }}</td></tr>
+      <tr class="total"><td class="libelle">TOTAL</td><td class="num">{{ vente.total }}</td></tr>
+      <tr><td class="libelle">MONTANT REÇU</td><td class="num">{{ vente.montant_recu }}</td></tr>
+      <tr><td class="libelle">MONNAIE</td><td class="num">{{ vente.monnaie }}</td></tr>
+    </table>
+
+    <div class="sep"></div>
+    <div class="center">MERCI POUR VOTRE ACHAT</div>
+
+    <div class="toolbar">
+      <button onclick="window.print()">Imprimer</button>
+      <a href="{% url 'boutique:vente_detail' vente.pk %}">← Retour</a>
+    </div>
+  </div>
+</body>
+</html>

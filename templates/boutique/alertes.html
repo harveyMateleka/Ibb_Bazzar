@@ -1,0 +1,40 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Boutique</p>
+    <h1>Alertes de stock</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table data-datatable>
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Type</th>
+          <th>Quantité</th>
+          <th>Seuil</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alerte in alertes %}
+        <tr class="{{ alerte.classe_stock }}">
+          <td>{{ alerte.variante.article.code }} — {{ alerte.variante.article.designation }}</td>
+          <td>{{ alerte.niveau_stock }}</td>
+          <td>{{ alerte.quantite_actuelle }}</td>
+          <td>{{ alerte.seuil }}</td>
+          <td>{{ alerte.date_creation|date:"d/m/Y H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucune alerte active.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "boutique/_pagination.html" %}
+</section>
+{% endblock %}

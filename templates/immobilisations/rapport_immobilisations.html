@@ -1,0 +1,80 @@
+{% extends "immobilisations/base.html" %}
+
+{% block title %}Rapport des immobilisations{% endblock %}
+
+{% block app_content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'immobilisations:rapports' %}">← Rapports</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Code, désignation, n° série...">
+  <select class="input" name="categorie">
+    <option value="">Toutes les catégories</option>
+    {% for c in categories %}
+    <option value="{{ c.pk }}" {% if categorie_id == c.pk|stringformat:"s" %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="etat">
+    <option value="">Tous les états</option>
+    {% for value, label in etats %}
+    <option value="{{ value }}" {% if etat == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="statut">
+    <option value="">Tous les statuts</option>
+    {% for value, label in statuts %}
+    <option value="{{ value }}" {% if statut == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="succursale">
+    <option value="">Toutes les succursales</option>
+    {% for s in succursales %}
+    <option value="{{ s.pk }}" {% if succursale_id == s.pk|stringformat:"s" %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>Rapport des immobilisations</h1>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+  </div>
+
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>État</th><th>Statut</th><th>Succursale</th><th>Emplacement</th><th>Acquis le</th></tr>
+        </thead>
+        <tbody>
+          {% for b in biens %}
+          <tr>
+            <td>{{ b.code }}</td>
+            <td>{{ b.designation }}</td>
+            <td>{{ b.categorie|default:"—" }}</td>
+            <td>{{ b.get_etat_physique_display }}</td>
+            <td>{{ b.get_statut_administratif_display }}</td>
+            <td>{{ b.succursale }}</td>
+            <td>{{ b.emplacement|default:"—" }}</td>
+            <td>{{ b.date_acquisition|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8">Aucun bien.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bon-sign">
+    <p>Nombre de biens : <strong>{{ nb_biens }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

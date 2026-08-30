@@ -1,0 +1,112 @@
+{% extends "boutique/base.html" %}
+
+{% block title %}Rapport des ventes{% endblock %}
+
+{% block app_content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:rapports' %}">← Rapports</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <input type="hidden" name="mode" value="{{ mode }}">
+  {% if mode == 'jour' %}
+  <input class="input" type="date" name="jour" value="{{ jour }}" title="Jour">
+  {% elif mode == 'mois' %}
+  <select class="input" name="mois">
+    {% for m in mois_list %}
+    <option value="{{ m }}" {% if mois == m|stringformat:"s" %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+  <input class="input" type="number" name="annee" value="{{ annee }}" min="2000" max="2100" title="Année" style="width:90px">
+  {% else %}
+  <input class="input" type="date" name="date_debut" value="{{ date_debut }}" title="Date début">
+  <input class="input" type="date" name="date_fin" value="{{ date_fin }}" title="Date fin">
+  <label><input type="checkbox" name="toutes" value="1"> Toutes</label>
+  {% endif %}
+  <select class="input" name="succursale">
+    <option value="">Toutes les succursales</option>
+    {% for s in succursales %}
+    <option value="{{ s.pk }}" {% if succursale_id == s.pk|stringformat:"s" %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="statut">
+    <option value="">Tous les statuts</option>
+    {% for value, label in statuts %}
+    <option value="{{ value }}" {% if statut == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="paiement">
+    <option value="">Tous les paiements</option>
+    {% for value, label in paiements %}
+    <option value="{{ value }}" {% if paiement == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="utilisateur">
+    <option value="">Tous les utilisateurs</option>
+    {% for u in utilisateurs %}
+    <option value="{{ u.pk }}" {% if utilisateur_id == u.pk|stringformat:"s" %}selected{% endif %}>{{ u }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>Rapport des ventes — Boutique</h1>
+    <p class="bon-meta">
+      Période : du <strong>{{ date_debut|default:"—" }}</strong> au <strong>{{ date_fin|default:"—" }}</strong>
+    </p>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+  </div>
+
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr>
+            <th>N°</th>
+            <th>Date</th>
+            <th>Client</th>
+            <th>Paiement</th>
+            <th>Utilisateur</th>
+            <th>Remise</th>
+            <th>Total</th>
+            <th>Reçu</th>
+            <th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in ventes %}
+          <tr>
+            <td>{{ v.numero }}</td>
+            <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
+            <td>{{ v.client|default:"—" }}</td>
+            <td>{{ v.get_type_paiement_display }}</td>
+            <td>{{ v.utilisateur }}</td>
+            <td>{{ v.remise }}</td>
+            <td>{{ v.total }}</td>
+            <td>{{ v.montant_recu }}</td>
+            <td>{{ v.get_statut_display }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9">Aucune vente sur cette période.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bon-sign">
+    <p>Nombre de ventes : <strong>{{ nb_ventes }}</strong></p>
+    <p>Total des ventes : <strong>{{ total_montant }}</strong></p>
+    <p>Total des remises : <strong>{{ total_remises }}</strong></p>
+    <p>Total encaissé : <strong>{{ total_recu }}</strong></p>
+    <p>Monnaie : <strong>{{ monnaie }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

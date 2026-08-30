@@ -1,0 +1,34 @@
+{% extends "boutique/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Rapports</p>
+    <h1>Centre de rapports — Boutique</h1>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>Ventes</h2>
+  <ul class="rapport-list">
+    <li><a href="{% url 'boutique:ventes_report' %}">Ventes — général</a></li>
+    <li><a href="{% url 'boutique:ventes_report' %}?mode=jour">Ventes journalières</a></li>
+    <li><a href="{% url 'boutique:ventes_report' %}?mode=periode">Ventes périodiques</a></li>
+    <li><a href="{% url 'boutique:ventes_report' %}?mode=mois">Ventes mensuelles</a></li>
+  </ul>
+
+  <h2>Articles &amp; Variantes</h2>
+  <ul class="rapport-list">
+    <li><a href="{% url 'boutique:rapport_articles' %}">Articles</a></li>
+    <li><a href="{% url 'boutique:rapport_variantes' %}">Variantes</a></li>
+    <li><a href="{% url 'boutique:rapport_variantes_crees' %}">Variantes créées sur une période</a></li>
+  </ul>
+
+  <h2>Stock &amp; Mouvements</h2>
+  <ul class="rapport-list">
+    <li><a href="{% url 'boutique:rapport_stock' %}">État du stock</a></li>
+    <li><a href="{% url 'boutique:mouvements_report' %}">Mouvements de stock</a></li>
+    <li><a href="{% url 'boutique:rapport_inventaires' %}">Inventaires</a></li>
+  </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}{% block app_title %}Boutique{% endblock %} · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <nav class="subnav" aria-label="Boutique">
+      <a href="{% url 'boutique:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="is-active"{% endif %}>Tableau de bord</a>
+      <a href="{% url 'boutique:articles' %}" {% if 'article' in request.resolver_match.url_name %}class="is-active"{% endif %}>Articles</a>
+      <a href="{% url 'boutique:stocks' %}" {% if request.resolver_match.url_name == 'stocks' or request.resolver_match.url_name == 'entree' %}class="is-active"{% endif %}>Stock</a>
+      {% if perms.boutique.validate_entree %}
+      <a href="{% url 'boutique:entrees_validation' %}" {% if 'validation' in request.resolver_match.url_name %}class="is-active"{% endif %}>Entrées à valider</a>
+      {% endif %}
+      <a href="{% url 'boutique:ventes' %}" {% if 'vente' in request.resolver_match.url_name and request.resolver_match.url_name != 'ventes_a_valider' %}class="is-active"{% endif %}>Ventes</a>
+      {% if perms.boutique.validate_vente %}
+      <a href="{% url 'boutique:ventes_a_valider' %}" {% if request.resolver_match.url_name == 'ventes_a_valider' %}class="is-active"{% endif %}>Ventes à valider</a>
+      {% endif %}
+      <a href="{% url 'boutique:inventaires' %}" {% if 'inventaire' in request.resolver_match.url_name %}class="is-active"{% endif %}>Inventaires</a>
+      <a href="{% url 'boutique:mouvements' %}" {% if request.resolver_match.url_name == 'mouvements' %}class="is-active"{% endif %}>Historique</a>
+      <a href="{% url 'boutique:alertes' %}" {% if request.resolver_match.url_name == 'alertes' %}class="is-active"{% endif %}>Alertes</a>
+      <a href="{% url 'boutique:rapports' %}" {% if 'rapport' in request.resolver_match.url_name %}class="is-active"{% endif %}>Rapports</a>
+    </nav>
+    {% block app_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}

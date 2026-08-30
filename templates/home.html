@@ -18,6 +18,8 @@
         <a class="btn btn-primary" href="{% url 'restauration:dashboard' %}">Ouvrir la restauration</a>
         <a class="btn btn-ghost" href="{% url 'approvisionnement:dashboard' %}">Approvisionnement</a>
         <a class="btn btn-ghost" href="{% url 'facturation:journal' %}">Facturation</a>
+        <a class="btn btn-ghost" href="{% url 'boutique:dashboard' %}">Boutique</a>
+        <a class="btn btn-ghost" href="{% url 'immobilisations:dashboard' %}">Immobilisations</a>
       </div>
     </div>
     <img class="hero-mark" src="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}" alt="{{ etablissement.nom_societe|default:'IBBS BAZAR' }}">
@@ -95,16 +97,42 @@
 
 <section class="section" id="boutique">
   <div class="section-inner">
+    <p class="eyebrow">Module</p>
     <h2>Boutique d'habillement</h2>
+    <p class="help">Articles, variantes, stock, ventes et inventaires sont gérés dans le module Boutique.</p>
     <div class="cards">
       <article class="card">
-        <h3>Collections</h3>
-        <p>Pièces sélectionnées pour un style net, aligné sur l'identité IBBS BAZAR.</p>
+        <h3>Stock et variantes</h3>
+        <p>Chaque pièce a ses tailles et couleurs. L’entrée en stock crée la variante, la vente la décrémente.</p>
       </article>
       <article class="card">
-        <h3>Essentiels</h3>
-        <p>Noir, blanc et touches bordeaux : les couleurs du logo, portées au quotidien.</p>
+        <h3>Ventes</h3>
+        <p>Panier, prix retenu, validation responsable et ticket d’encaissement.</p>
       </article>
+    </div>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <a class="btn btn-primary" href="{% url 'boutique:dashboard' %}">Ouvrir la boutique</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="immobilisations">
+  <div class="section-inner">
+    <p class="eyebrow">Module</p>
+    <h2>Immobilisations</h2>
+    <p class="help">Suivi des biens, affectations, déplacements, états et déclassements.</p>
+    <div class="cards">
+      <article class="card">
+        <h3>Parc</h3>
+        <p>Enregistrez les biens, validez les nouvelles fiches et suivez leur affectation.</p>
+      </article>
+      <article class="card">
+        <h3>Mouvements</h3>
+        <p>Déplacements, réparations, casses et rapports d’état du parc.</p>
+      </article>
+    </div>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <a class="btn btn-primary" href="{% url 'immobilisations:dashboard' %}">Ouvrir les immobilisations</a>
     </div>
   </div>
 </section>

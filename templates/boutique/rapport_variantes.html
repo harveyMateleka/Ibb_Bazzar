@@ -1,0 +1,87 @@
+{% extends "boutique/base.html" %}
+
+{% block title %}Rapport des variantes{% endblock %}
+
+{% block app_content %}
+<style>@media print { @page { margin: 0; } .bon-doc.report-doc { padding: 15mm 12mm; } }</style>
+<div class="bon-doc no-print">
+  <div class="print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'boutique:rapports' %}">← Rapports</a>
+    <button class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Article, code variante, couleur...">
+  <select class="input" name="categorie">
+    <option value="">Toutes les catégories</option>
+    {% for c in categories %}
+    <option value="{{ c.pk }}" {% if categorie_id == c.pk|stringformat:"s" %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="tissu">
+    <option value="">Tous les tissus</option>
+    {% for t in tissus %}
+    <option value="{{ t.pk }}" {% if tissu_id == t.pk|stringformat:"s" %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="genre">
+    <option value="">Tous les genres</option>
+    {% for value, label in genres %}
+    <option value="{{ value }}" {% if genre == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select class="input" name="statut">
+    <option value="">Tous les statuts</option>
+    {% for value, label in statuts %}
+    <option value="{{ value }}" {% if statut == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrer</button>
+</form>
+
+<div class="bon-doc report-doc">
+  <div class="bon-head">
+    <h1>Rapport des variantes — Boutique</h1>
+    <p class="bon-meta">Généré le : {{ date_generation|date:"d/m/Y H:i" }} par {{ utilisateur }}</p>
+  </div>
+
+  <section class="panel">
+    <div class="table-wrap">
+      <table data-datatable>
+        <thead>
+          <tr>
+            <th>Article</th><th>Code variante</th><th>Variante</th><th>Catégorie</th><th>Tissu</th>
+            <th>Genre</th><th>Couleur</th><th>Taille</th><th>Stock</th><th>Prix</th><th>Prix min</th><th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in variantes %}
+          <tr>
+            <td>{{ v.article.code }}</td>
+            <td>{{ v.code_variante }}</td>
+            <td>{{ v.label }}</td>
+            <td>{{ v.categorie|default:"—" }}</td>
+            <td>{{ v.type_tissu|default:"—" }}</td>
+            <td>{{ v.get_genre_display|default:"—" }}</td>
+            <td>{{ v.couleur|default:"—" }}</td>
+            <td>{{ v.taille|default:"—" }}</td>
+            <td>{{ v.stock_qte }}</td>
+            <td>{{ v.prix_unitaire }}</td>
+            <td>{{ v.prix_minimum }}</td>
+            <td>{{ v.get_statut_display }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="12">Aucune variante.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="bon-sign">
+    <p>Nombre de variantes : <strong>{{ nb_variantes }}</strong></p>
+    <p>Signature / Cachet : ______________________________</p>
+  </div>
+</div>
+{% endblock %}

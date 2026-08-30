@@ -1,0 +1,85 @@
+{% extends "core/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Gestion</p>
+    <h1>Utilisateurs</h1>
+  </div>
+  <div class="actions">
+    {% if perms.core.create_utilisateur %}
+    <a class="btn btn-primary" href="{% url 'core:utilisateur_nouveau' %}">Nouvel utilisateur</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="stats">
+  <article class="stat"><span>Utilisateurs</span><strong>{{ nb_utilisateurs }}</strong></article>
+  <article class="stat"><span>Actifs</span><strong>{{ nb_actifs }}</strong></article>
+  <article class="stat"><span>Inactifs</span><strong>{{ nb_inactifs }}</strong></article>
+</div>
+
+<section class="panel">
+  <h2>Utilisateurs</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Identifiant</th>
+          <th>Rôle</th>
+          <th>Succursale</th>
+          <th>Domaine</th>
+          <th>Statut</th>
+          <th>Dernière connexion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in utilisateurs %}
+        <tr>
+          <td>{{ u.get_full_name|default:"—" }}</td>
+          <td>{{ u.username }}</td>
+          <td>{% for r in u.roles.all %}{{ r.nom }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+          <td>{% for aff in u.affectations_succursales.all %}{{ aff.succursale }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+          <td>{% for aff in u.affectations_succursales.all %}{{ aff.domaine }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+          <td>{% if u.is_active %}<span class="statut statut-ok">Actif</span>{% else %}<span class="statut statut-stop">Inactif</span>{% endif %}</td>
+          <td>{{ u.last_login|default:"Jamais" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7">Aucun utilisateur.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Dernières activités</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Utilisateur</th>
+          <th>Action</th>
+          <th>Module</th>
+          <th>Succursale</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for trace in derniere_activite %}
+        <tr>
+          <td>{{ trace.date|date:"d/m/Y H:i" }}</td>
+          <td>{{ trace.utilisateur|default:"—" }}</td>
+          <td>{{ trace.action }}</td>
+          <td>{{ trace.module }}</td>
+          <td>{{ trace.succursale|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">Aucune activité enregistrée.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
