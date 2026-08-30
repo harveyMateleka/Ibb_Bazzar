@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% block app_title %}Facturation{% endblock %} · {{ etablissement.sigle|default:"IBBS BAZAR" }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <nav class="subnav" aria-label="Facturation">
+      <a href="{% url 'facturation:journal' %}" {% if request.resolver_match.url_name == 'journal' %}class="is-active"{% endif %}>Journal de caisse</a>
+    </nav>
+    {% block app_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="{% static 'js/approvisionnement.js' %}"></script>
+{% endblock %}

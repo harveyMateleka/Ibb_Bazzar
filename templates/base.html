@@ -4,23 +4,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}IBBS BAZAR{% endblock %}</title>
+  <title>{% block title %}{{ etablissement.nom_societe|default:"IBBS BAZAR" }}{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/brand.css' %}">
-  <link rel="icon" href="{% static 'img/logo.png' %}">
+  <link rel="icon" href="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}">
   {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="site-header">
     <div class="header-inner">
       <a class="brand-lockup" href="{% url 'home' %}">
-        <img src="{% static 'img/logo.png' %}" alt="Logo IBBS BAZAR">
+        <img src="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}" alt="{{ etablissement.nom_societe|default:'IBBS BAZAR' }}">
       </a>
       <nav class="site-nav" aria-label="Navigation principale">
         <a href="{% url 'home' %}" class="{% if request.resolver_match.url_name == 'home' %}is-active{% endif %}">Accueil</a>
         <a href="{% url 'approvisionnement:dashboard' %}" class="{% if request.resolver_match.namespace == 'approvisionnement' %}is-active{% endif %}">Approvisionnement</a>
+        <a href="{% url 'restauration:dashboard' %}" class="{% if request.resolver_match.namespace == 'restauration' %}is-active{% endif %}">Restauration</a>
+        <a href="{% url 'facturation:journal' %}" class="{% if request.resolver_match.namespace == 'facturation' %}is-active{% endif %}">Facturation</a>
         {% if user.is_staff %}
         <a href="{% url 'admin:index' %}">Paramètres</a>
         {% endif %}
@@ -49,8 +51,8 @@
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <strong>IBBS BAZAR</strong>
-      <span>Gestion d'approvisionnement</span>
+      <strong>{{ etablissement.nom_societe|default:"IBBS BAZAR" }}</strong>
+      <span>{{ etablissement.sigle|default:"Restaurant" }}{% if etablissement.contact %} · {{ etablissement.contact }}{% endif %}</span>
     </div>
   </footer>
   {% block extra_js %}{% endblock %}

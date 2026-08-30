@@ -5,7 +5,7 @@ from django.forms import inlineformset_factory
 from django.utils import timezone
 
 from .models import (
-    Article,
+    Produit,
     BonApprovisionnement,
     BonSortie,
     Inventaire,
@@ -17,7 +17,7 @@ from .models import (
 )
 
 
-class ArticlePortionsSelect(forms.Select):
+class ProduitPortionsSelect(forms.Select):
     def __init__(self, *args, portions_map=None, **kwargs):
         self.portions_map = portions_map or {}
         super().__init__(*args, **kwargs)
@@ -77,63 +77,63 @@ class BonApprovisionnementForm(StyledFormMixin, forms.ModelForm):
 class LigneApprovisionnementForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = LigneApprovisionnement
-        fields = ['article', 'quantite']
+        fields = ['produit', 'quantite']
         widgets = {
             'quantite': forms.NumberInput(attrs={'min': 1}),
         }
 
-    def __init__(self, *args, articles_exclus=None, **kwargs):
+    def __init__(self, *args, produits_exclus=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['article'].required = False
+        self.fields['produit'].required = False
         self.fields['quantite'].required = False
-        self.fields['article'].widget.attrs['data-article-ligne'] = '1'
-        articles = Article.objects.all()
-        if articles_exclus:
-            articles = articles.exclude(pk__in=articles_exclus)
-        self.fields['article'].queryset = articles
+        self.fields['produit'].widget.attrs['data-produit-ligne'] = '1'
+        produits = Produit.objects.all()
+        if produits_exclus:
+            produits = produits.exclude(pk__in=produits_exclus)
+        self.fields['produit'].queryset = produits
 
     def clean(self):
         cleaned = super().clean()
-        article = cleaned.get('article')
+        produit = cleaned.get('produit')
         quantite = cleaned.get('quantite')
-        if article and not quantite:
+        if produit and not quantite:
             self.add_error('quantite', 'La quantité est obligatoire.')
-        if quantite and not article:
-            self.add_error('article', 'Sélectionnez un article.')
+        if quantite and not produit:
+            self.add_error('produit', 'Sélectionnez un produit.')
         return cleaned
 
     def clean_quantite(self):
         quantite = self.cleaned_data.get('quantite')
-        if self.cleaned_data.get('article') and (quantite is None or quantite <= 0):
+        if self.cleaned_data.get('produit') and (quantite is None or quantite <= 0):
             raise forms.ValidationError('La quantité doit être positive.')
         return quantite
 
 
 class BaseLigneApprovisionnementFormSet(forms.BaseInlineFormSet):
-    def __init__(self, *args, articles_exclus=None, **kwargs):
-        self.articles_exclus = set(articles_exclus or [])
+    def __init__(self, *args, produits_exclus=None, **kwargs):
+        self.produits_exclus = set(produits_exclus or [])
         super().__init__(*args, **kwargs)
 
     def _construct_form(self, i, **kwargs):
-        kwargs['articles_exclus'] = self.articles_exclus
+        kwargs['produits_exclus'] = self.produits_exclus
         return super()._construct_form(i, **kwargs)
 
     def clean(self):
         super().clean()
-        deja_choisis = set(self.articles_exclus)
+        deja_choisis = set(self.produits_exclus)
         for form in self.forms:
             if not getattr(form, 'cleaned_data', None):
                 continue
-            article = form.cleaned_data.get('article')
-            if not article:
+            produit = form.cleaned_data.get('produit')
+            if not produit:
                 continue
-            if article.pk in deja_choisis:
+            if produit.pk in deja_choisis:
                 form.add_error(
-                    'article',
+                    'produit',
                     'Ce produit est déjà présent sur une autre ligne.',
                 )
             else:
-                deja_choisis.add(article.pk)
+                deja_choisis.add(produit.pk)
 
 
 LigneApprovisionnementFormSet = inlineformset_factory(
@@ -197,6 +197,10 @@ class BonSortieForm(StyledFormMixin, forms.ModelForm):
         self.fields['destination'].queryset = Service.objects.all()
         self.fields['destination'].empty_label = 'Sélectionnez un service'
         self.fields['destination'].label = 'Service'
+        self.fields['destination'].help_text = (
+            'Barbecus et terrasse : à la validation, les produits de ce service sont augmentés. '
+            'Une sortie vers le bar alimente le même stock que la terrasse.'
+        )
 
     def clean_date_sortie(self):
         value = self.cleaned_data.get('date_sortie')
@@ -243,33 +247,36 @@ class AutorisationDepassementForm(StyledFormMixin, forms.Form):
 class LigneSortieForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = LigneSortie
-        fields = ['article', 'quantite', 'nombre_portions']
+        fields = ['produit', 'quantite', 'nombre_portions']
         widgets = {
             'quantite': forms.NumberInput(attrs={'min': 1}),
             'nombre_portions': forms.NumberInput(attrs={'min': 0}),
         }
 
-    def __init__(self, *args, portions_map=None, articles_exclus=None, **kwargs):
+    def __init__(self, *args, portions_map=None, produits_exclus=None, produits_autorises=None, **kwargs):
         super().__init__(*args, **kwargs)
-        articles = Article.objects.select_related('categorie', 'unite')
+        self.produits_autorises = produits_autorises
+        produits = Produit.objects.select_related('categorie', 'unite')
+        if produits_autorises is not None:
+            produits = produits.filter(pk__in=produits_autorises)
         portions_map = portions_map or {
-            str(article.pk): article.categorie.nombre_portions
-            for article in articles
+            str(produit.pk): produit.categorie.nombre_portions
+            for produit in produits
         }
-        exclus = set(articles_exclus or [])
-        if self.instance.pk and self.instance.article_id:
-            exclus.discard(self.instance.article_id)
+        exclus = set(produits_exclus or [])
+        if self.instance.pk and self.instance.produit_id:
+            exclus.discard(self.instance.produit_id)
         if exclus:
-            articles = articles.exclude(pk__in=exclus)
-        self.fields['article'].required = False
+            produits = produits.exclude(pk__in=exclus)
+        self.fields['produit'].required = False
         self.fields['quantite'].required = False
         self.fields['nombre_portions'].required = False
-        self.fields['article'].empty_label = 'Sélectionnez un article'
-        self.fields['article'].widget = ArticlePortionsSelect(
+        self.fields['produit'].empty_label = 'Sélectionnez un produit'
+        self.fields['produit'].widget = ProduitPortionsSelect(
             portions_map=portions_map,
-            attrs={'class': 'input', 'data-article-ligne': '1'},
+            attrs={'class': 'input', 'data-produit-ligne': '1'},
         )
-        self.fields['article'].queryset = articles
+        self.fields['produit'].queryset = produits
         self.fields['nombre_portions'].widget.attrs.update(
             {
                 'min': '0',
@@ -278,15 +285,15 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
         )
 
     def _ligne_incomplete(self):
-        article = None
+        produit = None
         quantite = None
         if self.is_bound:
-            article = self.data.get(self.add_prefix('article'))
+            produit = self.data.get(self.add_prefix('produit'))
             quantite = self.data.get(self.add_prefix('quantite'))
         elif hasattr(self, 'cleaned_data'):
-            article = self.cleaned_data.get('article')
+            produit = self.cleaned_data.get('produit')
             quantite = self.cleaned_data.get('quantite')
-        return not article and not quantite
+        return not produit and not quantite
 
     def has_changed(self):
         if not self.instance.pk and self._ligne_incomplete():
@@ -295,38 +302,60 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        article = cleaned.get('article')
+        produit = cleaned.get('produit')
         quantite = cleaned.get('quantite')
         portions = cleaned.get('nombre_portions') or 0
-        if not article and not quantite:
+        if not produit and not quantite:
             cleaned['nombre_portions'] = 0
             return cleaned
-        if article and not quantite:
+        if produit and not quantite:
             self.add_error('quantite', 'La quantité est obligatoire.')
-        if quantite and not article:
-            self.add_error('article', 'Sélectionnez un article.')
-        if article and article.exige_portions and portions <= 0:
+        if quantite and not produit:
+            self.add_error('produit', 'Sélectionnez un produit.')
+        if produit and produit.exige_portions and portions <= 0:
             self.add_error(
                 'nombre_portions',
                 'Indiquez le nombre de portions pour cette catégorie de vivres frais.',
             )
-        if article and not article.exige_portions:
+        if produit and not produit.exige_portions:
             cleaned['nombre_portions'] = 0
+        if (
+            self.produits_autorises is not None
+            and produit
+            and produit.pk not in self.produits_autorises
+        ):
+            self.add_error(
+                'produit',
+                'Ce produit n’est pas rattaché à un plat du service terrasse.',
+            )
         return cleaned
 
 
 class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
-    def __init__(self, *args, articles_exclus=None, **kwargs):
-        self.articles_exclus = set(articles_exclus or [])
+    def __init__(self, *args, produits_exclus=None, **kwargs):
+        self.produits_exclus = set(produits_exclus or [])
         self.portions_map = {
-            str(article.pk): article.categorie.nombre_portions
-            for article in Article.objects.select_related('categorie')
+            str(produit.pk): produit.categorie.nombre_portions
+            for produit in Produit.objects.select_related('categorie')
         }
+        instance = kwargs.get('instance')
+        self.produits_autorises = None
+        nom = ''
+        if instance is not None and getattr(instance, 'pk', None):
+            nom = getattr(instance, 'nom_destination', '') or ''
+        from restauration.models import (
+            ServicePoste,
+            ids_produits_rattaches_au_poste,
+            service_poste_depuis_destination,
+        )
+        if service_poste_depuis_destination(nom) == ServicePoste.TERRASSE:
+            self.produits_autorises = ids_produits_rattaches_au_poste(ServicePoste.TERRASSE)
         super().__init__(*args, **kwargs)
 
     def _construct_form(self, i, **kwargs):
         kwargs['portions_map'] = self.portions_map
-        kwargs['articles_exclus'] = self.articles_exclus
+        kwargs['produits_exclus'] = self.produits_exclus
+        kwargs['produits_autorises'] = self.produits_autorises
         return super()._construct_form(i, **kwargs)
 
     def clean(self):
@@ -337,22 +366,22 @@ class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
                 continue
             if form.cleaned_data.get('DELETE'):
                 continue
-            article = form.cleaned_data.get('article')
-            if not article:
+            produit = form.cleaned_data.get('produit')
+            if not produit:
                 continue
-            if article.pk in deja_choisis:
+            if produit.pk in deja_choisis:
                 form.add_error(
-                    'article',
+                    'produit',
                     'Ce produit est déjà présent sur une autre ligne.',
                 )
             else:
-                deja_choisis.add(article.pk)
+                deja_choisis.add(produit.pk)
 
     def save(self, commit=True):
         instances = super().save(commit=False)
         saved = []
         for obj in instances:
-            if obj is None or not obj.article_id or not obj.quantite:
+            if obj is None or not obj.produit_id or not obj.quantite:
                 continue
             if commit:
                 obj.save()
@@ -386,8 +415,8 @@ class LigneSortieValidationForm(StyledFormMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        article = getattr(self.instance, 'article', None)
-        if not article or not article.exige_portions:
+        produit = getattr(self.instance, 'produit', None)
+        if not produit or not produit.exige_portions:
             self.fields['nombre_portions'].widget = forms.HiddenInput()
             self.fields['nombre_portions'].required = False
 
@@ -399,14 +428,14 @@ class LigneSortieValidationForm(StyledFormMixin, forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        article = getattr(self.instance, 'article', None)
+        produit = getattr(self.instance, 'produit', None)
         portions = cleaned.get('nombre_portions') or 0
-        if article and article.exige_portions and portions <= 0:
+        if produit and produit.exige_portions and portions <= 0:
             self.add_error(
                 'nombre_portions',
                 'Indiquez le nombre de portions pour cette catégorie de vivres frais.',
             )
-        if article and not article.exige_portions:
+        if produit and not produit.exige_portions:
             cleaned['nombre_portions'] = 0
         return cleaned
 

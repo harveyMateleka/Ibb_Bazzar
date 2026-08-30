@@ -22,7 +22,7 @@ from .forms import (
 )
 from .models import (
     Approvisionnement,
-    Article,
+    Produit,
     BonApprovisionnement,
     BonSortie,
     Inventaire,
@@ -34,20 +34,20 @@ from .models import (
 
 @login_required
 def tableau_de_bord(request):
-    articles = Article.objects.select_related('categorie', 'unite')
-    alertes = articles.filter(stock__lte=F('seuil_minimum') + 10)
+    produits = Produit.objects.select_related('categorie', 'unite')
+    alertes = produits.filter(stock__lte=F('seuil_minimum') + 10)
     derniers = Approvisionnement.objects.select_related(
         'utilisateur', 'fournisseur'
-    ).prefetch_related('lignes__article', 'lignes__article__unite')[:8]
+    ).prefetch_related('lignes__produit', 'lignes__produit__unite')[:8]
     return render(
         request,
         'approvisionnement/tableau_de_bord.html',
         {
             'alertes': alertes,
-            'articles': articles,
+            'produits': produits,
             'derniers_mouvements': derniers,
             'nb_alertes': alertes.count(),
-            'nb_articles': articles.count(),
+            'nb_produits': produits.count(),
             'nb_mouvements': Approvisionnement.objects.count(),
         },
     )
@@ -72,10 +72,10 @@ def entree_nouveau(request):
         initial={'date_approvisionnement': timezone.localtime().strftime('%Y-%m-%dT%H:%M')},
     )
     if request.method == 'POST' and formulaire.is_valid():
-        if not Article.objects.exists():
+        if not Produit.objects.exists():
             messages.error(
                 request,
-                'Créez d’abord des articles dans l’administration (tables de paramètre).',
+                'Créez d’abord des produits dans l’administration (tables de paramètre).',
             )
         else:
             with transaction.atomic():
@@ -98,15 +98,15 @@ def entree_detail(request, pk):
         BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
         pk=pk,
     )
-    lignes = bon.lignes.select_related('article', 'article__unite', 'mouvement')
+    lignes = bon.lignes.select_related('produit', 'produit__unite', 'mouvement')
     formset = None
     if bon.statut != BonApprovisionnement.Statut.VALIDE:
-        articles_exclus = list(lignes.values_list('article_id', flat=True))
+        produits_exclus = list(lignes.values_list('produit_id', flat=True))
         formset = LigneApprovisionnementFormSet(
             request.POST if request.method == 'POST' else None,
             instance=bon,
             queryset=LigneApprovisionnement.objects.none(),
-            articles_exclus=articles_exclus,
+            produits_exclus=produits_exclus,
         )
         if request.method == 'POST' and formset.is_valid():
             nouvelles = formset.save()
@@ -137,7 +137,7 @@ def entree_validation_liste(request):
         .annotate(nb_lignes=Count('lignes'))
         .filter(nb_lignes__gt=0)
         .select_related('fournisseur', 'utilisateur')
-        .prefetch_related('lignes__article', 'lignes__article__unite')
+        .prefetch_related('lignes__produit', 'lignes__produit__unite')
     )
     return render(
         request,
@@ -183,7 +183,7 @@ def entree_validation_detail(request, pk):
         {
             'bon': bon,
             'formset': formset,
-            'lignes': bon.lignes.select_related('article', 'article__unite', 'mouvement'),
+            'lignes': bon.lignes.select_related('produit', 'produit__unite', 'mouvement'),
         },
     )
 
@@ -212,7 +212,7 @@ def entree_imprimer(request, pk):
         'approvisionnement/entree_impression.html',
         {
             'bon': bon,
-            'lignes': bon.lignes.select_related('article', 'article__unite', 'article__categorie'),
+            'lignes': bon.lignes.select_related('produit', 'produit__unite', 'produit__categorie'),
         },
     )
 
@@ -236,10 +236,10 @@ def sortie_nouveau(request):
         initial={'date_sortie': timezone.localtime().strftime('%Y-%m-%dT%H:%M')},
     )
     if request.method == 'POST' and formulaire.is_valid():
-        if not Article.objects.exists():
+        if not Produit.objects.exists():
             messages.error(
                 request,
-                'Créez d’abord des articles dans l’administration (tables de paramètre).',
+                'Créez d’abord des produits dans l’administration (tables de paramètre).',
             )
         elif not Service.objects.exists():
             messages.error(
@@ -268,7 +268,20 @@ def sortie_detail(request, pk):
         pk=pk,
     )
     lignes = bon.lignes.select_related(
-        'article', 'article__unite', 'article__categorie', 'mouvement'
+        'produit', 'produit__unite', 'produit__categorie', 'mouvement'
+    )
+    from restauration.models import (
+        ServicePoste,
+        ids_produits_rattaches_au_poste,
+        service_poste_depuis_destination,
+    )
+    restriction_terrasse = (
+        service_poste_depuis_destination(bon.nom_destination) == ServicePoste.TERRASSE
+    )
+    produits_terrasse = (
+        ids_produits_rattaches_au_poste(ServicePoste.TERRASSE)
+        if restriction_terrasse
+        else set()
     )
     formset = None
     if bon.statut != BonSortie.Statut.VALIDE:
@@ -276,7 +289,7 @@ def sortie_detail(request, pk):
             request.POST if request.method == 'POST' else None,
             instance=bon,
             queryset=LigneSortie.objects.none(),
-            articles_exclus=list(lignes.values_list('article_id', flat=True)),
+            produits_exclus=list(lignes.values_list('produit_id', flat=True)),
         )
         if request.method == 'POST' and formset.is_valid():
             nouvelles = formset.save()
@@ -296,7 +309,9 @@ def sortie_detail(request, pk):
             'bon': bon,
             'formset': formset,
             'lignes': lignes,
-            'nb_articles': Article.objects.count(),
+            'nb_produits': Produit.objects.count(),
+            'restriction_terrasse': restriction_terrasse,
+            'nb_produits_terrasse': len(produits_terrasse) if restriction_terrasse else None,
         },
     )
 
@@ -309,9 +324,9 @@ def sortie_validation_liste(request):
         .filter(nb_lignes__gt=0)
         .select_related('utilisateur', 'destination')
         .prefetch_related(
-            'lignes__article',
-            'lignes__article__unite',
-            'lignes__article__categorie',
+            'lignes__produit',
+            'lignes__produit__unite',
+            'lignes__produit__categorie',
         )
     )
     return render(
@@ -338,6 +353,27 @@ def _valider_sortie_et_imprimer(request, bon, autorisation=False):
             request,
             f'Bon {bon.numero} validé. Le stock a été diminué et l’historique a été enregistré.',
         )
+    from restauration.models import service_poste_depuis_destination, ServicePoste
+    destination = service_poste_depuis_destination(bon.nom_destination)
+    libelles_ajout = {
+        ServicePoste.BARBECUS: 'plat(s) barbecus disponible(s)',
+        ServicePoste.TERRASSE: 'portion(s) terrasse disponible(s)',
+    }
+    for item in getattr(bon, 'plats_alimentes', []) or []:
+        nom, ajout, reste = item[0], item[1], item[2]
+        service_ajout = item[3] if len(item) > 3 else destination
+        libelle = libelles_ajout.get(service_ajout, 'portion(s) disponible(s)')
+        messages.warning(
+            request,
+            f'{nom} : +{ajout} {libelle} (reste {reste}).',
+        )
+    if destination in (ServicePoste.CUISINE, ServicePoste.BARBECUS):
+        poste = 'Cuisine' if destination == ServicePoste.CUISINE else 'Barbecus'
+        messages.warning(
+            request,
+            f'Sortie {poste.lower()} : le stock magasin a été mis à jour. '
+            f'Saisissez les plats préparés sur l’écran {poste} une fois les plats prêts.',
+        )
     return redirect(
         reverse('approvisionnement:sortie_imprimer', kwargs={'pk': bon.pk}) + '?auto=1'
     )
@@ -345,12 +381,13 @@ def _valider_sortie_et_imprimer(request, bon, autorisation=False):
 
 @login_required
 def sortie_validation_detail(request, pk):
+    from restauration.models import ServicePoste, service_poste_depuis_destination
     bon = get_object_or_404(
         BonSortie.objects.select_related('utilisateur', 'destination'),
         pk=pk,
     )
     lignes = bon.lignes.select_related(
-        'article', 'article__unite', 'article__categorie', 'mouvement'
+        'produit', 'produit__unite', 'produit__categorie', 'mouvement'
     )
     formset = None
     ruptures = []
@@ -369,13 +406,13 @@ def sortie_validation_detail(request, pk):
                 if ruptures:
                     messages.error(
                         request,
-                        'Impossible de valider : un article est à 0 ou la quantité dépasse le stock. '
+                        'Impossible de valider : un produit est à 0 ou la quantité dépasse le stock. '
                         'Retirez ou corrigez la ligne concernée.',
                     )
                     formset = LigneSortieValidationFormSet(
                         instance=bon,
                         queryset=bon.lignes.select_related(
-                            'article', 'article__unite', 'article__categorie'
+                            'produit', 'produit__unite', 'produit__categorie'
                         ),
                     )
                     auth_form = None
@@ -393,7 +430,7 @@ def sortie_validation_detail(request, pk):
                     formset = LigneSortieValidationFormSet(
                         instance=bon,
                         queryset=bon.lignes.select_related(
-                            'article', 'article__unite', 'article__categorie'
+                            'produit', 'produit__unite', 'produit__categorie'
                         ),
                     )
                 else:
@@ -408,7 +445,7 @@ def sortie_validation_detail(request, pk):
             if seuils and not ruptures:
                 auth_form = AutorisationDepassementForm(request=request)
     lignes = bon.lignes.select_related(
-        'article', 'article__unite', 'article__categorie', 'mouvement'
+        'produit', 'produit__unite', 'produit__categorie', 'mouvement'
     )
     return render(
         request,
@@ -420,6 +457,9 @@ def sortie_validation_detail(request, pk):
             'ruptures': ruptures,
             'seuils': seuils,
             'auth_form': auth_form,
+            'restriction_terrasse': (
+                service_poste_depuis_destination(bon.nom_destination) == ServicePoste.TERRASSE
+            ),
         },
     )
 
@@ -435,7 +475,7 @@ def sortie_valider(request, pk):
     if ruptures:
         messages.error(
             request,
-            'Impossible de valider : un article est à 0 ou la quantité dépasse le stock. '
+            'Impossible de valider : un produit est à 0 ou la quantité dépasse le stock. '
             'Retirez ou corrigez la ligne concernée.',
         )
         return redirect('approvisionnement:sortie_validation_detail', pk=bon.pk)
@@ -462,7 +502,7 @@ def sortie_imprimer(request, pk):
         'approvisionnement/sortie_impression.html',
         {
             'bon': bon,
-            'lignes': bon.lignes.select_related('article', 'article__unite', 'article__categorie'),
+            'lignes': bon.lignes.select_related('produit', 'produit__unite', 'produit__categorie'),
         },
     )
 
@@ -471,7 +511,7 @@ def sortie_imprimer(request, pk):
 def historique(request):
     journaux = Approvisionnement.objects.select_related(
         'utilisateur', 'fournisseur', 'bon_entree', 'bon_sortie'
-    ).prefetch_related('lignes__article', 'lignes__article__unite')
+    ).prefetch_related('lignes__produit', 'lignes__produit__unite')
     type_filtre = request.GET.get('type', '')
     recherche = request.GET.get('q', '').strip()
     if type_filtre in Approvisionnement.Type.values:
@@ -483,8 +523,8 @@ def historique(request):
             | Q(motif__icontains=recherche)
             | Q(destination__icontains=recherche)
             | Q(fournisseur__nom__icontains=recherche)
-            | Q(lignes__article__code__icontains=recherche)
-            | Q(lignes__article__designation__icontains=recherche)
+            | Q(lignes__produit__code__icontains=recherche)
+            | Q(lignes__produit__designation__icontains=recherche)
         ).distinct()
     return render(
         request,
@@ -511,7 +551,7 @@ def historique_detail(request, pk):
         'approvisionnement/historique_detail.html',
         {
             'journal': journal,
-            'lignes': journal.lignes.select_related('article', 'article__unite'),
+            'lignes': journal.lignes.select_related('produit', 'produit__unite'),
         },
     )
 
@@ -531,10 +571,10 @@ def inventaire_nouveau(request):
     formulaire = InventaireForm(request.POST if request.method == 'POST' else None)
     inventaire_existant = None
     if request.method == 'POST' and formulaire.is_valid():
-        if not Article.objects.exists():
+        if not Produit.objects.exists():
             messages.error(
                 request,
-                'Créez d’abord des articles dans l’administration (tables de paramètre).',
+                'Créez d’abord des produits dans l’administration (tables de paramètre).',
             )
         else:
             date_jour = formulaire.cleaned_data['date_inventaire']
@@ -594,17 +634,17 @@ def inventaire_nouveau(request):
 
 
 def _synchroniser_lignes_inventaire(inventaire):
-    connus = {ligne.article_id: ligne for ligne in inventaire.lignes.all()}
-    for article in Article.objects.all():
-        ligne = connus.get(article.pk)
+    connus = {ligne.produit_id: ligne for ligne in inventaire.lignes.all()}
+    for produit in Produit.objects.all():
+        ligne = connus.get(produit.pk)
         if ligne is None:
             inventaire.lignes.create(
-                article=article,
-                stock_systeme=article.stock,
-                stock_physique=article.stock,
+                produit=produit,
+                stock_systeme=produit.stock,
+                stock_physique=produit.stock,
             )
         else:
-            ligne.stock_systeme = article.stock
+            ligne.stock_systeme = produit.stock
             ligne.save(update_fields=['stock_systeme'])
 
 
@@ -640,7 +680,7 @@ def inventaire_detail(request, pk):
         {
             'inventaire': inventaire,
             'formset': formset,
-            'lignes': inventaire.lignes.select_related('article', 'mouvement'),
+            'lignes': inventaire.lignes.select_related('produit', 'mouvement'),
         },
     )
 
@@ -689,9 +729,9 @@ def _donnees_rapport(debut, fin, type_rapport=None):
         )
         .select_related('utilisateur', 'fournisseur')
         .prefetch_related(
-            'lignes__article',
-            'lignes__article__unite',
-            'lignes__article__categorie',
+            'lignes__produit',
+            'lignes__produit__unite',
+            'lignes__produit__categorie',
         )
     )
     sorties = (
@@ -702,9 +742,9 @@ def _donnees_rapport(debut, fin, type_rapport=None):
         )
         .select_related('utilisateur')
         .prefetch_related(
-            'lignes__article',
-            'lignes__article__unite',
-            'lignes__article__categorie',
+            'lignes__produit',
+            'lignes__produit__unite',
+            'lignes__produit__categorie',
         )
     )
     inventaires = (
@@ -715,8 +755,8 @@ def _donnees_rapport(debut, fin, type_rapport=None):
         )
         .select_related('responsable')
         .prefetch_related(
-            'lignes__article',
-            'lignes__article__unite',
+            'lignes__produit',
+            'lignes__produit__unite',
         )
     )
     qte_entrees = sum(

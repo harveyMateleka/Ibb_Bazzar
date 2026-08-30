@@ -23,7 +23,7 @@
     <table class="js-datatable">
       <thead>
         <tr>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Quantité</th>
           <th>Portions</th>
@@ -32,8 +32,8 @@
       <tbody>
         {% for ligne in lignes %}
         <tr>
-          <td>{{ ligne.article }}</td>
-          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.produit }}</td>
+          <td>{{ ligne.produit.unite }}</td>
           <td>{{ ligne.quantite }}</td>
           <td>{% if ligne.nombre_portions %}{{ ligne.nombre_portions }}{% else %}—{% endif %}</td>
         </tr>
@@ -57,14 +57,24 @@
   {{ formset.non_form_errors }}
   <section class="panel">
     <h2>Ajouter des produits</h2>
-    {% if not nb_articles %}
-    <p class="help">Aucun article n’est disponible. Créez-les d’abord dans l’administration (tables de paramètre).</p>
+    {% if restriction_terrasse %}
+    <p class="help">
+      Sortie terrasse : seuls les produits rattachés à un plat Terrasse peuvent être ajoutés
+      (une sortie bar utilise le même stock).
+      La validation n’augmentera que ces plats, pas ceux du barbecus ou de la cuisine.
+    </p>
+    {% if not nb_produits_terrasse %}
+    <p class="help">Aucun produit n’est rattaché à un plat terrasse. Paramétrez la composition des plats Terrasse dans l’administration.</p>
+    {% endif %}
+    {% endif %}
+    {% if not nb_produits %}
+    <p class="help">Aucun produit n’est disponible. Créez-les d’abord dans l’administration (tables de paramètre).</p>
     {% endif %}
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Article</th>
+            <th>Produit</th>
             <th>Quantité</th>
             <th>Portions</th>
           </tr>
@@ -74,8 +84,8 @@
           <tr data-ligne>
             <td>
               {{ form.id }}
-              {{ form.article }}
-              {{ form.article.errors }}
+              {{ form.produit }}
+              {{ form.produit.errors }}
             </td>
             <td>
               {{ form.quantite }}
@@ -93,7 +103,7 @@
         </tbody>
       </table>
     </div>
-    <p class="help">Un produit déjà enregistré ou choisi sur une autre ligne n’apparaît plus dans le sélecteur. Enregistrez les lignes : elles seront transmises au responsable pour validation.</p>
+    <p class="help">Un produit déjà enregistré ou choisi sur une autre ligne n’apparaît plus dans le sélecteur.{% if restriction_terrasse %} Pour la terrasse, le sélecteur ne propose que les produits liés à un plat Terrasse.{% endif %} Enregistrez les lignes : elles seront transmises au responsable pour validation.</p>
     <div class="actions" style="margin-top: 1.2rem;">
       <button type="submit" class="btn btn-primary">Enregistrer les produits</button>
       <a class="btn btn-ghost" href="{% url 'approvisionnement:sortie' %}">Retour à la liste</a>
@@ -106,10 +116,10 @@
     if (!form) return;
 
     function selects() {
-      return Array.from(form.querySelectorAll("select[data-article-ligne]"));
+      return Array.from(form.querySelectorAll("select[data-produit-ligne]"));
     }
 
-    function syncArticles() {
+    function syncProduits() {
       const choisis = selects()
         .map(function (select) { return select.value; })
         .filter(Boolean);
@@ -125,11 +135,11 @@
     }
 
     function syncPortions(row) {
-      const article = row.querySelector("select[data-article-ligne]");
+      const produit = row.querySelector("select[data-produit-ligne]");
       const zone = row.querySelector(".portions-zone");
       const input = zone && zone.querySelector("input");
-      if (!article || !zone || !input) return;
-      const option = article.options[article.selectedIndex];
+      if (!produit || !zone || !input) return;
+      const option = produit.options[produit.selectedIndex];
       const defaut = Number((option && option.dataset.nombrePortions) || 0);
       const visible = defaut > 0;
       zone.hidden = !visible;
@@ -148,13 +158,13 @@
     form.querySelectorAll("[data-ligne]").forEach(function (row) {
       syncPortions(row);
     });
-    syncArticles();
+    syncProduits();
 
     form.addEventListener("change", function (event) {
       const cible = event.target;
-      if (cible && cible.matches("select[data-article-ligne]")) {
+      if (cible && cible.matches("select[data-produit-ligne]")) {
         syncPortions(cible.closest("[data-ligne]"));
-        syncArticles();
+        syncProduits();
       }
     });
   })();

@@ -1,0 +1,57 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reçu {{ facture.numero }}</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <link rel="icon" href="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}">
+</head>
+<body class="print-page recu-page">
+  <div class="no-print print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' facture.commande_id %}">Retour</a>
+    <a class="btn btn-ghost" href="{% url 'facturation:journal' %}">Journal</a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer 80 mm</button>
+  </div>
+
+  <article class="recu-80mm">
+    {% if etablissement.logo %}
+    <img src="{{ etablissement.logo.url }}" alt="{{ etablissement.nom_societe }}" class="recu-logo">
+    {% else %}
+    <img src="{{ MEDIA_URL }}logo/logo.jpeg" alt="{{ etablissement.nom_societe }}" class="recu-logo">
+    {% endif %}
+    <p class="recu-nom">{{ facture.nom_societe|default:etablissement.nom_societe }}</p>
+    {% if facture.sigle or etablissement.sigle %}
+    <p class="recu-sigle">{{ facture.sigle|default:etablissement.sigle }}</p>
+    {% endif %}
+    {% if facture.adresse %}<p>{{ facture.adresse }}</p>{% endif %}
+    {% if facture.contact %}<p>{{ facture.contact }}</p>{% endif %}
+    <p class="recu-sep">************************</p>
+    <p><strong>REÇU {{ facture.numero }}</strong></p>
+    <p>Commande {{ facture.commande.numero }}</p>
+    <p>{{ facture.table_liberee }}</p>
+    <p>{{ facture.date_facture|date:"d/m/Y H:i" }}</p>
+    <p>Caissier : {{ facture.utilisateur }}</p>
+    <p class="recu-sep">------------------------</p>
+    <table class="recu-lignes">
+      {% for ligne in facture.lignes.all %}
+      <tr>
+        <td>{{ ligne.quantite }}× {{ ligne.designation }}</td>
+        <td>{{ ligne.montant }} {{ ligne.devise }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="recu-sep">------------------------</p>
+    {% for devise, montant in facture.totaux_par_devise.items %}
+    <p class="recu-total"><span>TOTAL {{ devise }}</span><strong>{{ montant }}</strong></p>
+    {% endfor %}
+    <p>Payé : {{ facture.get_mode_paiement_display }}</p>
+    <p class="recu-sep">************************</p>
+    <p class="recu-merci">{{ etablissement.message_recu|default:"Merci de votre visite" }}</p>
+  </article>
+  {% if auto_print %}
+  <script>window.addEventListener("load", function () { window.print(); });</script>
+  {% endif %}
+</body>
+</html>

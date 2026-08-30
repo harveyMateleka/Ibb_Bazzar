@@ -27,7 +27,7 @@
       <table>
         <thead>
           <tr>
-            <th>Article</th>
+            <th>Produit</th>
             <th>Unité</th>
             <th>Quantité</th>
             <th class="_nosort">Supprimer la ligne</th>
@@ -38,9 +38,9 @@
           <tr>
             <td>
               {{ form.id }}
-              {{ form.instance.article }}
+              {{ form.instance.produit }}
             </td>
-            <td>{{ form.instance.article.unite }}</td>
+            <td>{{ form.instance.produit.unite }}</td>
             <td>
               {{ form.quantite }}
               {{ form.quantite.errors }}
@@ -79,7 +79,7 @@
     <table class="js-datatable">
       <thead>
         <tr>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Quantité</th>
         </tr>
@@ -87,8 +87,8 @@
       <tbody>
         {% for ligne in lignes %}
         <tr>
-          <td>{{ ligne.article }}</td>
-          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.produit }}</td>
+          <td>{{ ligne.produit.unite }}</td>
           <td>{{ ligne.quantite }}</td>
         </tr>
         {% empty %}

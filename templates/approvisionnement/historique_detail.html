@@ -30,7 +30,7 @@
     <table class="js-datatable">
       <thead>
         <tr>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Quantité</th>
           <th>Portions</th>
@@ -40,8 +40,8 @@
       <tbody>
         {% for ligne in lignes %}
         <tr>
-          <td>{{ ligne.article }}</td>
-          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.produit }}</td>
+          <td>{{ ligne.produit.unite }}</td>
           <td>{{ ligne.quantite }}</td>
           <td>{% if ligne.nombre_portions %}{{ ligne.nombre_portions }}{% else %}—{% endif %}</td>
           <td>{{ ligne.stock_avant }} → {{ ligne.stock_apres }}</td>

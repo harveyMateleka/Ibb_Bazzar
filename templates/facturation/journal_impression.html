@@ -1,0 +1,104 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Journal {{ jour|date:"d/m/Y" }}</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <link rel="icon" href="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}">
+</head>
+<body class="print-page">
+  <div class="no-print print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'facturation:journal' %}?date={{ jour|date:'Y-m-d' }}">Retour</a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+
+  <article class="bon-doc">
+    <header class="bon-head">
+      <img src="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}" alt="{{ etablissement.nom_societe }}" class="bon-logo">
+      <div>
+        <p class="eyebrow">{{ etablissement.sigle }}</p>
+        <h1>Journal de caisse</h1>
+        <p class="help">{{ etablissement.nom_societe }}{% if etablissement.contact %} · {{ etablissement.contact }}{% endif %}</p>
+      </div>
+      <div class="bon-numero">
+        <span>Journée</span>
+        <strong>{{ jour|date:"d/m/Y" }}</strong>
+      </div>
+    </header>
+
+    <dl class="bon-meta">
+      <div>
+        <dt>Reçus</dt>
+        <dd>{{ resume.nb }}</dd>
+      </div>
+      {% for devise, montant in resume.par_devise.items %}
+      <div>
+        <dt>Total {{ devise }}</dt>
+        <dd>{{ montant }} {{ devise }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+
+    <h2 class="rapport-section">Par mode de paiement</h2>
+    <table class="bon-table">
+      <thead>
+        <tr>
+          <th>Mode</th>
+          <th>Nombre</th>
+          <th>Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for mode in resume.par_mode %}
+        <tr>
+          <td>{{ mode.libelle }}</td>
+          <td>{{ mode.nb }}</td>
+          <td>
+            {% for devise, montant in mode.montants.items %}
+            {{ montant }} {{ devise }}{% if not forloop.last %} · {% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3">Aucun paiement.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 class="rapport-section">Opérations</h2>
+    <table class="bon-table">
+      <thead>
+        <tr>
+          <th>Heure</th>
+          <th>Reçu</th>
+          <th>Commande</th>
+          <th>Table</th>
+          <th>Paiement</th>
+          <th>Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for facture in factures %}
+        <tr>
+          <td>{{ facture.date_facture|date:"H:i" }}</td>
+          <td>{{ facture.numero }}</td>
+          <td>{{ facture.commande.numero }}</td>
+          <td>{{ facture.table_liberee }}</td>
+          <td>{{ facture.get_mode_paiement_display }}</td>
+          <td>
+            {% for devise, montant in facture.totaux_par_devise.items %}
+            {{ montant }} {{ devise }}{% if not forloop.last %}<br>{% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">Aucune opération.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </article>
+  <script>window.addEventListener("load", function () { window.print(); });</script>
+</body>
+</html>

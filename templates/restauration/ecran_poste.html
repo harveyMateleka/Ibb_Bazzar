@@ -1,0 +1,108 @@
+{% extends "restauration/base.html" %}
+
+{% block extra_head %}
+{{ block.super }}
+{% if rafraichir %}
+<meta http-equiv="refresh" content="8">
+{% endif %}
+{% endblock %}
+
+{% block app_title %}{{ poste }}{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Poste</p>
+    <h1>{{ poste }}</h1>
+    <p class="lead">
+      {% if saisie_portions %}
+      Indiquez le nombre de plats préparés pour chaque produit : chaque enregistrement ajoute cette quantité dans le système. La commande ne diminue le reste qu’à la validation.
+      {% else %}
+      Les produits sortis du magasin vers la terrasse (y compris une sortie bar) augmentent automatiquement la quantité vendable. Uniquement les lignes destinées à la terrasse s’affichent ci-dessous.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if plats_portions %}
+<section class="panel">
+  <h2>{% if saisie_portions %}Plats préparés{% else %}Quantités terrasse{% endif %}</h2>
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>Plat</th>
+          <th>Reste</th>
+          <th>État</th>
+          {% if saisie_portions %}
+          <th class="_nosort">Plats préparés</th>
+          <th class="_nosort">Corriger le reste</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for plat in plats_portions %}
+        <tr class="{% if plat.en_rupture %}row-alert{% elif plat.en_alerte %}row-vigilance{% endif %}">
+          <td>{{ plat.nom }}</td>
+          <td>{{ plat.quantite }}</td>
+          <td>
+            {% if plat.en_rupture %}Rupture
+            {% elif plat.en_alerte %}Alerte (reste {{ plat.quantite }})
+            {% else %}OK{% endif %}
+          </td>
+          {% if saisie_portions %}
+          <td>
+            <form method="post" action="{% url 'restauration:plat_ajouter_portions' plat.pk %}" class="qty-controls">
+              {% csrf_token %}
+              <input type="number" name="nombre" min="1" step="1" class="input" placeholder="Ex. 10" required>
+              <button type="submit" class="btn btn-primary">Ajouter</button>
+            </form>
+          </td>
+          <td>
+            <form method="post" action="{% url 'restauration:plat_ajuster_quantite' plat.pk %}" class="qty-controls">
+              {% csrf_token %}
+              <input type="number" name="quantite" min="0" step="1" class="input" value="{{ plat.quantite }}" required>
+              <button type="submit" class="btn btn-ghost">Corriger</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if lignes %}
+<div class="poste-grid">
+  {% regroup lignes by commande as groupes %}
+  {% for groupe in groupes %}
+  <article class="panel poste-card">
+    <p class="eyebrow">{{ groupe.grouper.numero }}</p>
+    <h2>{{ groupe.grouper.nom_emplacement }}</h2>
+    <p class="help">{{ groupe.grouper.date_validation|date:"H:i" }} · {{ groupe.grouper.nom_serveur }}</p>
+    <ul class="poste-lignes">
+      {% for ligne in groupe.list %}
+      <li>
+        <div>
+          <strong>{{ ligne.quantite }} × {{ ligne.libelle }}</strong>
+          {% if ligne.imprimante_nom %}<span>{{ ligne.imprimante_nom }}</span>{% endif %}
+        </div>
+        <form method="post" action="{% url 'restauration:commande_ligne_servir' groupe.grouper.pk ligne.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="suivant" value="{{ service|lower }}">
+          <button type="submit" class="btn btn-primary">Servie</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<section class="panel">
+  <p class="help">Aucune ligne en attente pour {{ poste|lower }}.</p>
+</section>
+{% endif %}
+{% endblock %}

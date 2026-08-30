@@ -173,13 +173,13 @@ class BonApprovisionnement(models.Model):
     def valider(self):
         if self.statut == self.Statut.VALIDE:
             raise ValidationError('Ce bon d’approvisionnement est déjà validé.')
-        lignes = [ligne for ligne in self.lignes.select_related('article') if ligne.quantite > 0]
+        lignes = [ligne for ligne in self.lignes.select_related('produit') if ligne.quantite > 0]
         if not lignes:
             raise ValidationError('Ajoutez au moins une ligne de produit avant de valider.')
         with transaction.atomic():
             for ligne in lignes:
                 mouvement = MouvementStock(
-                    article=ligne.article,
+                    produit=ligne.produit,
                     type_mouvement=MouvementStock.Type.ENTREE,
                     quantite=ligne.quantite,
                     fournisseur=self.fournisseur,
@@ -266,39 +266,39 @@ class BonSortie(models.Model):
         restants = {}
         ruptures = []
         seuils = []
-        for ligne in self.lignes.select_related('article', 'article__unite'):
+        for ligne in self.lignes.select_related('produit', 'produit__unite'):
             if ligne.quantite <= 0:
                 continue
-            article = ligne.article
-            stock = restants.get(article.pk, article.stock)
+            produit = ligne.produit
+            stock = restants.get(produit.pk, produit.stock)
             if stock <= 0:
                 ruptures.append(
                     {
-                        'article': article,
+                        'produit': produit,
                         'quantite': ligne.quantite,
                         'stock': stock,
-                        'motif': 'Stock à 0 : la sortie de cet article est refusée.',
+                        'motif': 'Stock à 0 : la sortie de ce produit est refusée.',
                     }
                 )
             elif ligne.quantite > stock:
                 ruptures.append(
                     {
-                        'article': article,
+                        'produit': produit,
                         'quantite': ligne.quantite,
                         'stock': stock,
                         'motif': 'Quantité supérieure au stock disponible : sortie refusée.',
                     }
                 )
-            elif stock <= article.seuil_minimum:
+            elif stock <= produit.seuil_minimum:
                 seuils.append(
                     {
-                        'article': article,
+                        'produit': produit,
                         'quantite': ligne.quantite,
                         'stock': stock,
-                        'seuil': article.seuil_minimum,
+                        'seuil': produit.seuil_minimum,
                     }
                 )
-            restants[article.pk] = stock - ligne.quantite
+            restants[produit.pk] = stock - ligne.quantite
         return ruptures, seuils
 
     def valider(self, autorisation_depassement=False):
@@ -306,21 +306,41 @@ class BonSortie(models.Model):
             raise ValidationError('Ce bon de sortie est déjà validé.')
         lignes = [
             ligne
-            for ligne in self.lignes.select_related('article', 'article__categorie')
+            for ligne in self.lignes.select_related('produit', 'produit__categorie')
             if ligne.quantite > 0
         ]
         if not lignes:
             raise ValidationError('Ajoutez au moins une ligne de produit avant de valider.')
         if autorisation_depassement:
             self.autorisation_depassement = True
+        from restauration.models import (
+            ServicePoste,
+            ids_produits_rattaches_au_poste,
+            service_poste_depuis_destination,
+        )
+        service = service_poste_depuis_destination(self.nom_destination)
+        if service == ServicePoste.TERRASSE:
+            autorises = ids_produits_rattaches_au_poste(ServicePoste.TERRASSE)
+            hors_service = [
+                str(ligne.produit)
+                for ligne in lignes
+                if ligne.produit_id not in autorises
+            ]
+            if hors_service:
+                raise ValidationError(
+                    'Une sortie terrasse ne peut augmenter que les plats rattachés '
+                    'au service terrasse. Produits refusés : '
+                    + ', '.join(hors_service)
+                    + '.'
+                )
         with transaction.atomic():
             for ligne in lignes:
-                if ligne.article.exige_portions and ligne.nombre_portions <= 0:
+                if ligne.produit.exige_portions and ligne.nombre_portions <= 0:
                     raise ValidationError(
-                        f'Indiquez le nombre de portions pour {ligne.article}.'
+                        f'Indiquez le nombre de portions pour {ligne.produit}.'
                     )
                 mouvement = MouvementStock(
-                    article=ligne.article,
+                    produit=ligne.produit,
                     type_mouvement=MouvementStock.Type.SORTIE,
                     quantite=ligne.quantite,
                     motif=self.motif,
@@ -341,29 +361,31 @@ class BonSortie(models.Model):
                 champs.append('autorisation_depassement')
             self.save(update_fields=champs)
             Approvisionnement.enregistrer_sortie(self)
+            from restauration.models import alimenter_plats_depuis_sortie
+            self.plats_alimentes = alimenter_plats_depuis_sortie(self)
 
 
-class Article(models.Model):
+class Produit(models.Model):
     code = models.CharField('code', max_length=50, unique=True)
     designation = models.CharField('désignation', max_length=200)
     categorie = models.ForeignKey(
         Categorie,
         on_delete=models.PROTECT,
-        related_name='articles',
+        related_name='produits',
         verbose_name='catégorie',
     )
     unite = models.ForeignKey(
         Unite,
         on_delete=models.PROTECT,
-        related_name='articles',
+        related_name='produits',
         verbose_name='unité',
     )
     seuil_minimum = models.PositiveIntegerField('seuil minimum', default=0)
     stock = models.IntegerField('stock', default=0)
 
     class Meta:
-        verbose_name = 'article'
-        verbose_name_plural = 'articles'
+        verbose_name = 'produit'
+        verbose_name_plural = 'produits'
         ordering = ['code']
 
     def __str__(self):
@@ -414,11 +436,11 @@ class MouvementStock(models.Model):
         SORTIE = 'SORTIE', 'Sortie'
         AJUSTEMENT = 'AJUSTEMENT', 'Ajustement'
 
-    article = models.ForeignKey(
-        Article,
+    produit = models.ForeignKey(
+        Produit,
         on_delete=models.PROTECT,
         related_name='mouvements',
-        verbose_name='article',
+        verbose_name='produit',
     )
     type_mouvement = models.CharField(
         'type',
@@ -481,7 +503,7 @@ class MouvementStock(models.Model):
         ordering = ['-date_mouvement']
 
     def __str__(self):
-        return f'{self.get_type_mouvement_display()} {self.article.code} × {self.quantite}'
+        return f'{self.get_type_mouvement_display()} {self.produit.code} × {self.quantite}'
 
     def clean(self):
         if self.type_mouvement == self.Type.ENTREE and self.quantite <= 0:
@@ -494,8 +516,8 @@ class MouvementStock(models.Model):
             raise ValidationError({'motif': 'Le motif est obligatoire pour une sortie.'})
         if (
             self.type_mouvement == self.Type.SORTIE
-            and self.article_id
-            and self.article.exige_portions
+            and self.produit_id
+            and self.produit.exige_portions
             and self.nombre_portions <= 0
         ):
             raise ValidationError({
@@ -514,40 +536,40 @@ class MouvementStock(models.Model):
             raise ValidationError('Ce mouvement est déjà validé.')
         self.clean()
         with transaction.atomic():
-            article = Article.objects.select_for_update().get(pk=self.article_id)
+            produit = Produit.objects.select_for_update().get(pk=self.produit_id)
             delta = self._delta()
             if (
                 self.type_mouvement == self.Type.SORTIE
-                and (article.stock <= 0 or self.quantite > article.stock)
+                and (produit.stock <= 0 or self.quantite > produit.stock)
             ):
                 raise ValidationError(
-                    f'{article} : stock à 0 ou insuffisant. La sortie est refusée.'
+                    f'{produit} : stock à 0 ou insuffisant. La sortie est refusée.'
                 )
             if (
                 self.type_mouvement == self.Type.SORTIE
-                and article.stock <= article.seuil_minimum
+                and produit.stock <= produit.seuil_minimum
                 and not self.autorisation_depassement
             ):
                 raise ValidationError(
-                    f'{article} : le stock a atteint le seuil ({article.seuil_minimum}). '
+                    f'{produit} : le stock a atteint le seuil ({produit.seuil_minimum}). '
                     'Une autorisation du propriétaire est requise.'
                 )
-            self.stock_avant = article.stock
-            article.stock += delta
-            article.save(update_fields=['stock'])
-            self.stock_apres = article.stock
+            self.stock_avant = produit.stock
+            produit.stock += delta
+            produit.save(update_fields=['stock'])
+            self.stock_apres = produit.stock
             self.valide = True
             self.date_validation = timezone.now()
             self.save()
-            AlerteStock.synchroniser(article)
+            AlerteStock.synchroniser(produit)
 
 
 class AlerteStock(models.Model):
-    article = models.ForeignKey(
-        Article,
+    produit = models.ForeignKey(
+        Produit,
         on_delete=models.CASCADE,
         related_name='alertes',
-        verbose_name='article',
+        verbose_name='produit',
     )
     stock = models.IntegerField('stock')
     seuil = models.PositiveIntegerField('seuil')
@@ -560,7 +582,7 @@ class AlerteStock(models.Model):
         ordering = ['-date_alerte']
 
     def __str__(self):
-        return f'Alerte {self.article.code} (stock {self.stock} / seuil {self.seuil})'
+        return f'Alerte {self.produit.code} (stock {self.stock} / seuil {self.seuil})'
 
     @property
     def en_rupture(self):
@@ -585,19 +607,19 @@ class AlerteStock(models.Model):
         return 'Vigilance'
 
     @classmethod
-    def synchroniser(cls, article):
-        if article.a_signaler:
+    def synchroniser(cls, produit):
+        if produit.a_signaler:
             cls.objects.update_or_create(
-                article=article,
+                produit=produit,
                 active=True,
                 defaults={
-                    'stock': article.stock,
-                    'seuil': article.seuil_minimum,
+                    'stock': produit.stock,
+                    'seuil': produit.seuil_minimum,
                     'date_alerte': timezone.now(),
                 },
             )
         else:
-            cls.objects.filter(article=article, active=True).update(active=False)
+            cls.objects.filter(produit=produit, active=True).update(active=False)
 
 
 class Inventaire(models.Model):
@@ -638,7 +660,7 @@ class Inventaire(models.Model):
     def valider(self):
         if self.statut == self.Statut.VALIDE:
             raise ValidationError('Cet inventaire est déjà validé.')
-        lignes = list(self.lignes.select_related('article'))
+        lignes = list(self.lignes.select_related('produit'))
         if not lignes:
             raise ValidationError('Impossible de valider un inventaire sans ligne.')
         with transaction.atomic():
@@ -656,11 +678,11 @@ class LigneInventaire(models.Model):
         related_name='lignes',
         verbose_name='inventaire',
     )
-    article = models.ForeignKey(
-        Article,
+    produit = models.ForeignKey(
+        Produit,
         on_delete=models.PROTECT,
         related_name='lignes_inventaire',
-        verbose_name='article',
+        verbose_name='produit',
     )
     stock_systeme = models.IntegerField('stock système')
     stock_physique = models.IntegerField('stock physique')
@@ -677,10 +699,10 @@ class LigneInventaire(models.Model):
     class Meta:
         verbose_name = 'ligne d’inventaire'
         verbose_name_plural = 'lignes d’inventaire'
-        unique_together = [('inventaire', 'article')]
+        unique_together = [('inventaire', 'produit')]
 
     def __str__(self):
-        return f'{self.article.code} ({self.ecart:+d})'
+        return f'{self.produit.code} ({self.ecart:+d})'
 
     @property
     def ecart(self):
@@ -692,10 +714,10 @@ class LigneInventaire(models.Model):
             return None
         if not self.motif:
             raise ValidationError(
-                f'Un motif est obligatoire pour ajuster {self.article.code} (écart {ecart:+d}).'
+                f'Un motif est obligatoire pour ajuster {self.produit.code} (écart {ecart:+d}).'
             )
         mouvement = MouvementStock(
-            article=self.article,
+            produit=self.produit,
             type_mouvement=MouvementStock.Type.AJUSTEMENT,
             quantite=ecart,
             motif=self.motif,
@@ -714,11 +736,11 @@ class LigneApprovisionnement(models.Model):
         related_name='lignes',
         verbose_name='bon d’approvisionnement',
     )
-    article = models.ForeignKey(
-        Article,
+    produit = models.ForeignKey(
+        Produit,
         on_delete=models.PROTECT,
         related_name='lignes_approvisionnement',
-        verbose_name='article',
+        verbose_name='produit',
     )
     quantite = models.PositiveIntegerField('quantité')
     mouvement = models.OneToOneField(
@@ -735,7 +757,7 @@ class LigneApprovisionnement(models.Model):
         verbose_name_plural = 'lignes d’approvisionnement'
 
     def __str__(self):
-        return f'{self.bon.numero} — {self.article.code} × {self.quantite}'
+        return f'{self.bon.numero} — {self.produit.code} × {self.quantite}'
 
 
 class LigneSortie(models.Model):
@@ -745,11 +767,11 @@ class LigneSortie(models.Model):
         related_name='lignes',
         verbose_name='bon de sortie',
     )
-    article = models.ForeignKey(
-        Article,
+    produit = models.ForeignKey(
+        Produit,
         on_delete=models.PROTECT,
         related_name='lignes_sortie',
-        verbose_name='article',
+        verbose_name='produit',
     )
     quantite = models.PositiveIntegerField('quantité')
     nombre_portions = models.PositiveIntegerField('nombre de portions', default=0)
@@ -767,7 +789,7 @@ class LigneSortie(models.Model):
         verbose_name_plural = 'lignes de sortie'
 
     def __str__(self):
-        return f'{self.bon.numero} — {self.article.code} × {self.quantite}'
+        return f'{self.bon.numero} — {self.produit.code} × {self.quantite}'
 
 
 class Approvisionnement(models.Model):
@@ -840,12 +862,12 @@ class Approvisionnement(models.Model):
             utilisateur=bon.utilisateur,
             bon_entree=bon,
         )
-        for ligne in bon.lignes.select_related('article', 'mouvement'):
+        for ligne in bon.lignes.select_related('produit', 'mouvement'):
             if not ligne.mouvement_id:
                 continue
             ApprovisionnementLigne.objects.create(
                 approvisionnement=journal,
-                article=ligne.article,
+                produit=ligne.produit,
                 quantite=ligne.quantite,
                 stock_avant=ligne.mouvement.stock_avant,
                 stock_apres=ligne.mouvement.stock_apres,
@@ -865,12 +887,12 @@ class Approvisionnement(models.Model):
             utilisateur=bon.utilisateur,
             bon_sortie=bon,
         )
-        for ligne in bon.lignes.select_related('article', 'mouvement'):
+        for ligne in bon.lignes.select_related('produit', 'mouvement'):
             if not ligne.mouvement_id:
                 continue
             ApprovisionnementLigne.objects.create(
                 approvisionnement=journal,
-                article=ligne.article,
+                produit=ligne.produit,
                 quantite=ligne.quantite,
                 nombre_portions=ligne.nombre_portions,
                 stock_avant=ligne.mouvement.stock_avant,
@@ -887,11 +909,11 @@ class ApprovisionnementLigne(models.Model):
         related_name='lignes',
         verbose_name='approvisionnement',
     )
-    article = models.ForeignKey(
-        Article,
+    produit = models.ForeignKey(
+        Produit,
         on_delete=models.PROTECT,
         related_name='lignes_journal_approvisionnement',
-        verbose_name='article',
+        verbose_name='produit',
     )
     quantite = models.IntegerField('quantité')
     nombre_portions = models.PositiveIntegerField('nombre de portions', default=0)
@@ -911,4 +933,4 @@ class ApprovisionnementLigne(models.Model):
         verbose_name_plural = 'lignes d’historique d’approvisionnement'
 
     def __str__(self):
-        return f'{self.approvisionnement.numero} — {self.article.code}'
+        return f'{self.approvisionnement.numero} — {self.produit.code}'

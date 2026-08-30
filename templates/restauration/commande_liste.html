@@ -1,0 +1,144 @@
+{% extends "restauration/base.html" %}
+
+{% block app_title %}Commandes{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Restauration</p>
+    <h1>Commandes enregistrées</h1>
+  </div>
+  <a class="btn btn-primary" href="{% url 'restauration:commande_nouveau' %}">Nouvelle commande</a>
+</div>
+
+<nav class="local-tabs" aria-label="Paiement">
+  <a href="{% url 'restauration:commandes' %}?paiement=impayee" {% if filtre == 'impayee' %}class="is-active"{% endif %}>
+    Non payées
+    {% if nb_impayees %}<span class="tab-badge">{{ nb_impayees }}</span>{% endif %}
+  </a>
+  <a href="{% url 'restauration:commandes' %}?paiement=payee" {% if filtre == 'payee' %}class="is-active"{% endif %}>
+    Payées
+    {% if nb_payees %}<span class="tab-badge">{{ nb_payees }}</span>{% endif %}
+  </a>
+  <a href="{% url 'restauration:commandes' %}?paiement=annulee" {% if filtre == 'annulee' %}class="is-active"{% endif %}>
+    Annulées
+    {% if nb_annulees %}<span class="tab-badge">{{ nb_annulees }}</span>{% endif %}
+  </a>
+  <a href="{% url 'restauration:commandes' %}?paiement=toutes" {% if filtre == 'toutes' %}class="is-active"{% endif %}>
+    Toutes
+  </a>
+</nav>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>N°</th>
+          <th>Date</th>
+          <th>Emplacement</th>
+          <th>Serveur</th>
+          <th>Plats commandés</th>
+          <th>Paiement</th>
+          <th class="_nosort">Lignes</th>
+          <th class="_nosort"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for commande in commandes %}
+        <tr>
+          <td>{{ commande.numero }}</td>
+          <td>{{ commande.date_ouverture|date:"d/m/Y H:i" }}</td>
+          <td>{{ commande.nom_emplacement }}</td>
+          <td>{{ commande.nom_serveur }}</td>
+          <td>{{ commande.resume_lignes }}</td>
+          <td>
+            {% if commande.est_payee %}
+              Payée{% if commande.mode_paiement %} · {{ commande.get_mode_paiement_display }}{% endif %}
+            {% elif commande.statut == 'ANNULEE' %}
+              Annulée
+            {% else %}
+              Non payée · {{ commande.get_statut_display }}
+            {% endif %}
+          </td>
+          <td>
+            <button type="button" class="icon-btn" data-open-dialog="detail-cmd-{{ commande.pk }}" title="Voir les lignes" aria-label="Voir les lignes de {{ commande.numero }}">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' commande.pk %}">Ouvrir</a>
+            {% if commande.peut_encaisser %}
+            <a class="btn btn-primary" href="{% url 'restauration:commande_detail' commande.pk %}#encaissement">Encaisser</a>
+            {% endif %}
+            {% if commande.est_payee %}
+              {% if commande.facture_emise %}
+              <a class="btn btn-primary" href="{% url 'facturation:recu' commande.facture_emise.pk %}?auto=0">Reçu 80 mm</a>
+              {% else %}
+              <a class="btn btn-primary" href="{% url 'restauration:commande_imprimer' commande.pk %}">Imprimer</a>
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">Aucune commande enregistrée.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% for commande in commandes %}
+<dialog id="detail-cmd-{{ commande.pk }}" class="detail-dialog">
+  <h2>{{ commande.numero }}</h2>
+  <p class="help">
+    {{ commande.nom_emplacement }} · {{ commande.date_ouverture|date:"d/m/Y H:i" }}
+    · {% if commande.est_payee %}Payée{% else %}{{ commande.get_statut_display }}{% endif %}
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Plat commandé</th>
+          <th>Description</th>
+          <th>Qté</th>
+          <th>P.U.</th>
+          <th>Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in commande.lignes.all %}
+        <tr>
+          <td>{{ ligne.libelle }}</td>
+          <td>{{ ligne.description_plat|default:"—" }}</td>
+          <td>{{ ligne.quantite }}</td>
+          <td>{{ ligne.prix_unitaire }} {{ ligne.devise }}</td>
+          <td>{{ ligne.montant }} {{ ligne.devise }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">Aucune ligne enregistrée.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="commande-total">
+    Total
+    {% for devise, montant in commande.totaux_par_devise.items %}
+    <strong>{{ montant }} {{ devise }}</strong>
+    {% empty %}
+    <strong>0</strong>
+    {% endfor %}
+  </p>
+  <div class="actions" style="margin-top: 1rem;">
+    <button type="button" class="btn btn-ghost" data-close-dialog>Fermer</button>
+  </div>
+</dialog>
+{% endfor %}
+{% endblock %}

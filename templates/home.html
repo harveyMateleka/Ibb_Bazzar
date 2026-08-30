@@ -2,24 +2,25 @@
 
 {% load static %}
 
-{% block title %}IBBS BAZAR · Restaurant & Boutique{% endblock %}
+{% block title %}{{ etablissement.nom_societe|default:"IBBS BAZAR" }} · Restaurant & Boutique{% endblock %}
 
 {% block content %}
 <section class="hero">
   <div class="hero-inner">
     <div>
       <p class="eyebrow">Restaurant</p>
-      <h1>IBBS BAZAR</h1>
+      <h1>{{ etablissement.nom_societe|default:"IBBS BAZAR" }}</h1>
       <p class="lead">
         L'univers IBBS BAZAR réunit table et style : un restaurant chaleureux
         et une boutique d'habillement, dans une identité bordeaux, noire et blanche.
       </p>
       <div class="actions">
-        <a class="btn btn-primary" href="{% url 'approvisionnement:dashboard' %}">Ouvrir l'approvisionnement</a>
-        <a class="btn btn-ghost" href="#restaurant">Découvrir le restaurant</a>
+        <a class="btn btn-primary" href="{% url 'restauration:dashboard' %}">Ouvrir la restauration</a>
+        <a class="btn btn-ghost" href="{% url 'approvisionnement:dashboard' %}">Approvisionnement</a>
+        <a class="btn btn-ghost" href="{% url 'facturation:journal' %}">Facturation</a>
       </div>
     </div>
-    <img class="hero-mark" src="{% static 'img/logo.png' %}" alt="IBBS BAZAR">
+    <img class="hero-mark" src="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}" alt="{{ etablissement.nom_societe|default:'IBBS BAZAR' }}">
   </div>
 </section>
 
@@ -27,7 +28,7 @@
   <div class="section-inner">
     <p class="eyebrow">Module</p>
     <h2>Approvisionnement</h2>
-    <p class="help">Les articles, catégories, unités et fournisseurs se paramètrent dans l’administration.</p>
+    <p class="help">Les produits, catégories, unités et fournisseurs se paramètrent dans l’administration.</p>
     {% if alertes %}
     <div class="cards" style="margin-bottom: 1.25rem;">
       {% for alerte in alertes %}
@@ -52,16 +53,42 @@
 
 <section class="section" id="restaurant">
   <div class="section-inner">
+    <p class="eyebrow">Module</p>
     <h2>Restaurant</h2>
+    <p class="help">Les salles, tables et plats se paramètrent dans l’administration. Les commandes se gèrent dans l’application.</p>
     <div class="cards">
       <article class="card">
-        <h3>Cuisine</h3>
-        <p>Une table pensée pour recevoir, avec la chaleur du bordeaux de la marque.</p>
+        <h3>Plan de salle</h3>
+        <p>Ouvrez une table, prenez la commande et suivez le service jusqu’à l’encaissement.</p>
       </article>
       <article class="card">
-        <h3>Ambiance</h3>
-        <p>Contraste noir et blanc, détails bordeaux : la même charte que le logo.</p>
+        <h3>Stock cuisine / terrasse</h3>
+        <p>Terrasse : la sortie magasin augmente la quantité vendable. Cuisine et barbecus : on saisit les plats préparés. La quantité n’est diminuée qu’à la validation de la commande.</p>
       </article>
+    </div>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <a class="btn btn-primary" href="{% url 'restauration:dashboard' %}">Aller à la restauration</a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="facturation">
+  <div class="section-inner">
+    <p class="eyebrow">Module</p>
+    <h2>Facturation</h2>
+    <p class="help">Après validation d’une commande, la caisse encaisse, libère la table et imprime le reçu 80 mm. Le journal reprend tous les paiements du jour.</p>
+    <div class="cards">
+      <article class="card">
+        <h3>Encaissement</h3>
+        <p>Choisissez le mode de paiement sur la commande validée : espèces, mobile money ou carte. Une facture est créée automatiquement.</p>
+      </article>
+      <article class="card">
+        <h3>Journal de caisse</h3>
+        <p>Consultez les commandes à encaisser, les reçus du jour et les totaux par mode de paiement.</p>
+      </article>
+    </div>
+    <div class="actions" style="margin-top: 1.2rem;">
+      <a class="btn btn-primary" href="{% url 'facturation:journal' %}">Ouvrir la caisse</a>
     </div>
   </div>
 </section>

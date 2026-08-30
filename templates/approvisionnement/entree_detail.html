@@ -23,7 +23,7 @@
     <table class="js-datatable">
       <thead>
         <tr>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Quantité</th>
         </tr>
@@ -31,8 +31,8 @@
       <tbody>
         {% for ligne in lignes %}
         <tr>
-          <td>{{ ligne.article }}</td>
-          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.produit }}</td>
+          <td>{{ ligne.produit.unite }}</td>
           <td>{{ ligne.quantite }}</td>
         </tr>
         {% empty %}
@@ -59,7 +59,7 @@
       <table>
         <thead>
           <tr>
-            <th>Article</th>
+            <th>Produit</th>
             <th>Quantité</th>
           </tr>
         </thead>
@@ -68,8 +68,8 @@
           <tr>
             <td>
               {{ form.id }}
-              {{ form.article }}
-              {{ form.article.errors }}
+              {{ form.produit }}
+              {{ form.produit.errors }}
             </td>
             <td>
               {{ form.quantite }}
@@ -92,7 +92,7 @@
     const form = document.getElementById("form-lignes-entree");
     if (!form) return;
     const selects = function () {
-      return Array.from(form.querySelectorAll("select[data-article-ligne]"));
+      return Array.from(form.querySelectorAll("select[data-produit-ligne]"));
     };
 
     function sync() {
@@ -111,7 +111,7 @@
     }
 
     form.addEventListener("change", function (event) {
-      if (event.target && event.target.matches("select[data-article-ligne]")) {
+      if (event.target && event.target.matches("select[data-produit-ligne]")) {
         sync();
       }
     });

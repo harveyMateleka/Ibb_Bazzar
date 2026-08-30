@@ -1,0 +1,97 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Addition {{ commande.numero }}</title>
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <link rel="icon" href="{{ MEDIA_URL }}logo/logo.jpeg">
+</head>
+<body class="print-page">
+  <div class="no-print print-toolbar">
+    <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' commande.pk %}">Retour</a>
+    <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer</button>
+  </div>
+
+  <article class="bon-doc">
+    <header class="bon-head">
+      <img src="{{ MEDIA_URL }}logo/logo.jpeg" alt="IBBS BAZAR" class="bon-logo">
+      <div>
+        <p class="eyebrow">Restaurant · Boutique d'habillement</p>
+        <h1>Addition</h1>
+      </div>
+      <div class="bon-numero">
+        <span>N°</span>
+        <strong>{{ commande.numero }}</strong>
+      </div>
+    </header>
+
+    <dl class="bon-meta">
+      <div>
+        <dt>Emplacement</dt>
+        <dd>{{ commande.nom_emplacement }}</dd>
+      </div>
+      <div>
+        <dt>Ouverture</dt>
+        <dd>{{ commande.date_ouverture|date:"d/m/Y H:i" }}</dd>
+      </div>
+      <div>
+        <dt>Serveur</dt>
+        <dd>{{ commande.nom_serveur }}</dd>
+      </div>
+      <div>
+        <dt>Statut</dt>
+        <dd>{{ commande.get_statut_display }}</dd>
+      </div>
+      {% if commande.mode_paiement %}
+      <div>
+        <dt>Paiement</dt>
+        <dd>{{ commande.get_mode_paiement_display }}</dd>
+      </div>
+      {% endif %}
+      {% if commande.date_cloture %}
+      <div>
+        <dt>Clôture</dt>
+        <dd>{{ commande.date_cloture|date:"d/m/Y H:i" }}</dd>
+      </div>
+      {% endif %}
+    </dl>
+
+    <table class="bon-table">
+      <thead>
+        <tr>
+          <th>Plat</th>
+          <th>Qté</th>
+          <th>P.U.</th>
+          <th>Montant</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in commande.lignes.all %}
+        <tr>
+          <td>{{ ligne.libelle }}</td>
+          <td>{{ ligne.quantite }}</td>
+          <td>{{ ligne.prix_unitaire }} {{ ligne.devise }}</td>
+          <td>{{ ligne.montant }} {{ ligne.devise }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="commande-total">
+      Total
+      {% for devise, montant in commande.totaux_par_devise.items %}
+      <strong>{{ montant }} {{ devise }}</strong>
+      {% empty %}
+      <strong>0</strong>
+      {% endfor %}
+    </p>
+    {% if commande.commentaire %}
+    <p class="bon-note">{{ commande.commentaire }}</p>
+    {% endif %}
+  </article>
+  {% if request.GET.auto %}
+  <script>window.print();</script>
+  {% endif %}
+</body>
+</html>

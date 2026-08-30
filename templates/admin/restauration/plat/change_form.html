@@ -1,0 +1,6 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrahead %}
+{{ block.super }}
+{{ imprimantes_par_service|json_script:"imprimantes-par-service" }}
+{% endblock %}

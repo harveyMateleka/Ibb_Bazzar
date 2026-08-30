@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Acteur, Article, Categorie, Fonctionnalite, Fournisseur, Module, Service, Unite
+from .models import Acteur, Produit, Categorie, Fonctionnalite, Fournisseur, Module, Service, Unite
 
 
 @admin.register(Module)
@@ -44,8 +44,8 @@ class ServiceAdmin(admin.ModelAdmin):
     search_fields = ['nom']
 
 
-@admin.register(Article)
-class ArticleAdmin(admin.ModelAdmin):
+@admin.register(Produit)
+class ProduitAdmin(admin.ModelAdmin):
     list_display = ['code', 'designation', 'categorie', 'unite', 'seuil_minimum', 'stock', 'en_alerte', 'en_vigilance']
     list_filter = ['categorie', 'unite']
     search_fields = ['code', 'designation']

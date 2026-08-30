@@ -16,8 +16,8 @@
 
 <div class="stats">
   <article class="stat">
-    <span>Articles</span>
-    <strong>{{ nb_articles }}</strong>
+    <span>Produits</span>
+    <strong>{{ nb_produits }}</strong>
   </article>
   <article class="stat {% if nb_alertes %}stat-alert{% endif %}">
     <span>Alertes stock</span>
@@ -36,7 +36,7 @@
     <table class="js-datatable">
       <thead>
         <tr>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Niveau</th>
           <th>Stock</th>
           <th>Seuil</th>
@@ -73,19 +73,19 @@
         </tr>
       </thead>
       <tbody>
-        {% for article in articles %}
-        <tr class="{{ article.classe_stock }}">
-          <td>{{ article.code }}</td>
-          <td>{{ article.designation }}</td>
-          <td>{{ article.categorie }}</td>
-          <td>{{ article.unite }}</td>
-          <td>{{ article.stock }}</td>
-          <td>{{ article.seuil_minimum }}</td>
-          <td>{{ article.niveau_stock|default:"—" }}</td>
+        {% for produit in produits %}
+        <tr class="{{ produit.classe_stock }}">
+          <td>{{ produit.code }}</td>
+          <td>{{ produit.designation }}</td>
+          <td>{{ produit.categorie }}</td>
+          <td>{{ produit.unite }}</td>
+          <td>{{ produit.stock }}</td>
+          <td>{{ produit.seuil_minimum }}</td>
+          <td>{{ produit.niveau_stock|default:"—" }}</td>
         </tr>
         {% empty %}
         <tr>
-          <td colspan="7">Aucun article. Créez-les dans l’administration (paramètres).</td>
+          <td colspan="7">Aucun produit. Créez-les dans l’administration (paramètres).</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -157,8 +157,8 @@
       <tbody>
         {% for ligne in journal.lignes.all %}
         <tr>
-          <td>{{ ligne.article }}</td>
-          <td>{{ ligne.article.unite }}</td>
+          <td>{{ ligne.produit }}</td>
+          <td>{{ ligne.produit.unite }}</td>
           <td>{{ ligne.quantite }}</td>
         </tr>
         {% empty %}

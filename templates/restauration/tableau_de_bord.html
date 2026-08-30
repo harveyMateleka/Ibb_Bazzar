@@ -1,0 +1,120 @@
+{% extends "restauration/base.html" %}
+
+{% block app_title %}Plan de salle{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Restauration</p>
+    <h1>Plan de salle</h1>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'facturation:journal' %}">Journal de caisse</a>
+    <a class="btn btn-primary" href="{% url 'restauration:commande_nouveau' %}">Nouvelle commande</a>
+  </div>
+</div>
+
+<div class="stats">
+  <article class="stat">
+    <span>Tables occupées</span>
+    <strong>{{ nb_occupees }}/{{ nb_tables }}</strong>
+  </article>
+  <article class="stat">
+    <span>Non payées (jour)</span>
+    <strong>{{ nb_ouvertes }}</strong>
+  </article>
+  <article class="stat">
+    <span>Payées (jour)</span>
+    <strong>{{ nb_payees_jour }}</strong>
+  </article>
+  <article class="stat">
+    <span>Cuisine</span>
+    <strong>{{ nb_cuisine }}</strong>
+  </article>
+  <article class="stat">
+    <span>Barbecus</span>
+    <strong>{{ nb_barbecus }}</strong>
+  </article>
+  <article class="stat">
+    <span>Terrasse</span>
+    <strong>{{ nb_terrasse }}</strong>
+  </article>
+  <article class="stat">
+    <span>CA du jour</span>
+    <strong>{{ ca_jour }}</strong>
+  </article>
+</div>
+
+{% for salle in salles %}
+<section class="panel">
+  <h2>{{ salle.nom }}</h2>
+  <div class="table-plan">
+    {% for table in salle.tables.all %}
+      {% with ouverte=table.commande_ouverte %}
+      {% if ouverte %}
+      <a class="table-tile is-busy" href="{% url 'restauration:commande_detail' ouverte.pk %}">
+        <span class="eyebrow">Occupée</span>
+        <strong>Table {{ table.numero }}</strong>
+        <p>{{ ouverte.numero }}</p>
+        <p>{{ table.places }} places</p>
+      </a>
+      {% else %}
+      <form method="post" action="{% url 'restauration:table_ouvrir' table.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="table-tile is-free">
+          <span class="eyebrow">Libre</span>
+          <strong>Table {{ table.numero }}</strong>
+          <p>{{ table.places }} places</p>
+        </button>
+      </form>
+      {% endif %}
+      {% endwith %}
+    {% empty %}
+    <p class="help">Aucune table dans cette salle. Créez-les dans les paramètres.</p>
+    {% endfor %}
+  </div>
+</section>
+{% empty %}
+<section class="panel">
+  <p class="help">Créez d’abord les salles et les tables dans l’administration (Paramètres).</p>
+</section>
+{% endfor %}
+
+<section class="panel">
+  <h2>Commandes en cours</h2>
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>N°</th>
+          <th>Emplacement</th>
+          <th>Ouverture</th>
+          <th>Plats commandés</th>
+          <th>Statut</th>
+          <th>Total</th>
+          <th class="_nosort"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for commande in commandes_actives %}
+        <tr>
+          <td>{{ commande.numero }}</td>
+          <td>{{ commande.nom_emplacement }}</td>
+          <td>{{ commande.date_ouverture|date:"d/m/Y H:i" }}</td>
+          <td>{{ commande.resume_lignes }}</td>
+          <td>Non payée · {{ commande.get_statut_display }}</td>
+          <td>{{ commande.total }}</td>
+          <td class="actions">
+            <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' commande.pk %}">Ouvrir</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">Aucune commande en cours.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

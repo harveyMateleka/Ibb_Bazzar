@@ -29,7 +29,12 @@ SECRET_KEY = 'django-insecure-zbkh2x_o%of+g^e8=w!n##%l0o_=t514+wo_u7fef28b!840wv
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '10.45.3.39']
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:8085',
+    'http://127.0.0.1:8085',
+    'http://10.45.3.39:8085',
+]
 
 
 # Application definition
@@ -42,6 +47,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'approvisionnement',
+    'restauration',
+    'facturation',
 ]
 
 MIDDLEWARE = [
@@ -65,8 +72,10 @@ TEMPLATES = [
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
+                'django.template.context_processors.media',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'facturation.context_processors.etablissement',
             ],
         },
     },
@@ -126,6 +135,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

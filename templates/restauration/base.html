@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% block app_title %}Restauration{% endblock %} · IBBS BAZAR{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <nav class="subnav" aria-label="Restauration">
+      <a href="{% url 'restauration:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}class="is-active"{% endif %}>Plan de salle</a>
+      <a href="{% url 'restauration:commandes' %}" {% if 'commande' in request.resolver_match.url_name %}class="is-active"{% endif %}>Commandes</a>
+      <a href="{% url 'restauration:cuisine' %}" {% if request.resolver_match.url_name == 'cuisine' %}class="is-active"{% endif %}>Cuisine</a>
+      <a href="{% url 'restauration:barbecus' %}" {% if request.resolver_match.url_name == 'barbecus' %}class="is-active"{% endif %}>Barbecus</a>
+      <a href="{% url 'restauration:terrasse' %}" {% if request.resolver_match.url_name == 'terrasse' %}class="is-active"{% endif %}>Terrasse</a>
+      <a href="{% url 'facturation:journal' %}">Caisse</a>
+    </nav>
+    {% block app_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="{% static 'js/approvisionnement.js' %}"></script>
+{% endblock %}

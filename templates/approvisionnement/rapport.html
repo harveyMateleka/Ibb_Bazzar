@@ -61,7 +61,7 @@
           <th>Date</th>
           <th>N°</th>
           <th>Fournisseur</th>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Quantité</th>
         </tr>
@@ -72,8 +72,8 @@
           <td>{{ item.journal.date_operation|date:"d/m/Y H:i" }}</td>
           <td>{{ item.journal.numero }}</td>
           <td>{{ item.journal.fournisseur|default:"—" }}</td>
-          <td>{{ item.ligne.article }}</td>
-          <td>{{ item.ligne.article.unite }}</td>
+          <td>{{ item.ligne.produit }}</td>
+          <td>{{ item.ligne.produit.unite }}</td>
           <td>{{ item.ligne.quantite }}</td>
         </tr>
         {% empty %}
@@ -96,7 +96,7 @@
           <th>N°</th>
           <th>Motif</th>
           <th>Service</th>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Quantité</th>
           <th>Portions</th>
@@ -109,8 +109,8 @@
           <td>{{ item.journal.numero }}</td>
           <td>{{ item.journal.motif }}</td>
           <td>{{ item.journal.destination|default:"—" }}</td>
-          <td>{{ item.ligne.article }}</td>
-          <td>{{ item.ligne.article.unite }}</td>
+          <td>{{ item.ligne.produit }}</td>
+          <td>{{ item.ligne.produit.unite }}</td>
           <td>{{ item.ligne.quantite }}</td>
           <td>{% if item.ligne.nombre_portions %}{{ item.ligne.nombre_portions }}{% else %}—{% endif %}</td>
         </tr>
@@ -132,7 +132,7 @@
         <tr>
           <th>Date</th>
           <th>Responsable</th>
-          <th>Article</th>
+          <th>Produit</th>
           <th>Unité</th>
           <th>Stock système</th>
           <th>Stock physique</th>
@@ -145,8 +145,8 @@
         <tr>
           <td>{{ item.inventaire.date_inventaire|date:"d/m/Y" }}</td>
           <td>{{ item.inventaire.responsable }}</td>
-          <td>{{ item.ligne.article }}</td>
-          <td>{{ item.ligne.article.unite }}</td>
+          <td>{{ item.ligne.produit }}</td>
+          <td>{{ item.ligne.produit.unite }}</td>
           <td>{{ item.ligne.stock_systeme }}</td>
           <td>{{ item.ligne.stock_physique }}</td>
           <td>{{ item.ligne.ecart }}</td>

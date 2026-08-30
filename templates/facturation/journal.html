@@ -1,0 +1,132 @@
+{% extends "facturation/base.html" %}
+
+{% block app_title %}Journal de caisse{% endblock %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Facturation</p>
+    <h1>Journal quotidien</h1>
+    <p class="lead">Paiements du {{ jour|date:"d/m/Y" }} — {{ resume.nb }} reçu{{ resume.nb|pluralize }}. {{ a_encaisser|length }} commande{{ a_encaisser|length|pluralize }} à encaisser.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-primary" href="{% url 'facturation:journal_imprimer' %}?date={{ jour|date:'Y-m-d' }}">Imprimer le journal</a>
+  </div>
+</div>
+
+<form method="get" class="filters">
+  <label class="field" style="margin: 0;">
+    <span class="help" style="margin: 0 0 0.3rem;">Journée</span>
+    {{ form.date }}
+  </label>
+  <button type="submit" class="btn btn-ghost">Afficher</button>
+</form>
+
+<section class="panel">
+  <h2>À encaisser</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Commande</th>
+          <th>Ouverture</th>
+          <th>Emplacement</th>
+          <th>Statut</th>
+          <th>Montant</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for commande in a_encaisser %}
+        <tr>
+          <td>{{ commande.numero }}</td>
+          <td>{{ commande.date_ouverture|date:"d/m/Y H:i" }}</td>
+          <td>{{ commande.nom_emplacement }}</td>
+          <td>{{ commande.get_statut_display }}</td>
+          <td>
+            {% for devise, montant in commande.totaux_par_devise.items %}
+            {{ montant }} {{ devise }}{% if not forloop.last %}<br>{% endif %}
+            {% empty %}0
+            {% endfor %}
+          </td>
+          <td>
+            <a class="btn btn-primary" href="{% url 'restauration:commande_detail' commande.pk %}#encaissement">Encaisser</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6">Aucune commande validée en attente de paiement.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="stats">
+  <article class="stat">
+    <span>Reçus</span>
+    <strong>{{ resume.nb }}</strong>
+  </article>
+  {% for devise, montant in resume.par_devise.items %}
+  <article class="stat">
+    <span>Total {{ devise }}</span>
+    <strong>{{ montant }} {{ devise }}</strong>
+  </article>
+  {% endfor %}
+  {% for mode in resume.par_mode %}
+  <article class="stat">
+    <span>{{ mode.libelle }}</span>
+    <strong>{{ mode.nb }}</strong>
+    {% for devise, montant in mode.montants.items %}
+    <span>{{ montant }} {{ devise }}</span>
+    {% endfor %}
+  </article>
+  {% endfor %}
+</div>
+
+<section class="panel">
+  <h2>Reçus du jour</h2>
+  <div class="table-wrap">
+    <table class="js-datatable">
+      <thead>
+        <tr>
+          <th>Reçu</th>
+          <th>Heure</th>
+          <th>Commande</th>
+          <th>Table</th>
+          <th>Paiement</th>
+          <th>Montant</th>
+          <th>Caissier</th>
+          <th class="_nosort"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for facture in factures %}
+        <tr>
+          <td>{{ facture.numero }}</td>
+          <td>{{ facture.date_facture|date:"H:i" }}</td>
+          <td>{{ facture.commande.numero }}</td>
+          <td>{{ facture.table_liberee }}</td>
+          <td>{{ facture.get_mode_paiement_display }}</td>
+          <td>
+            {% for devise, montant in facture.totaux_par_devise.items %}
+            {{ montant }} {{ devise }}{% if not forloop.last %}<br>{% endif %}
+            {% empty %}0
+            {% endfor %}
+          </td>
+          <td>{{ facture.utilisateur }}</td>
+          <td>
+            <a class="btn btn-ghost" href="{% url 'facturation:recu' facture.pk %}?auto=0">Reçu 80 mm</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8">Aucun paiement pour cette journée.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
