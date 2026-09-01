@@ -9,8 +9,8 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from approvisionnement.models import Article as ArticleAppro
 from approvisionnement.models import MouvementStock as MouvementStockAppro
+from approvisionnement.models import Produit as ArticleAppro
 from core.models import Domaine, Role, Succursale
 from core.services import UserService
 
@@ -19,6 +19,8 @@ from .models import (
     ArticleBoutique,
     BonEntreeBoutique,
     CategorieBoutique,
+    EmplacementBoutique,
+    EtagereBoutique,
     FournisseurBoutique,
     InventaireBoutique,
     MouvementStockBoutique,
@@ -49,6 +51,10 @@ class BoutiqueBase(TestCase):
         self.cat = CategorieBoutique.objects.create(nom='Vêtements', code='VET')
         self.sous_cat = SousCategorieBoutique.objects.create(categorie=self.cat, nom='T-shirts', code='TSH')
         self.unite = UniteBoutique.objects.create(nom='Pièce', code='PCE')
+        self.etagere_a, _ = EtagereBoutique.objects.get_or_create(
+            code='ETA', defaults={'nom': 'Étagère A'})
+        self.emp_a1, _ = EmplacementBoutique.objects.get_or_create(
+            etagere=self.etagere_a, code='A1', defaults={'nom': 'A1'})
         self.tissu_coton = TypeTissuArticle.objects.create(nom='Coton', code='COT')
         self.tissu_poly = TypeTissuArticle.objects.create(nom='Polyester', code='POL')
         self.fournisseur = FournisseurBoutique.objects.create(nom='Fournisseur 1')
@@ -101,10 +107,10 @@ class BoutiqueBase(TestCase):
         return role
 
     def _user(self, username, role):
-        user = UserService.creer(username=username, password='pass1234', roles=[role])
+        profil = UserService.creer(username=username, password='pass1234', roles=[role])
         UserService.affecter_succursale(
-            user, self.succ_a, self.domaine, principale=True, role=role)
-        return user
+            profil, self.succ_a, self.domaine, principale=True, role=role)
+        return profil.compte
 
     def _entrer(self, variante, quantite, seuil=0):
         if seuil:
@@ -192,6 +198,94 @@ class TestArticleEtVariante(BoutiqueBase):
         self.assertEqual(
             ArticleBoutique.objects.filter(code='TSHIRT', succursale=self.succ_a).count(), 1)
         self.assertContains(resp, 'existe déjà')
+
+    def test_arrivage_renseigne_succursale_sans_saisie(self):
+        """L'arrivage n'envoie plus de succursale : elle est posée côté serveur."""
+        from django.contrib.auth import get_user_model
+
+        admin = get_user_model().objects.create_superuser('admin_art', 'a@a.a', 'pass1234')
+        self.client.force_login(admin)
+        resp = self.client.post(
+            reverse('boutique:article_nouveau'),
+            {'code': 'CHEMISE', 'designation': 'Chemise', 'domaine': self.domaine.pk},
+        )
+        self.assertEqual(resp.status_code, 302)
+        art = ArticleBoutique.objects.get(code='CHEMISE')
+        self.assertIsNotNone(art.succursale_id)
+
+    def test_succursale_absente_arrivage_presente_entree(self):
+        """La succursale se choisit à l'entrée en stock, plus à l'arrivage."""
+        self.client.force_login(self.responsable)
+        arrivage = self.client.get(reverse('boutique:article_nouveau'))
+        self.assertEqual(arrivage.status_code, 200)
+        self.assertNotContains(arrivage, 'name="succursale"')
+        entree = self.client.get(reverse('boutique:entree'))
+        self.assertEqual(entree.status_code, 200)
+        self.assertContains(entree, 'name="succursale"')
+        self.assertContains(entree, self.succ_a.nom)
+
+    def test_article_parent_visible_sur_entree(self):
+        """Les articles du domaine Boutique apparaissent dans Article parent."""
+        self.client.force_login(self.responsable)
+        entree = self.client.get(reverse('boutique:entree'))
+        self.assertEqual(entree.status_code, 200)
+        self.assertContains(entree, 'name="article"')
+        self.assertContains(entree, self.art_tshirt.designation)
+        self.assertContains(entree, self.art_tshirt_b.designation)
+
+    def test_arrivage_apparait_dans_article_parent(self):
+        """Un article créé à l'arrivage est proposé à l'entrée, quelle que soit sa succursale."""
+        self.client.force_login(self.responsable)
+        resp = self.client.post(
+            reverse('boutique:article_nouveau'),
+            {'code': 'POLO', 'designation': 'Polo IBBS', 'domaine': self.domaine.pk},
+        )
+        self.assertEqual(resp.status_code, 302)
+        entree = self.client.get(reverse('boutique:entree'))
+        self.assertContains(entree, 'Polo IBBS')
+
+    def test_entree_unite_affiche_nom(self):
+        """L'unité affiche le nom (Pièce), pas le code (PCE)."""
+        self.client.force_login(self.responsable)
+        entree = self.client.get(reverse('boutique:entree'))
+        self.assertContains(entree, self.unite.nom)
+        options = entree.context['form'].fields['unite'].queryset
+        labels = [
+            entree.context['form'].fields['unite'].label_from_instance(u)
+            for u in options
+        ]
+        self.assertIn('Pièce', labels)
+        self.assertNotIn('PCE', labels)
+
+    def test_entree_emplacement_select_sans_etagere(self):
+        """Étagère retirée ; emplacement est un select issu de la base."""
+        self.client.force_login(self.responsable)
+        entree = self.client.get(reverse('boutique:entree'))
+        self.assertNotContains(entree, 'name="etagere"')
+        self.assertContains(entree, 'name="emplacement"')
+        self.assertContains(entree, self.emp_a1.nom)
+        self.assertContains(entree, 'Prix de vente')
+        self.assertContains(entree, 'Dernier prix')
+        self.assertNotContains(entree, 'Prix unitaire')
+        self.assertNotContains(entree, '>Prix minimum<')
+
+    def test_entree_emplacement_renseigne_etagere(self):
+        """Choisir un emplacement pose aussi l'étagère parente sur le bon."""
+        self.client.force_login(self.responsable)
+        resp = self.client.post(
+            reverse('boutique:entree'),
+            {
+                'succursale': self.succ_a.pk,
+                'article': self.art_tshirt.pk,
+                'emplacement': self.emp_a1.pk,
+                'quantite': 3,
+                'devise': 'FC',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        bon = BonEntreeBoutique.objects.get(article=self.art_tshirt, emplacement='A1')
+        self.assertEqual(bon.etagere, self.etagere_a.nom)
+        self.assertEqual(bon.emplacement, self.emp_a1.nom)
 
     def test_variante_porte_la_devise(self):
         """La devise vit sur la variante (défaut FC), plus sur l'article."""
@@ -344,6 +438,19 @@ class TestVenteService(BoutiqueBase):
         vente.refresh_from_db()
         self.assertEqual(vente.statut, Vente.Statut.ANNULEE)
 
+    def test_annulation_confirmee_refusee(self):
+        self._entrer(self.var_noir_m, 10)
+        vente = VenteService.soumettre(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.responsable,
+            lignes=[(self.var_noir_m, 2, 15)], par=self.responsable)
+        VenteService.confirmer(vente=vente, par=self.responsable)
+        with self.assertRaises(ValidationError):
+            VenteService.annuler(vente, commentaire='Trop tard')
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, Vente.Statut.CONFIRMEE)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 8)
+
     def test_annulation_sans_commentaire_refuse(self):
         """Annuler sans commentaire est refusé (le commentaire est obligatoire)."""
         vente = self._vente()
@@ -422,6 +529,22 @@ class TestBonEntreeBoutique(BoutiqueBase):
         BonEntreeService.valider(bon=bon, par=self.responsable)
         with self.assertRaises(ValidationError):
             BonEntreeService.valider(bon=bon, par=self.responsable)
+
+    def test_validation_credite_la_succursale_du_bon(self):
+        """Le stock est posé sur la succursale choisie à l'entrée, pas celle de l'article."""
+        bon = BonEntreeService.creer(
+            article=self.art_tshirt, succursale=self.succ_b, domaine=self.domaine,
+            quantite=7, cree_par=self.responsable,
+            couleur='Vert', taille='M', genre='HOMME', prix_unitaire=20)
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        var = VarianteArticle.objects.get(
+            article=self.art_tshirt, couleur='Vert', taille='M', genre='HOMME')
+        stock_b = StockBoutique.objects.get(
+            variante=var, succursale=self.succ_b, domaine=self.domaine)
+        self.assertEqual(stock_b.quantite, 7)
+        self.assertFalse(
+            StockBoutique.objects.filter(
+                variante=var, succursale=self.succ_a).exists())
 
     def test_entree_variante_existante_reeapprovisionnement(self):
         """Nouvelle entrée sur une variante existante = réapprovisionnement autorisé :
@@ -780,7 +903,7 @@ class TestVenteTraitementLigne(BoutiqueBase):
         self._entrer(self.var_noir_m, 10)
         self._entrer(self.var_noir_l, 10)
         vente = self._soumettre([
-            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)])
+            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 13)])
         lignes = {l.variante_id: l for l in vente.lignes.all()}
         VenteService.traiter_ligne(
             vente=vente, ligne_pk=lignes[self.var_noir_m.pk].pk,
@@ -811,12 +934,11 @@ class TestVenteTraitementLigne(BoutiqueBase):
         with self.assertRaises(ValidationError):
             VenteService.confirmer(vente=vente, par=self.responsable)
 
-    def test_confirmer_stock_insuffisant_refuse(self):
+    def test_soumettre_stock_insuffisant_refuse(self):
         self._entrer(self.var_noir_m, 2)
-        vente = self._soumettre([(self.var_noir_m, 3, 15)])
-        self.assertEqual(vente.statut, Vente.Statut.TRAITEE)
         with self.assertRaises(ValidationError):
-            VenteService.confirmer(vente=vente, par=self.responsable)
+            self._soumettre([(self.var_noir_m, 3, 15)])
+        self.assertFalse(Vente.objects.exists())
 
     def test_montant_recu_egal_total_apres_soumission(self):
         """Montant reçu non saisi : posé automatiquement = total de la facture."""
@@ -848,7 +970,7 @@ class TestVenteTraitementLigne(BoutiqueBase):
         self._entrer(self.var_noir_m, 10)
         self._entrer(self.var_noir_l, 10)
         vente = self._soumettre([
-            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)])
+            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 13)])
         lignes = {l.variante_id: l for l in vente.lignes.all()}
         VenteService.traiter_ligne(
             vente=vente, ligne_pk=lignes[self.var_noir_m.pk].pk,
@@ -856,6 +978,8 @@ class TestVenteTraitementLigne(BoutiqueBase):
         VenteService.traiter_ligne(
             vente=vente, ligne_pk=lignes[self.var_noir_l.pk].pk,
             decision='REJETEE', par=self.responsable)
+        vente.refresh_from_db()
+        self.assertEqual(vente.total, Decimal('26'))
         VenteService.traiter_vente(vente=vente, par=self.responsable)
         VenteService.confirmer(vente=vente, par=self.responsable)
         vente.refresh_from_db()
@@ -915,7 +1039,7 @@ class TestVenteTraitementLigne(BoutiqueBase):
         self._entrer(self.var_noir_m, 10)
         self._entrer(self.var_noir_l, 10)
         vente = self._soumettre([
-            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)])
+            (self.var_noir_m, 2, 13), (self.var_noir_l, 1, 13)])
         lignes = {l.variante_id: l for l in vente.lignes.all()}
         VenteService.traiter_ligne(
             vente=vente, ligne_pk=lignes[self.var_noir_m.pk].pk,
@@ -954,7 +1078,7 @@ class TestPerimetreBoutique(BoutiqueBase):
         user = UserService.creer(username='resto', password='pass1234', roles=[role])
         UserService.affecter_succursale(
             user, self.succ_a, self.restaurant, principale=True, role=role)
-        self.client.force_login(user)
+        self.client.force_login(user.compte)
         resp = self.client.get(reverse('boutique:articles'))
         self.assertEqual(resp.status_code, 200)
         self.assertNotContains(resp, 'TSHIRT')
@@ -969,7 +1093,7 @@ class TestPerimetreBoutique(BoutiqueBase):
             user, self.succ_a, self.restaurant, principale=True, role=self.role_caissier)
         UserService.affecter_succursale(
             user, self.succ_a, self.domaine, principale=False, role=self.role_caissier)
-        self.client.force_login(user)
+        self.client.force_login(user.compte)
         resp = self.client.get(reverse('boutique:vente_nouvelle'))
         self.assertEqual(resp.status_code, 200)
         # La variante BOUTIQUE de la succursale A est chargée dans le select.
@@ -1052,3 +1176,60 @@ class TestTableauxBoutique(BoutiqueBase):
         self.assertContains(avec, 'ECART')  # la variante écartée apparaît (motif)
         sans = self.client.get(url, {'ecart': 'sans'})
         self.assertNotContains(sans, 'ECART')  # la variante écartée est exclue
+
+
+class TestProfilsVendeur(BoutiqueBase):
+    """Vendeur : arrivages, ventes, rapports. Responsable : lignes sous le prix normal."""
+
+    def setUp(self):
+        super().setUp()
+        self.role_vendeur = self._role('VENDEUR', [
+            'view_boutique', 'view_stock', 'view_vente', 'create_vente', 'adjust_stock',
+        ])
+        self.role_resp_vendeur = self._role('RESPONSABLE_VENDEUR', [
+            'view_boutique', 'view_vente', 'validate_vente',
+        ])
+        self.vendeur = self._user('vendeur', self.role_vendeur)
+        self.resp_vendeur = self._user('resp_vendeur', self.role_resp_vendeur)
+
+    def test_vendeur_enregistre_sans_valider(self):
+        self.client.force_login(self.vendeur)
+        self.assertEqual(self.client.get(reverse('boutique:article_nouveau')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('boutique:vente_nouvelle')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('boutique:rapports')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('boutique:ventes_a_valider')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('boutique:entrees_validation')).status_code, 403)
+
+    def test_responsable_valide_seulement_ligne_sous_prix_normal(self):
+        self._entrer(self.var_noir_m, 10)
+        self._entrer(self.var_noir_l, 10)
+        vente = VenteService.soumettre(
+            succursale=self.succ_a, domaine=self.domaine, utilisateur=self.vendeur,
+            lignes=[(self.var_noir_m, 2, 13), (self.var_noir_l, 1, 15)],
+            par=self.vendeur,
+        )
+        self.assertEqual(vente.statut, Vente.Statut.PENDING_VALIDATION)
+        lignes = {l.variante_id: l for l in vente.lignes.all()}
+        sous_prix = lignes[self.var_noir_m.pk]
+        prix_normal = lignes[self.var_noir_l.pk]
+        self.assertTrue(sous_prix.necessite_validation)
+        self.assertFalse(prix_normal.necessite_validation)
+
+        self.client.force_login(self.resp_vendeur)
+        self.assertEqual(self.client.get(reverse('boutique:vente_nouvelle')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('boutique:article_nouveau')).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse('boutique:vente_detail', args=[vente.pk])).status_code,
+            200,
+        )
+
+        with self.assertRaises(ValidationError):
+            VenteService.traiter_ligne(
+                vente=vente, ligne_pk=prix_normal.pk, decision='VALIDEE',
+                par=self.resp_vendeur)
+
+        VenteService.traiter_ligne(
+            vente=vente, ligne_pk=sous_prix.pk, decision='VALIDEE',
+            par=self.resp_vendeur)
+        sous_prix.refresh_from_db()
+        self.assertEqual(sous_prix.statut_ligne, VenteLigne.StatutLigne.VALIDEE)

@@ -44,8 +44,12 @@
       </table>
     </div>
     <div class="actions" style="margin-top: 1.2rem;">
+      {% if perms.approvisionnement.create_inventaire %}
       <button type="submit" name="action" value="enregistrer" class="btn btn-ghost">Enregistrer les saisies</button>
+      {% endif %}
+      {% if perms.approvisionnement.validate_inventaire %}
       <button type="submit" name="action" value="valider" class="btn btn-primary">Valider l’inventaire</button>
+      {% endif %}
     </div>
   </section>
 </form>

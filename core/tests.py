@@ -44,7 +44,7 @@ class TestUserService(BaseCoreTest):
             cree_par=self.admin,
         )
         self.assertTrue(utilisateur.check_password('secret123'))
-        self.assertEqual(utilisateur.cree_par, self.admin)
+        self.assertEqual(utilisateur.cree_par, self.admin.compte)
         self.assertTrue(utilisateur.roles.filter(code='RESPONSABLE').exists())
         self.assertEqual(utilisateur.get_full_name(), 'Jean Dupont')
 
@@ -113,7 +113,7 @@ class TestPermissions(BaseCoreTest):
         factory = RequestFactory()
         # Utilisateur sans permission → PermissionDenied.
         requete = factory.get('/')
-        requete.user = self.responsable
+        requete.user = self.responsable.compte
         with self.assertRaises(PermissionDenied):
             vue_protegee(requete)
 
@@ -129,8 +129,25 @@ class TestPermissions(BaseCoreTest):
 
         factory = RequestFactory()
         requete = factory.get('/')
-        requete.user = self.responsable
+        requete.user = self.responsable.compte
         self.assertEqual(vue_protegee(requete), 'OK')
+
+    def test_suppression_admin_reservee_au_superuser(self):
+        from django.contrib.admin import ModelAdmin
+
+        from .permissions import restreindre_suppressions_admin
+
+        restreindre_suppressions_admin()
+        admin = ModelAdmin(Role, None)
+        factory = RequestFactory()
+
+        refuse = factory.get('/')
+        refuse.user = self.responsable.compte
+        self.assertFalse(admin.has_delete_permission(refuse))
+
+        autorise = factory.get('/')
+        autorise.user = self.admin.compte
+        self.assertTrue(admin.has_delete_permission(autorise))
 
 
 class TestAudit(BaseCoreTest):
@@ -139,7 +156,7 @@ class TestAudit(BaseCoreTest):
         self.responsable.deactiver(par=self.admin)
         self.assertEqual(AuditLog.objects.count(), before + 1)
         trace = AuditLog.objects.filter(action='user.deactivate').latest('id')
-        self.assertEqual(trace.utilisateur, self.admin)
+        self.assertEqual(trace.utilisateur, self.admin.compte)
         self.assertEqual(trace.objet_id, self.responsable.pk)
         self.assertEqual(trace.nouvelle_valeur, {'actif': False})
 
@@ -275,7 +292,7 @@ class TestModuleUtilisateurs(BaseCoreTest):
             },
         )
         self.assertEqual(response.status_code, 302)
-        user = User.objects.get(username='nouveau')
+        user = User.objects.get(compte__username='nouveau')
         self.assertTrue(user.check_password('motdepasse123'))
         self.assertEqual(list(user.succursales_autorisees()), [succ])
         # Le contexte est exploitable immédiatement (auto-rempli + verrouillé).

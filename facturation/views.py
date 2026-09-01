@@ -1,12 +1,16 @@
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import get_object_or_404, render
+from django.contrib import messages
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_POST
 
+from core.permissions import require_permission
+from restauration.impression import ImpressionError
 from restauration.models import Commande
 
 from .forms import JournalForm
 from .models import Etablissement, Facture
+from .services import imprimer_recu_caisse
 
 
 def _journal_queryset(jour):
@@ -38,7 +42,7 @@ def _totaux_journal(factures):
     }
 
 
-@login_required
+@require_permission('facturation.view_facture')
 def journal(request):
     jour = parse_date(request.GET.get('date') or '') or timezone.localdate()
     factures = list(_journal_queryset(jour))
@@ -62,7 +66,7 @@ def journal(request):
     )
 
 
-@login_required
+@require_permission('facturation.view_facture')
 def journal_imprimer(request):
     jour = parse_date(request.GET.get('date') or '') or timezone.localdate()
     factures = list(_journal_queryset(jour))
@@ -78,7 +82,7 @@ def journal_imprimer(request):
     )
 
 
-@login_required
+@require_permission('facturation.view_facture')
 def recu(request, pk):
     facture = get_object_or_404(
         Facture.objects.select_related(
@@ -92,6 +96,28 @@ def recu(request, pk):
         {
             'facture': facture,
             'etablissement': Etablissement.actuel(),
-            'auto_print': request.GET.get('auto') != '0',
+            'auto_print': request.GET.get('auto') == '1',
         },
     )
+
+
+@require_permission('facturation.view_facture')
+@require_POST
+def recu_imprimer(request, pk):
+    facture = get_object_or_404(
+        Facture.objects.select_related('commande'),
+        pk=pk,
+    )
+    try:
+        cible = imprimer_recu_caisse(facture)
+        if cible:
+            messages.success(request, f'Reçu envoyé à l’imprimante caisse « {cible} ».')
+        else:
+            messages.warning(
+                request,
+                'Aucune imprimante caisse n’est enregistrée. '
+                'Paramétrez-la dans l’établissement, ou utilisez Imprimer 80 mm.',
+            )
+    except ImpressionError as exc:
+        messages.warning(request, str(exc))
+    return redirect('facturation:recu', pk=facture.pk)

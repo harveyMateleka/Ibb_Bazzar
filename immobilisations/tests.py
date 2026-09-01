@@ -1,11 +1,12 @@
 """Tests du module Immobilisations (cycle de vie historisé, indépendant)."""
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from core.models import Domaine, Role, Succursale, User
+from core.models import Domaine, Role, Succursale
 from core.services import UserService
 
 from .models import (
@@ -66,10 +67,10 @@ class ImmobilisationBase(TestCase):
         return role
 
     def _user(self, username, role, succursale):
-        user = UserService.creer(username=username, password='pass1234', roles=[role])
+        profil = UserService.creer(username=username, password='pass1234', roles=[role])
         UserService.affecter_succursale(
-            user, succursale, self.domaine, principale=True, role=role)
-        return user
+            profil, succursale, self.domaine, principale=True, role=role)
+        return profil.compte
 
     def _bien_declasse(self):
         """Bien déclassé (statut DECLASSE), hors du système pour les non-privilégiés."""
@@ -314,7 +315,7 @@ class TestValidationBien(ImmobilisationBase):
 class TestPerimetreEtPermissions(ImmobilisationBase):
     def test_liste_biens_sans_permission_forbidden(self):
         user = UserService.creer(username='aucun', password='pass1234')
-        self.client.force_login(user)
+        self.client.force_login(user.compte)
         resp = self.client.get(reverse('immobilisations:biens'))
         self.assertEqual(resp.status_code, 403)
 
@@ -353,7 +354,7 @@ class TestBiensDeclasses(ImmobilisationBase):
         self.assertNotContains(resp, 'Inclure les biens déclassés')  # pas de case pour lui
 
     def test_visible_superuser(self):
-        admin = User.objects.create_superuser(username='super', password='x')
+        admin = get_user_model().objects.create_superuser(username='super', password='x')
         self.client.force_login(admin)
         resp = self.client.get(reverse('immobilisations:biens'))
         self.assertEqual(resp.status_code, 200)
@@ -378,7 +379,7 @@ class TestBiensDeclasses(ImmobilisationBase):
         self.assertEqual(resp.status_code, 404)  # existence masquée
 
     def test_detail_ok_privelegie(self):
-        admin = User.objects.create_superuser(username='super2', password='x')
+        admin = get_user_model().objects.create_superuser(username='super2', password='x')
         self.client.force_login(admin)
         resp = self.client.get(
             reverse('immobilisations:bien_detail', kwargs={'pk': self.bien_declasse.pk}))
@@ -395,3 +396,128 @@ class TestBiensDeclasses(ImmobilisationBase):
             DeplacementService.deplacer(
                 immobilisation=self.bien_declasse, nouvelle_succursale=self.succ_a,
                 par=self.gestionnaire)
+
+
+class TestProfilsLogistique(ImmobilisationBase):
+    """Chargé : saisie / signalement. Responsable : validation uniquement."""
+
+    def setUp(self):
+        super().setUp()
+        self.role_charge = self._role('CHARGE_LOGISTIQUE', [
+            'view_asset', 'create_asset', 'update_asset', 'assign_asset',
+            'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset',
+        ])
+        self.role_resp = self._role('RESPONSABLE_LOGISTIQUE', [
+            'view_asset', 'validate_asset', 'view_declassified_asset',
+        ])
+        self.charge = self._user('charge_log', self.role_charge, self.succ_a)
+        self.responsable = self._user('resp_log', self.role_resp, self.succ_a)
+
+    def test_charge_enregistre_et_signale_sans_valider(self):
+        self.client.force_login(self.charge)
+        self.assertEqual(
+            self.client.get(reverse('immobilisations:bien_nouveau')).status_code, 200)
+        self.assertEqual(
+            self.client.get(
+                reverse('immobilisations:affectation_nouvelle', kwargs={'pk': self.bien.pk})
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse('immobilisations:casse_declarer', kwargs={'pk': self.bien.pk})
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse('immobilisations:declassement_demander', kwargs={'pk': self.bien.pk})
+            ).status_code,
+            200,
+        )
+
+        brouillon = ImmobilisationService.creer(
+            designation='Table', succursale=self.succ_a, domaine=self.domaine,
+            par=self.charge)
+        ImmobilisationService.soumettre(immobilisation=brouillon, par=self.charge)
+        self.assertEqual(
+            self.client.post(
+                reverse('immobilisations:bien_valider', kwargs={'pk': brouillon.pk})
+            ).status_code,
+            403,
+        )
+
+        casse = CasseService.declarer(
+            immobilisation=self.bien, motif='Chute', par=self.charge)
+        self.assertEqual(
+            self.client.post(
+                reverse(
+                    'immobilisations:casse_evaluer',
+                    kwargs={'pk': self.bien.pk, 'casse_pk': casse.pk},
+                ),
+                {'decision': 'REPARABLE'},
+            ).status_code,
+            403,
+        )
+
+        demande = DeclassementService.demander(
+            immobilisation=self.bien, motif='Usure', par=self.charge)
+        self.assertEqual(
+            self.client.post(
+                reverse(
+                    'immobilisations:declassement_valider',
+                    kwargs={'pk': self.bien.pk, 'dec_pk': demande.pk},
+                )
+            ).status_code,
+            403,
+        )
+
+    def test_responsable_valide_entree_casse_et_declassement(self):
+        self.client.force_login(self.responsable)
+        self.assertEqual(
+            self.client.get(reverse('immobilisations:bien_nouveau')).status_code, 403)
+        self.assertEqual(
+            self.client.get(
+                reverse('immobilisations:affectation_nouvelle', kwargs={'pk': self.bien.pk})
+            ).status_code,
+            403,
+        )
+
+        brouillon = ImmobilisationService.creer(
+            designation='Chaise', succursale=self.succ_a, domaine=self.domaine,
+            par=self.charge)
+        ImmobilisationService.soumettre(immobilisation=brouillon, par=self.charge)
+        resp = self.client.post(
+            reverse('immobilisations:bien_valider', kwargs={'pk': brouillon.pk}))
+        self.assertEqual(resp.status_code, 302)
+        brouillon.refresh_from_db()
+        self.assertEqual(brouillon.statut_validation, Immobilisation.StatutValidation.VALIDE)
+
+        casse = CasseService.declarer(
+            immobilisation=self.bien, motif='Choc', par=self.charge)
+        resp = self.client.post(
+            reverse(
+                'immobilisations:casse_evaluer',
+                kwargs={'pk': self.bien.pk, 'casse_pk': casse.pk},
+            ),
+            {'decision': 'REPARABLE'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        casse.refresh_from_db()
+        self.assertEqual(casse.decision, Casse.Decision.REPARABLE)
+
+        autre = ImmobilisationService.creer(
+            designation='Armoire', succursale=self.succ_a, domaine=self.domaine,
+            par=self.charge)
+        self._valider(autre)
+        demande = DeclassementService.demander(
+            immobilisation=autre, motif='Hors service', par=self.charge)
+        resp = self.client.post(
+            reverse(
+                'immobilisations:declassement_valider',
+                kwargs={'pk': autre.pk, 'dec_pk': demande.pk},
+            )
+        )
+        self.assertEqual(resp.status_code, 302)
+        demande.refresh_from_db()
+        self.assertEqual(demande.statut, Declassement.Statut.VALIDE)

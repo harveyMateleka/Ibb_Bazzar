@@ -70,10 +70,49 @@ class UniteBoutique(models.Model):
     class Meta:
         verbose_name = 'unité boutique'
         verbose_name_plural = 'unités boutique'
-        ordering = ['code']
+        ordering = ['nom']
 
     def __str__(self):
-        return self.code
+        return self.nom
+
+
+class EtagereBoutique(models.Model):
+    """Étagère de rangement boutique (référentiel)."""
+
+    nom = models.CharField('nom', max_length=100)
+    code = models.CharField('code', max_length=20, unique=True)
+    actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'étagère boutique'
+        verbose_name_plural = 'étagères boutique'
+        ordering = ['nom']
+
+    def __str__(self):
+        return self.nom
+
+
+class EmplacementBoutique(models.Model):
+    """Emplacement de rangement : appartient à une étagère."""
+
+    etagere = models.ForeignKey(
+        EtagereBoutique,
+        on_delete=models.PROTECT,
+        related_name='emplacements',
+        verbose_name='étagère',
+    )
+    nom = models.CharField('nom', max_length=100)
+    code = models.CharField('code', max_length=20)
+    actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'emplacement boutique'
+        verbose_name_plural = 'emplacements boutique'
+        ordering = ['etagere__nom', 'nom']
+        unique_together = [('etagere', 'code')]
+
+    def __str__(self):
+        return f'{self.nom} ({self.etagere.nom})'
 
 
 class TypeTissuArticle(models.Model):
@@ -144,7 +183,7 @@ class ArticleBoutique(models.Model):
         unique_together = [('code', 'succursale', 'domaine')]
 
     def __str__(self):
-        return f'{self.code} — {self.designation}'
+        return self.designation
 
     @property
     def stock_total(self):
@@ -427,6 +466,7 @@ class BonEntreeBoutique(models.Model):
         ordering = ['-date_creation']
         permissions = [
             ('validate_entree', 'Peut valider une entrée de stock'),
+            ('cancel_entree', 'Peut annuler une entrée de stock'),
         ]
 
     def __str__(self):
@@ -862,10 +902,10 @@ class Vente(models.Model):
             ligne.save(update_fields=['mouvement'])
 
     def annuler(self, commentaire=''):
-        if self.statut in (self.Statut.VALIDEE, self.Statut.ANNULEE):
+        if self.statut in (self.Statut.VALIDEE, self.Statut.CONFIRMEE, self.Statut.ANNULEE):
             raise ValidationError(
                 'Cette vente ne peut pas être annulée (statut actuel : '
-                f'{self.get_statut_display()}). Pour une vente validée, prévoir un retour.'
+                f'{self.get_statut_display()}). Pour une vente confirmée, prévoir un retour.'
             )
         self.statut = self.Statut.ANNULEE
         self.commentaire = commentaire
@@ -930,6 +970,11 @@ class VenteLigne(models.Model):
         # prix proposé d'origine.
         self.total = (self.prix_retenu * self.quantite) - self.remise
         super().save(*args, **kwargs)
+
+    @property
+    def necessite_validation(self):
+        """Ligne vendue sous le prix normal : seule le responsable de vendeur la tranche."""
+        return self._prix_facture() < self.prix_unitaire
 
     @property
     def montant_normal(self):

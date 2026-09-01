@@ -10,10 +10,31 @@ Le frontend n'est JAMAIS utilisé comme mécanisme de sécurité.
 
 from functools import wraps
 
+from django.contrib.admin import ModelAdmin
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 
 from .models import Domaine
+
+
+def interdire_suppression_sauf_superuser(utilisateur):
+    """Les suppressions sont réservées au superuser."""
+    if not getattr(utilisateur, 'is_superuser', False):
+        raise PermissionDenied(
+            'La suppression est interdite. Seul un superuser peut supprimer un enregistrement.'
+        )
+
+
+def restreindre_suppressions_admin():
+    """Admin Django : delete_* uniquement pour le superuser."""
+    if getattr(ModelAdmin.has_delete_permission, '_ibb_superuser_only', False):
+        return
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(getattr(request.user, 'is_superuser', False))
+
+    has_delete_permission._ibb_superuser_only = True
+    ModelAdmin.has_delete_permission = has_delete_permission
 
 
 def require_permission(codename):
@@ -42,7 +63,23 @@ def require_permission(codename):
 
 def succursales_autorisees(utilisateur, domaine=None):
     """Succursales actives accessibles à l'utilisateur, filtrées par domaine."""
-    return utilisateur.succursales_autorisees(domaine=domaine)
+    from .models import Succursale, User, UserSuccursale
+    from .services import compte_de
+
+    if isinstance(utilisateur, User):
+        return utilisateur.succursales_autorisees(domaine=domaine)
+    profil = getattr(utilisateur, 'profil', None)
+    if profil is not None:
+        return profil.succursales_autorisees(domaine=domaine)
+    if getattr(utilisateur, 'is_superuser', False):
+        return Succursale.objects.filter(actif=True)
+    qs = UserSuccursale.objects.filter(
+        utilisateur=compte_de(utilisateur),
+        succursale__actif=True,
+    )
+    if domaine is not None:
+        qs = qs.filter(domaine=domaine)
+    return Succursale.objects.filter(pk__in=qs.values('succursale_id'))
 
 
 def appliquer_contexte(form, contexte):
@@ -55,6 +92,8 @@ def appliquer_contexte(form, contexte):
     if not contexte:
         return form
     for champ in ('succursale', 'domaine'):
+        if champ not in form.fields:
+            continue
         valeur = contexte.get(champ)
         if valeur is not None:
             form.fields[champ].initial = valeur

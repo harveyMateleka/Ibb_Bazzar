@@ -53,7 +53,7 @@ class Fonctionnalite(models.Model):
         ordering = ['code']
 
     def __str__(self):
-        return f'{self.code} — {self.libelle}'
+        return self.libelle
 
 
 class Categorie(models.Model):
@@ -153,6 +153,13 @@ class BonApprovisionnement(models.Model):
         verbose_name = 'bon d’approvisionnement'
         verbose_name_plural = 'bons d’approvisionnement'
         ordering = ['-date_approvisionnement']
+        permissions = [
+            ('view_approvisionnement', 'Peut consulter les approvisionnements'),
+            ('create_approvisionnement', 'Peut enregistrer une entrée en stock'),
+            ('validate_approvisionnement', 'Peut valider une entrée en stock'),
+            ('cancel_approvisionnement', 'Peut annuler une entrée en stock'),
+            ('view_rapport_approvisionnement', 'Peut consulter les rapports d’approvisionnement'),
+        ]
 
     def __str__(self):
         return self.numero
@@ -237,6 +244,12 @@ class BonSortie(models.Model):
         verbose_name = 'bon de sortie'
         verbose_name_plural = 'bons de sortie'
         ordering = ['-date_sortie']
+        permissions = [
+            ('view_sortie', 'Peut consulter les sorties de stock'),
+            ('create_sortie', 'Peut enregistrer une sortie de stock'),
+            ('validate_sortie', 'Peut valider une sortie de stock'),
+            ('cancel_sortie', 'Peut annuler une sortie de stock'),
+        ]
 
     def __str__(self):
         return self.numero
@@ -389,7 +402,7 @@ class Produit(models.Model):
         ordering = ['code']
 
     def __str__(self):
-        return f'{self.code} — {self.designation}'
+        return self.designation
 
     @property
     def en_rupture(self):
@@ -647,6 +660,10 @@ class Inventaire(models.Model):
         verbose_name = 'inventaire'
         verbose_name_plural = 'inventaires'
         ordering = ['-date_inventaire']
+        permissions = [
+            ('create_inventaire', 'Peut créer un inventaire'),
+            ('validate_inventaire', 'Peut valider un inventaire'),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=['date_inventaire'],

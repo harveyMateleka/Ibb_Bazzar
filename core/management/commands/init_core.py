@@ -12,57 +12,177 @@ from django.db import transaction
 from core.models import Domaine, Role, Succursale
 from core.services import PermissionService
 
-# Permissions des rôles (définies dans les Meta.permissions des modèles).
 APPROVISIONNEMENT = 'approvisionnement'
 CORE = 'core'
 BOUTIQUE = 'boutique'
 IMMOBILISATIONS = 'immobilisations'
+RESTAURATION = 'restauration'
+FACTURATION = 'facturation'
 
-IMMO_TOUTES = ['view_asset', 'create_asset', 'update_asset', 'assign_asset',
-               'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset',
-               'validate_asset']
-IMMO_SANS_DECLASSEMENT = [p for p in IMMO_TOUTES if p != 'decommission_asset']
+IMMO_TOUTES = [
+    'view_asset', 'create_asset', 'update_asset', 'assign_asset',
+    'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset',
+    'view_declassified_asset', 'validate_asset',
+]
+# Entrée, affectation, casse, demande de déclassement — aucune validation.
+IMMO_OPERATIONNEL = [
+    'view_asset', 'create_asset', 'update_asset', 'assign_asset',
+    'move_asset', 'repair_asset', 'report_damage_asset', 'decommission_asset',
+]
+# Validation de toute la chaîne logistique (entrée, casse, déclassement).
+IMMO_VALIDATION = [
+    'view_asset', 'validate_asset', 'view_declassified_asset',
+]
 
+RESTO_OPERATEUR = [
+    'view_restauration', 'create_commande', 'modify_commande',
+    'validate_commande', 'cancel_commande', 'adjust_plat_portions',
+]
+RESTO_CAISSE = ['view_restauration', 'encaisser_commande']
+RESTO_SERVICE = ['view_restauration', 'servir_ligne']
+RESTO_CUISINE = ['view_restauration', 'servir_ligne', 'adjust_plat_portions']
+
+APPRO_SAISIE = [
+    'view_approvisionnement', 'create_approvisionnement',
+    'view_sortie', 'create_sortie',
+    'view_inventaire', 'create_inventaire',
+    'view_rapport_approvisionnement',
+]
+APPRO_VALIDATION = [
+    'view_approvisionnement', 'validate_approvisionnement',
+    'view_sortie', 'validate_sortie',
+    'view_inventaire', 'validate_inventaire',
+    'view_rapport_approvisionnement',
+]
+
+# Anciens codes conservés pour les seeds / comptes déjà affectés.
 PERMISSIONS_ROLES = {
+    'OPERATEUR_COMMANDE': [
+        (RESTAURATION, RESTO_OPERATEUR),
+    ],
+    'OPERATEUR': [
+        (RESTAURATION, RESTO_OPERATEUR),
+    ],
+    'MAGASINIER': [
+        (APPROVISIONNEMENT, APPRO_SAISIE),
+        (BOUTIQUE, ['view_boutique', 'view_stock', 'adjust_stock']),
+    ],
+    'COMPTABLE': [
+        (APPROVISIONNEMENT, APPRO_VALIDATION),
+        (BOUTIQUE, ['view_boutique', 'view_stock', 'validate_entree']),
+        (FACTURATION, ['view_facture']),
+        (CORE, ['view_audit']),
+    ],
+    'CAISSIER': [
+        (RESTAURATION, RESTO_CAISSE),
+        (FACTURATION, ['view_facture']),
+        (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente']),
+    ],
+    'SERVEUR': [
+        (RESTAURATION, RESTO_SERVICE),
+    ],
+    'CUISINIER': [
+        (RESTAURATION, RESTO_CUISINE),
+    ],
+    'CHARGE_LOGISTIQUE': [
+        (IMMOBILISATIONS, IMMO_OPERATIONNEL),
+    ],
+    'RESPONSABLE_LOGISTIQUE': [
+        (IMMOBILISATIONS, IMMO_VALIDATION),
+        (CORE, ['view_audit']),
+    ],
+    'VENDEUR': [
+        (BOUTIQUE, [
+            'view_boutique', 'view_stock', 'view_vente', 'create_vente',
+            'adjust_stock',
+        ]),
+    ],
+    'RESPONSABLE_VENDEUR': [
+        (BOUTIQUE, ['view_boutique', 'view_vente', 'validate_vente']),
+    ],
     'DIRECTION': [
-        (APPROVISIONNEMENT, ['view_approvisionnement', 'create_approvisionnement',
-                             'validate_approvisionnement', 'view_sortie', 'create_sortie',
-                             'validate_sortie', 'view_historique', 'view_inventaire',
-                             'create_inventaire', 'validate_inventaire']),
-        (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente',
-                    'validate_vente', 'cancel_vente', 'apply_remise', 'adjust_stock',
-                    'validate_entree']),
+        (APPROVISIONNEMENT, APPRO_SAISIE + [
+            'validate_approvisionnement', 'validate_sortie', 'validate_inventaire',
+        ]),
+        (BOUTIQUE, [
+            'view_boutique', 'view_stock', 'view_vente', 'create_vente',
+            'validate_vente', 'apply_remise', 'adjust_stock', 'validate_entree',
+        ]),
         (IMMOBILISATIONS, IMMO_TOUTES),
+        (RESTAURATION, RESTO_OPERATEUR + ['encaisser_commande', 'servir_ligne']),
+        (FACTURATION, ['view_facture']),
         (CORE, ['view_audit', 'view_utilisateur', 'view_succursale']),
     ],
     'RESPONSABLE': [
-        (APPROVISIONNEMENT, ['view_approvisionnement', 'create_approvisionnement',
-                             'validate_approvisionnement', 'view_sortie', 'create_sortie',
-                             'validate_sortie', 'view_historique', 'view_inventaire',
-                             'create_inventaire', 'validate_inventaire']),
-        (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente',
-                    'validate_vente', 'cancel_vente', 'apply_remise', 'adjust_stock',
-                    'validate_entree']),
-        (IMMOBILISATIONS, IMMO_SANS_DECLASSEMENT),
+        (BOUTIQUE, [
+            'view_boutique', 'view_stock', 'view_vente', 'create_vente',
+            'validate_vente', 'apply_remise', 'adjust_stock', 'validate_entree',
+        ]),
+        (APPROVISIONNEMENT, APPRO_VALIDATION),
+        (RESTAURATION, RESTO_OPERATEUR + ['encaisser_commande']),
         (CORE, ['view_audit']),
     ],
-    'MAGASINIER': [
-        (APPROVISIONNEMENT, ['view_approvisionnement', 'create_approvisionnement',
-                             'view_sortie', 'create_sortie',
-                             'view_inventaire', 'view_historique']),
-        (BOUTIQUE, ['view_boutique', 'view_stock']),
-        (IMMOBILISATIONS, ['view_asset', 'create_asset']),
-    ],
-    'OPERATEUR': [
-        (APPROVISIONNEMENT, ['view_approvisionnement', 'view_sortie',
-                             'view_inventaire', 'view_historique']),
-        (BOUTIQUE, ['view_boutique', 'view_stock']),
-        (IMMOBILISATIONS, ['view_asset']),
-    ],
-    'CAISSIER': [
-        (BOUTIQUE, ['view_boutique', 'view_stock', 'view_vente', 'create_vente']),
-        (APPROVISIONNEMENT, ['view_inventaire', 'view_historique']),
-    ],
+}
+
+ROLES = {
+    'ADMIN': ('Administrateur', 'Accès total. Seul le superuser peut supprimer.'),
+    'OPERATEUR_COMMANDE': (
+        'Opérateur de la commande',
+        'Enregistre, modifie, valide et imprime une commande. '
+        'Ne peut pas annuler une commande déjà validée. '
+        'Peut ajouter des portions cuisine / barbecus.',
+    ),
+    'OPERATEUR': (
+        'Opérateur',
+        'Alias historique de l’opérateur de la commande.',
+    ),
+    'MAGASINIER': (
+        'Magasinier',
+        'Enregistre les entrées et sorties de stock et produit les rapports. '
+        'Ne valide pas les bons.',
+    ),
+    'COMPTABLE': (
+        'Comptable',
+        'Valide les entrées et sorties. Ne peut pas les annuler une fois enregistrées.',
+    ),
+    'CAISSIER': (
+        'Caissière',
+        'Visualise les commandes et enregistre le paiement. '
+        'Ne peut pas annuler une facture déjà payée.',
+    ),
+    'SERVEUR': (
+        'Serveur',
+        'Consulte les commandes et marque les plats servis.',
+    ),
+    'CUISINIER': (
+        'Cuisinier',
+        'Prépare les plats, ajoute les portions cuisine / barbecus, marque le service.',
+    ),
+    'CHARGE_LOGISTIQUE': (
+        'Chargé de logistique',
+        'Enregistre l’entrée d’un bien, l’affecte, signale une casse ou un déclassement. '
+        'Ne valide rien et ne peut rien supprimer.',
+    ),
+    'RESPONSABLE_LOGISTIQUE': (
+        'Responsable du logistique',
+        'Valide les entrées, les casses et les déclassements de la logistique.',
+    ),
+    'VENDEUR': (
+        'Vendeur',
+        'Enregistre les arrivages, les ventes et les rapports. Ne valide rien.',
+    ),
+    'RESPONSABLE_VENDEUR': (
+        'Responsable de vendeur',
+        'Valide uniquement les lignes vendues sous le prix de vente normal.',
+    ),
+    'DIRECTION': (
+        'Direction / Propriétaire',
+        'Supervision et validation supérieure.',
+    ),
+    'RESPONSABLE': (
+        'Responsable',
+        'Rôle historique de validation (boutique / stock).',
+    ),
 }
 
 
@@ -87,7 +207,6 @@ class Command(BaseCommand):
             self.style.SUCCESS(f'{PermissionService.nb_permissions()} permission(s) disponibles en base.')
         )
 
-        # Nettoyage : APPROVISIONNEMENT est un module, pas un domaine d'activité.
         ancien_domaine = Domaine.objects.filter(code='APPROVISIONNEMENT').first()
         if ancien_domaine:
             ancien_domaine.affectations.all().delete()
@@ -104,35 +223,30 @@ class Command(BaseCommand):
             )
         self.stdout.write(self.style.SUCCESS('Domaines créés : ' + ', '.join(domaines)))
 
-        roles = {
-            'ADMIN': ('Administrateur', 'Accès total à l’application.'),
-            'DIRECTION': ('Direction / Propriétaire', 'Validation supérieure, remises.'),
-            'RESPONSABLE': ('Responsable', 'Validation des opérations, inventaires.'),
-            'MAGASINIER': ('Magasinier', 'Entrées / sorties de stock.'),
-            'OPERATEUR': ('Opérateur', 'Saisie courante.'),
-            'CAISSIER': ('Caissier', 'Encaissements.'),
-        }
-        for code, (nom, desc) in roles.items():
+        for code, (nom, desc) in ROLES.items():
             role, cree = Role.objects.get_or_create(
                 code=code,
                 defaults={'nom': nom, 'description': desc, 'est_systeme': True},
             )
-            if cree:
-                self.stdout.write(self.style.SUCCESS(f'Rôle créé : {nom}'))
-        # L'administrateur reçoit toutes les permissions.
+            if not cree:
+                role.nom = nom
+                role.description = desc
+                role.est_systeme = True
+                role.save(update_fields=['nom', 'description', 'est_systeme'])
+            self.stdout.write(self.style.SUCCESS(f'Rôle {"créé" if cree else "mis à jour"} : {nom}'))
+
         admin_role = Role.objects.get(code='ADMIN')
         admin_role.permissions.set(Permission.objects.all())
         self.stdout.write(self.style.SUCCESS('Rôle ADMIN = toutes les permissions.'))
 
-        # Permissions opérationnelles par rôle (Approvisionnement, core).
         for code, groupes in PERMISSIONS_ROLES.items():
             role = Role.objects.get(code=code)
             permissions = []
             for app_label, codenames in groupes:
                 permissions += list(_chercher_permissions(app_label, codenames))
-            role.permissions.add(*permissions)
+            role.permissions.set(permissions)
             self.stdout.write(
-                self.style.SUCCESS(f'Permissions {code} : {len(permissions)} ajoutée(s).')
+                self.style.SUCCESS(f'Permissions {code} : {len(permissions)} synchronisée(s).')
             )
 
         succursale, _ = Succursale.objects.get_or_create(
@@ -151,7 +265,7 @@ class Command(BaseCommand):
             if User.objects.filter(username=options['superuser']).exists():
                 self.stdout.write(self.style.WARNING('Superuser déjà présent, ignoré.'))
             else:
-                utilisateur = User.objects.create_superuser(
+                User.objects.create_superuser(
                     username=options['superuser'],
                     email=options['email'] or '',
                     password=options['password'] or 'admin123',
@@ -162,11 +276,9 @@ class Command(BaseCommand):
                         + ('' if options['password'] else ' (mot de passe par défaut : admin123)')
                     )
                 )
-            # Affectation du superuser à la succursale principale (toutes ses affectations).
             utilisateur = User.objects.get(username=options['superuser'])
             from core.models import UserSuccursale
 
-            # La principale du superuser = BOUTIQUE (contexte par défaut des bons).
             for code_domaine in ['ADMINISTRATION', 'BOUTIQUE', 'RESTAURANT', 'IMMOBILISATIONS']:
                 domaine = Domaine.objects.get(code=code_domaine)
                 UserSuccursale.objects.get_or_create(

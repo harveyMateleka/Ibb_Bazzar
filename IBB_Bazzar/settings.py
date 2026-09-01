@@ -54,9 +54,6 @@ INSTALLED_APPS = [
     'immobilisations',
 ]
 
-# Utilisateur central : tous les modules partagent le même modèle.
-AUTH_USER_MODEL = 'core.User'
-
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -153,3 +150,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'approvisionnement:dashboard'
 LOGOUT_REDIRECT_URL = 'home'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'core.backends.RolePermissionBackend',
+]

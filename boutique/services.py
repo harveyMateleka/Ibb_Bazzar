@@ -175,6 +175,8 @@ class BonEntreeService:
                 quantite=bon.quantite,
                 utilisateur=par,
                 motif=f'Validation {bon.numero}',
+                succursale=bon.succursale,
+                domaine=bon.domaine,
             )
             bon.statut = BonEntreeBoutique.Statut.VALIDE
             bon.valide_par = par
@@ -219,12 +221,16 @@ class StockBoutiqueService:
     """Opérations sur le stock d'une variante : mouvement + stock, atomiques."""
 
     @staticmethod
-    def _contexte(variante):
-        return variante.article.succursale, variante.article.domaine
+    def _contexte(variante, succursale=None, domaine=None):
+        return (
+            succursale or variante.article.succursale,
+            domaine if domaine is not None else variante.article.domaine,
+        )
 
     @staticmethod
-    def _executer(*, variante, type_, quantite, utilisateur, reference='', motif='', action_audit):
-        succursale, domaine = StockBoutiqueService._contexte(variante)
+    def _executer(*, variante, type_, quantite, utilisateur, reference='', motif='',
+                  action_audit, succursale=None, domaine=None):
+        succursale, domaine = StockBoutiqueService._contexte(variante, succursale, domaine)
         with transaction.atomic():
             stock = StockBoutique.obtenir(variante, succursale, domaine)
             mouvement = MouvementStockBoutique(
@@ -251,31 +257,37 @@ class StockBoutiqueService:
             return mouvement
 
     @staticmethod
-    def entrer(*, variante, quantite, utilisateur, reference='', motif=''):
+    def entrer(*, variante, quantite, utilisateur, reference='', motif='',
+               succursale=None, domaine=None):
         if quantite <= 0:
             raise ValidationError('La quantité d’une entrée doit être positive.')
         return StockBoutiqueService._executer(
             variante=variante, type_=MouvementStockBoutique.Type.ENTREE,
             quantite=quantite, utilisateur=utilisateur,
-            reference=reference, motif=motif, action_audit='stock.entree')
+            reference=reference, motif=motif, action_audit='stock.entree',
+            succursale=succursale, domaine=domaine)
 
     @staticmethod
-    def sortir(*, variante, quantite, utilisateur, reference='', motif=''):
+    def sortir(*, variante, quantite, utilisateur, reference='', motif='',
+               succursale=None, domaine=None):
         if quantite <= 0:
             raise ValidationError('La quantité d’une sortie doit être positive.')
         return StockBoutiqueService._executer(
             variante=variante, type_=MouvementStockBoutique.Type.SORTIE,
             quantite=quantite, utilisateur=utilisateur,
-            reference=reference, motif=motif, action_audit='stock.sortie')
+            reference=reference, motif=motif, action_audit='stock.sortie',
+            succursale=succursale, domaine=domaine)
 
     @staticmethod
-    def ajuster(*, variante, quantite, utilisateur, reference='', motif=''):
+    def ajuster(*, variante, quantite, utilisateur, reference='', motif='',
+                succursale=None, domaine=None):
         if quantite == 0:
             raise ValidationError('Un ajustement ne peut pas être nul.')
         return StockBoutiqueService._executer(
             variante=variante, type_=MouvementStockBoutique.Type.AJUSTEMENT,
             quantite=quantite, utilisateur=utilisateur,
-            reference=reference, motif=motif, action_audit='stock.ajustement')
+            reference=reference, motif=motif, action_audit='stock.ajustement',
+            succursale=succursale, domaine=domaine)
 
 
 class VenteService:
@@ -362,6 +374,14 @@ class VenteService:
             # Montant reçu non saisi : toujours égal au total de la facture.
             vente.montant_recu = vente.total
             vente.save(update_fields=['montant_recu'])
+            ruptures = vente.analyser_stock()
+            if ruptures:
+                details = ', '.join(
+                    f'{r["article"].designation} ({r["variante"].label}) : '
+                    f'demandé {r["quantite"]}, stock {r["stock"]}'
+                    for r in ruptures
+                )
+                raise ValidationError(f'Stock insuffisant : {details}')
             VenteService._finaliser(vente, par or utilisateur)
         return vente
 
@@ -374,6 +394,11 @@ class VenteService:
             if vente.statut != Vente.Statut.PENDING_VALIDATION:
                 raise ValidationError('Seule une vente en attente de traitement est modifiable.')
             ligne = vente.lignes.select_related('variante').get(pk=ligne_pk)
+            if not ligne.necessite_validation:
+                raise ValidationError(
+                    'Seules les lignes dont le montant est inférieur au prix de '
+                    'vente normal peuvent être validées par le responsable.'
+                )
             if decision == VenteLigne.StatutLigne.REJETEE:
                 ligne.statut_ligne = VenteLigne.StatutLigne.REJETEE
                 ligne.prix_responsable = None
@@ -389,6 +414,9 @@ class VenteService:
             ligne.decide_par = par or vente.utilisateur
             ligne.save(update_fields=[
                 'statut_ligne', 'prix_responsable', 'date_decision', 'decide_par'])
+            vente.recalculer()
+            vente.montant_recu = vente.total
+            vente.save(update_fields=['montant_recu'])
             AuditService.auditer(
                 utilisateur=par or vente.utilisateur, succursale=vente.succursale,
                 module='BOUTIQUE', action='vente.line_process', objet_type='VenteLigne',

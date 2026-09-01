@@ -16,7 +16,9 @@
       <a href="{% url 'restauration:cuisine' %}" {% if request.resolver_match.url_name == 'cuisine' %}class="is-active"{% endif %}>Cuisine</a>
       <a href="{% url 'restauration:barbecus' %}" {% if request.resolver_match.url_name == 'barbecus' %}class="is-active"{% endif %}>Barbecus</a>
       <a href="{% url 'restauration:terrasse' %}" {% if request.resolver_match.url_name == 'terrasse' %}class="is-active"{% endif %}>Terrasse</a>
+      {% if perms.facturation.view_facture or perms.restauration.encaisser_commande %}
       <a href="{% url 'facturation:journal' %}">Caisse</a>
+      {% endif %}
     </nav>
     {% block app_content %}{% endblock %}
   </div>

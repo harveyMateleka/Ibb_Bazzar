@@ -31,7 +31,7 @@
 {% if vente.statut == 'PENDING_VALIDATION' and perms.boutique.validate_vente %}
 <section class="panel mx-5" id="traitement-responsable">
   <h2>Traitement des lignes</h2>
-  <p class="help">Examinez chaque ligne : validez-la (éventuellement avec un prix retenu) ou rejetez-la, puis traitez la vente. Aucune sortie de stock ici.</p>
+  <p class="help">Seules les lignes vendues sous le prix normal sont à valider ou à rejeter. Aucune sortie de stock ici.</p>
   <div class="table-wrap">
     <table>
       <thead>
@@ -58,6 +58,7 @@
             {% else %}—{% endif %}
           </td>
           <td>
+            {% if ligne.necessite_validation %}
             <form action="{% url 'boutique:vente_decider_ligne' vente.pk ligne.pk %}" method="post" class="field">
               {% csrf_token %}
               <select class="input" name="decision" style="width:auto">
@@ -70,6 +71,9 @@
                 <button type="submit" class="btn btn-primary">OK</button>
               </div>
             </form>
+            {% else %}
+            <span class="help">Prix normal — pas de validation</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

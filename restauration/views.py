@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Prefetch
@@ -10,9 +9,10 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from facturation.services import encaisser_et_facturer, imprimer_recu_caisse
+from core.permissions import require_permission
+from facturation.services import encaisser_et_facturer
 from .forms import AnnulationForm, CommandeForm, EncaissementForm
-from .impression import ImpressionError, imprimer_commande_aux_postes
+from .impression import imprimer_commande_aux_postes
 from .models import CategorieMenu, Commande, LigneCommande, Plat, Salle, ServicePoste, Table
 
 
@@ -25,7 +25,7 @@ def _message_erreur(exc):
 def _lignes_poste(service):
     return (
         LigneCommande.objects.filter(
-            commande__statut=Commande.Statut.VALIDEE,
+            commande__statut__in=(Commande.Statut.VALIDEE, Commande.Statut.PAYEE),
             statut=LigneCommande.Statut.EN_ATTENTE,
             service=service,
         )
@@ -40,7 +40,7 @@ def _lignes_poste(service):
     )
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def tableau_de_bord(request):
     aujourd_hui = timezone.localdate()
     commandes_jour = Commande.objects.filter(date_ouverture__date=aujourd_hui)
@@ -79,7 +79,7 @@ def tableau_de_bord(request):
     )
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def ecran_cuisine(request):
     return render(
         request,
@@ -97,7 +97,7 @@ def ecran_cuisine(request):
     )
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def ecran_barbecus(request):
     return render(
         request,
@@ -115,12 +115,12 @@ def ecran_barbecus(request):
     )
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def ecran_bar(request):
     return redirect('restauration:terrasse')
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def ecran_terrasse(request):
     return render(
         request,
@@ -144,7 +144,7 @@ def _redirect_poste_saisie(plat):
     return redirect('restauration:cuisine')
 
 
-@login_required
+@require_permission('restauration.adjust_plat_portions')
 @require_POST
 def plat_ajouter_portions(request, pk):
     plat = get_object_or_404(
@@ -169,7 +169,7 @@ def plat_ajouter_portions(request, pk):
     return _redirect_poste_saisie(plat)
 
 
-@login_required
+@require_permission('restauration.adjust_plat_portions')
 @require_POST
 def plat_ajuster_quantite(request, pk):
     plat = get_object_or_404(
@@ -191,7 +191,7 @@ def plat_ajuster_quantite(request, pk):
     return _redirect_poste_saisie(plat)
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def commande_liste(request):
     filtre = request.GET.get('paiement', 'impayee')
     commandes = Commande.objects.select_related(
@@ -219,7 +219,7 @@ def commande_liste(request):
     )
 
 
-@login_required
+@require_permission('restauration.create_commande')
 def commande_nouveau(request):
     initial = {
         'serveur': request.user.get_full_name() or request.user.get_username(),
@@ -249,7 +249,7 @@ def commande_nouveau(request):
     )
 
 
-@login_required
+@require_permission('restauration.create_commande')
 def table_ouvrir(request, pk):
     table = get_object_or_404(Table.objects.select_related('salle'), pk=pk)
     ouverte = table.commande_ouverte()
@@ -274,7 +274,7 @@ def table_ouvrir(request, pk):
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.view_restauration')
 def commande_detail(request, pk):
     commande = get_object_or_404(
         Commande.objects.select_related(
@@ -286,19 +286,34 @@ def commande_detail(request, pk):
         Prefetch('plats', queryset=Plat.objects.filter(actif=True).select_related('imprimante'))
     )
     dialog_stock = request.session.pop('dialog_stock_indisponible', None)
+    deja_par_plat = {}
+    for ligne in commande.lignes.all():
+        deja_par_plat[ligne.plat_id] = deja_par_plat.get(ligne.plat_id, 0) + ligne.quantite
     return render(
         request,
         'restauration/commande_detail.html',
         {
             'commande': commande,
             'categories': categories,
+            'deja_par_plat': deja_par_plat,
             'encaissement_form': EncaissementForm(),
             'annulation_form': AnnulationForm(),
             'dialog_stock': dialog_stock,
-            'peut_annuler': commande.statut in (Commande.Statut.OUVERTE, Commande.Statut.VALIDEE)
-            and (
+            'peut_annuler': (
                 commande.statut == Commande.Statut.OUVERTE
-                or request.user.is_staff
+                and request.user.has_perm('restauration.cancel_commande')
+            ) or (
+                commande.statut == Commande.Statut.VALIDEE
+                and request.user.is_superuser
+            ),
+            'peut_modifier': commande.modifiable and request.user.has_perm('restauration.modify_commande'),
+            'peut_valider': (
+                commande.statut == Commande.Statut.OUVERTE
+                and request.user.has_perm('restauration.validate_commande')
+            ),
+            'peut_encaisser_ui': (
+                commande.peut_encaisser
+                and request.user.has_perm('restauration.encaisser_commande')
             ),
         },
     )
@@ -328,7 +343,7 @@ def _signaler_stock_insuffisant(request, plat):
     }
 
 
-@login_required
+@require_permission('restauration.modify_commande')
 @require_POST
 def commande_ajouter_plat(request, pk):
     commande = _commande_modifiable(request, pk)
@@ -376,7 +391,7 @@ def commande_ajouter_plat(request, pk):
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.modify_commande')
 @require_POST
 def commande_ligne_plus(request, pk, ligne_pk):
     commande = _commande_modifiable(request, pk)
@@ -395,7 +410,7 @@ def commande_ligne_plus(request, pk, ligne_pk):
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.modify_commande')
 @require_POST
 def commande_ligne_moins(request, pk, ligne_pk):
     commande = _commande_modifiable(request, pk)
@@ -410,7 +425,7 @@ def commande_ligne_moins(request, pk, ligne_pk):
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.modify_commande')
 @require_POST
 def commande_ligne_supprimer(request, pk, ligne_pk):
     commande = _commande_modifiable(request, pk)
@@ -421,44 +436,24 @@ def commande_ligne_supprimer(request, pk, ligne_pk):
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.validate_commande')
 @require_POST
 def commande_valider(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
     try:
         commande.valider(request.user)
-        impressions = imprimer_commande_aux_postes(commande)
-        request.session['impressions_commande'] = impressions
-        services = [item['libelle'] for item in impressions]
-        if impressions and all(item['ok'] for item in impressions):
-            messages.success(
-                request,
-                f'{commande.numero} validée. '
-                + (
-                    f'Tickets envoyés : {", ".join(services)}.'
-                    if len(impressions) > 1
-                    else f'Ticket {services[0].lower()} envoyé à l’imprimante du poste.'
-                ),
-            )
-        elif impressions:
-            echecs = [item['libelle'] for item in impressions if not item['ok']]
-            messages.warning(
-                request,
-                f'{commande.numero} validée. Impression incomplète ({", ".join(echecs)}). '
-                'Vérifiez le nom Windows de chaque imprimante dans Paramètres.',
-            )
-        else:
-            messages.success(
-                request,
-                f'{commande.numero} validée. Elle s’affiche à la cuisine, au barbecus et/ou à la terrasse.',
-            )
+        messages.success(
+            request,
+            f'{commande.numero} validée. Vérifiez l’aperçu des tickets, '
+            'puis envoyez-les à l’imprimante de chaque plat.',
+        )
         return redirect('restauration:commande_tickets', pk=commande.pk)
     except ValidationError as exc:
         messages.error(request, _message_erreur(exc))
         return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.servir_ligne')
 @require_POST
 def commande_ligne_servir(request, pk, ligne_pk):
     commande = get_object_or_404(Commande, pk=pk)
@@ -478,7 +473,7 @@ def commande_ligne_servir(request, pk, ligne_pk):
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.encaisser_commande')
 @require_POST
 def commande_encaisser(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
@@ -494,26 +489,28 @@ def commande_encaisser(request, pk):
         )
         messages.success(
             request,
-            f'{commande.numero} payée. Table libérée. Reçu {facture.numero}.',
+            f'{commande.numero} payée. Table libérée. Reçu {facture.numero} : '
+            'vérifiez l’aperçu avant d’imprimer.',
         )
-        try:
-            cible = imprimer_recu_caisse(facture)
-            if cible:
-                messages.success(request, f'Reçu 80 mm envoyé à « {cible} ».')
-        except ImpressionError as exc:
-            messages.warning(request, str(exc))
-        return redirect(reverse('facturation:recu', args=[facture.pk]))
+        return redirect(f"{reverse('facturation:recu', args=[facture.pk])}?auto=0")
     except ValidationError as exc:
         messages.error(request, _message_erreur(exc))
         return redirect('restauration:commande_detail', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.cancel_commande')
 @require_POST
 def commande_annuler(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
-    if commande.statut == Commande.Statut.VALIDEE and not request.user.is_staff:
-        messages.error(request, 'Seul un responsable peut annuler une commande validée.')
+    if commande.statut == Commande.Statut.VALIDEE and not request.user.is_superuser:
+        messages.error(
+            request,
+            'Une commande déjà validée ne peut pas être annulée. '
+            'Seul un superuser peut le faire.',
+        )
+        return redirect('restauration:commande_detail', pk=commande.pk)
+    if commande.statut == Commande.Statut.PAYEE:
+        messages.error(request, 'Une facture déjà payée ne peut pas être annulée.')
         return redirect('restauration:commande_detail', pk=commande.pk)
     formulaire = AnnulationForm(request.POST)
     if not formulaire.is_valid():
@@ -528,7 +525,7 @@ def commande_annuler(request, pk):
     return redirect('restauration:commandes')
 
 
-@login_required
+@require_permission('restauration.validate_commande')
 def commande_imprimer(request, pk):
     commande = get_object_or_404(
         Commande.objects.select_related('table', 'table__salle', 'utilisateur').prefetch_related(
@@ -543,7 +540,7 @@ def commande_imprimer(request, pk):
     )
 
 
-@login_required
+@require_permission('restauration.validate_commande')
 def commande_tickets(request, pk):
     commande = get_object_or_404(
         Commande.objects.select_related('table', 'table__salle', 'utilisateur').prefetch_related(
@@ -564,7 +561,7 @@ def commande_tickets(request, pk):
     )
 
 
-@login_required
+@require_permission('restauration.validate_commande')
 @require_POST
 def commande_imprimer_postes(request, pk):
     commande = get_object_or_404(
@@ -576,10 +573,21 @@ def commande_imprimer_postes(request, pk):
     if commande.statut == Commande.Statut.OUVERTE:
         messages.error(request, 'Validez d’abord la commande avant d’imprimer les tickets des postes.')
         return redirect('restauration:commande_detail', pk=commande.pk)
-    impressions = imprimer_commande_aux_postes(commande)
+    service = (request.POST.get('service') or '').strip() or None
+    imprimante = request.POST.get('imprimante')
+    if imprimante is not None:
+        imprimante = imprimante.strip()
+    impressions = imprimer_commande_aux_postes(
+        commande, service=service, imprimante=imprimante,
+    )
     request.session['impressions_commande'] = impressions
     if impressions and all(item['ok'] for item in impressions):
-        messages.success(request, 'Tickets renvoyés aux imprimantes des postes.')
+        messages.success(
+            request,
+            'Ticket(s) envoyé(s) à l’imprimante rattachée au(x) plat(s).',
+        )
+    elif not impressions:
+        messages.warning(request, 'Aucun ticket à envoyer pour cette sélection.')
     else:
         messages.warning(
             request,
@@ -589,7 +597,7 @@ def commande_imprimer_postes(request, pk):
     return redirect('restauration:commande_tickets', pk=commande.pk)
 
 
-@login_required
+@require_permission('restauration.validate_commande')
 def commande_ticket_service(request, pk, service):
     if service == 'BAR':
         service = ServicePoste.TERRASSE
@@ -610,6 +618,6 @@ def commande_ticket_service(request, pk, service):
             'service': service,
             'service_libelle': dict(ServicePoste.choices).get(service, service),
             'lignes': lignes,
-            'auto_print': request.GET.get('print') != '0',
+            'auto_print': request.GET.get('print') == '1',
         },
     )

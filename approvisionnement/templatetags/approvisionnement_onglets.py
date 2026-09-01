@@ -22,6 +22,7 @@ def entree_onglets(context):
     return {
         'nb_en_attente': nb_en_attente,
         'onglet_validation': 'validation' in url_name,
+        'perms': context.get('perms'),
     }
 
 
@@ -37,4 +38,5 @@ def sortie_onglets(context):
     return {
         'nb_en_attente': nb_en_attente,
         'onglet_validation': 'validation' in url_name,
+        'perms': context.get('perms'),
     }

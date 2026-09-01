@@ -20,7 +20,7 @@
     {% if perms.immobilisations.report_damage_asset %}
     <a class="btn btn-ghost" href="{% url 'immobilisations:casse_declarer' bien.pk %}">Déclarer une casse</a>
     {% endif %}
-    {% if perms.immobilisations.update_asset %}
+    {% if perms.immobilisations.decommission_asset %}
     <a class="btn btn-danger" href="{% url 'immobilisations:declassement_demander' bien.pk %}">Déclasser</a>
     {% endif %}
   </div>
@@ -178,7 +178,7 @@
           <td>{{ c.get_decision_display|default:"—" }}</td>
           <td>{{ c.par }}</td>
           <td class="actions">
-            {% if not c.decision and perms.immobilisations.report_damage_asset %}
+            {% if not c.decision and perms.immobilisations.validate_asset %}
             <form action="{% url 'immobilisations:casse_evaluer' bien.pk c.pk %}" method="post" class="inline-form">
               {% csrf_token %}
               <select class="input" name="decision">
@@ -216,7 +216,7 @@
           <td>{{ d.par }}</td>
           <td>{{ d.valide_par|default:"—" }}</td>
           <td class="actions">
-            {% if d.statut == 'DEMANDE' and perms.immobilisations.decommission_asset %}
+            {% if d.statut == 'DEMANDE' and perms.immobilisations.validate_asset %}
             <form action="{% url 'immobilisations:declassement_valider' bien.pk d.pk %}" method="post" class="inline-form">
               {% csrf_token %}
               <button type="submit" class="btn btn-primary">Valider le déclassement</button>

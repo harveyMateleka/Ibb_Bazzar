@@ -71,6 +71,17 @@ def _articles_perimetre(peri):
     )
 
 
+def _articles_entree(peri):
+    """Articles proposés à l'entrée : tout le domaine Boutique.
+
+    La succursale se choisit sur le bon d'entrée, plus sur l'article parent.
+    """
+    qs = ArticleBoutique.objects.all().order_by('code')
+    if peri.get('domaine_id'):
+        qs = qs.filter(Q(domaine_id=peri['domaine_id']) | Q(domaine_id__isnull=True))
+    return qs
+
+
 def _variantes_perimetre(peri):
     return VarianteArticle.objects.select_related(
         'article', 'categorie', 'unite', 'type_tissu').filter(
@@ -104,6 +115,15 @@ def _contexte_boutique(user):
         'domaine': peri['domaine'],
         'verrouille': not user.is_superuser,
     }
+
+
+def _succursale_article(contexte, peri):
+    """Succursale à poser sur un nouvel article (plus saisie à l'arrivage)."""
+    return (
+        (contexte or {}).get('succursale')
+        or peri['succursales'].first()
+        or Succursale.objects.filter(actif=True).first()
+    )
 
 
 def _paginer(request, qs, par_page=100):
@@ -222,21 +242,30 @@ def article_nouveau(request):
     )
     if request.method == 'POST' and formulaire.is_valid():
         article = formulaire.save(commit=False)
-        if contexte and contexte['verrouille']:
-            article.succursale = contexte['succursale']
-            article.domaine = contexte['domaine']
-        article.save()
-        AuditService.auditer(
-            utilisateur=request.user,
-            succursale=article.succursale,
-            module='BOUTIQUE',
-            action='article.create',
-            objet_type='ArticleBoutique',
-            objet_id=article.pk,
-            nouvelle_valeur={'code': article.code, 'designation': article.designation},
-        )
-        messages.success(request, f'Arrivage {article.code} enregistré. Ajoutez les produits via l’entrée en stock.')
-        return redirect('boutique:article_detail', pk=article.pk)
+        article.succursale = _succursale_article(contexte, peri)
+        if not article.succursale_id:
+            formulaire.add_error(
+                None,
+                'Aucune succursale n’est disponible. Créez-en une avant d’enregistrer un article.',
+            )
+        else:
+            if contexte and contexte.get('verrouille') and contexte.get('domaine'):
+                article.domaine = contexte['domaine']
+            article.save()
+            AuditService.auditer(
+                utilisateur=request.user,
+                succursale=article.succursale,
+                module='BOUTIQUE',
+                action='article.create',
+                objet_type='ArticleBoutique',
+                objet_id=article.pk,
+                nouvelle_valeur={'code': article.code, 'designation': article.designation},
+            )
+            messages.success(
+                request,
+                f'Arrivage {article.code} enregistré. Ajoutez les produits via l’entrée en stock.',
+            )
+            return redirect('boutique:article_detail', pk=article.pk)
     return render(
         request,
         'boutique/article_form.html',
@@ -306,18 +335,23 @@ def stocks(request):
 @require_permission('boutique.adjust_stock')
 def entree(request):
     peri = _perimetre(request.user)
+    contexte = _contexte_boutique(request.user)
     formulaire = StockEntreeForm(
         request.POST if request.method == 'POST' else None,
-        articles=_articles_perimetre(peri),
+        articles=_articles_entree(peri),
+        succursales=peri['succursales'],
     )
+    if not request.POST and contexte and contexte.get('succursale'):
+        formulaire.fields['succursale'].initial = contexte['succursale']
     if request.method == 'POST' and formulaire.is_valid():
         d = formulaire.cleaned_data
         article = d['article']
+        succursale = d['succursale']
         try:
             bon = BonEntreeService.creer(
                 article=article,
-                succursale=article.succursale,
-                domaine=article.domaine,
+                succursale=succursale,
+                domaine=article.domaine or peri['domaine'],
                 quantite=d['quantite'],
                 cree_par=request.user,
                 categorie=d.get('categorie'),
@@ -329,8 +363,8 @@ def entree(request):
                 marque=d.get('marque', ''),
                 modele=d.get('modele', ''),
                 rayon=d.get('rayon', ''),
-                etagere=d.get('etagere', ''),
-                emplacement=d.get('emplacement', ''),
+                etagere=d['emplacement'].etagere.nom if d.get('emplacement') else '',
+                emplacement=d['emplacement'].nom if d.get('emplacement') else '',
                 devise=d.get('devise', 'FC'),
                 prix_achat=d.get('prix_achat', 0),
                 prix_unitaire=d.get('prix_unitaire', 0),
@@ -426,7 +460,7 @@ def entree_valider(request, pk):
     return redirect('boutique:entrees_validation')
 
 
-@require_permission('boutique.validate_entree')
+@require_permission('boutique.cancel_entree')
 @require_POST
 def entree_annuler(request, pk):
     """Annulation (rejet) d'une entrée en brouillon par le responsable,
@@ -876,7 +910,13 @@ def vente_nouvelle(request):
     }
     if request.method == 'POST' and formulaire.is_valid() and formset.is_valid():
         remise = formulaire.cleaned_data['remise'] or 0
-        if remise > 0 and not request.user.has_perm('boutique.apply_remise'):
+        if not succursale or not domaine:
+            messages.error(
+                request,
+                'Aucune succursale boutique n’est disponible pour votre compte. '
+                'Faites-vous affecter au domaine Boutique avant de vendre.',
+            )
+        elif remise > 0 and not request.user.has_perm('boutique.apply_remise'):
             messages.error(request, 'Vous n’êtes pas autorisé à appliquer une remise.')
         else:
             try:

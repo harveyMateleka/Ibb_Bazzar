@@ -1,12 +1,13 @@
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+
+from core.permissions import require_permission
 
 from .forms import (
     AutorisationDepassementForm,
@@ -32,7 +33,7 @@ from .models import (
 )
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def tableau_de_bord(request):
     produits = Produit.objects.select_related('categorie', 'unite')
     alertes = produits.filter(stock__lte=F('seuil_minimum') + 10)
@@ -53,7 +54,7 @@ def tableau_de_bord(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def entree_liste(request):
     bons = BonApprovisionnement.objects.select_related(
         'fournisseur', 'utilisateur'
@@ -65,7 +66,7 @@ def entree_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.create_approvisionnement')
 def entree_nouveau(request):
     formulaire = BonApprovisionnementForm(
         request.POST if request.method == 'POST' else None,
@@ -92,7 +93,7 @@ def entree_nouveau(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def entree_detail(request, pk):
     bon = get_object_or_404(
         BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
@@ -108,17 +109,20 @@ def entree_detail(request, pk):
             queryset=LigneApprovisionnement.objects.none(),
             produits_exclus=produits_exclus,
         )
-        if request.method == 'POST' and formset.is_valid():
-            nouvelles = formset.save()
-            if nouvelles:
-                messages.success(
-                    request,
-                    f'{len(nouvelles)} produit(s) enregistré(s). '
-                    'En attente de validation par le responsable.',
-                )
-            else:
-                messages.info(request, 'Aucun nouveau produit n’a été ajouté.')
-            return redirect('approvisionnement:entree_detail', pk=bon.pk)
+        if request.method == 'POST':
+            if not request.user.has_perm('approvisionnement.create_approvisionnement'):
+                raise PermissionDenied('Vous ne pouvez pas enregistrer une entrée.')
+            if formset.is_valid():
+                nouvelles = formset.save()
+                if nouvelles:
+                    messages.success(
+                        request,
+                        f'{len(nouvelles)} produit(s) enregistré(s). '
+                        'En attente de validation par le responsable.',
+                    )
+                else:
+                    messages.info(request, 'Aucun nouveau produit n’a été ajouté.')
+                return redirect('approvisionnement:entree_detail', pk=bon.pk)
     return render(
         request,
         'approvisionnement/entree_detail.html',
@@ -130,7 +134,7 @@ def entree_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_approvisionnement')
 def entree_validation_liste(request):
     bons = (
         BonApprovisionnement.objects.filter(statut=BonApprovisionnement.Statut.BROUILLON)
@@ -146,7 +150,7 @@ def entree_validation_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_approvisionnement')
 def entree_validation_detail(request, pk):
     bon = get_object_or_404(
         BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
@@ -188,7 +192,7 @@ def entree_validation_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_approvisionnement')
 @require_POST
 def entree_valider(request, pk):
     bon = get_object_or_404(BonApprovisionnement, pk=pk)
@@ -201,7 +205,7 @@ def entree_valider(request, pk):
     return redirect(reverse('approvisionnement:entree_imprimer', kwargs={'pk': bon.pk}) + '?auto=1')
 
 
-@login_required
+@require_permission('approvisionnement.view_approvisionnement')
 def entree_imprimer(request, pk):
     bon = get_object_or_404(
         BonApprovisionnement.objects.select_related('fournisseur', 'utilisateur'),
@@ -217,7 +221,7 @@ def entree_imprimer(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_sortie')
 def sortie_liste(request):
     bons = BonSortie.objects.select_related(
         'utilisateur', 'destination'
@@ -229,7 +233,7 @@ def sortie_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.create_sortie')
 def sortie_nouveau(request):
     formulaire = BonSortieForm(
         request.POST if request.method == 'POST' else None,
@@ -261,7 +265,7 @@ def sortie_nouveau(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_sortie')
 def sortie_detail(request, pk):
     bon = get_object_or_404(
         BonSortie.objects.select_related('utilisateur', 'destination'),
@@ -291,17 +295,20 @@ def sortie_detail(request, pk):
             queryset=LigneSortie.objects.none(),
             produits_exclus=list(lignes.values_list('produit_id', flat=True)),
         )
-        if request.method == 'POST' and formset.is_valid():
-            nouvelles = formset.save()
-            if nouvelles:
-                messages.success(
-                    request,
-                    f'{len(nouvelles)} produit(s) enregistré(s). '
-                    'En attente de validation par le responsable.',
-                )
-            else:
-                messages.info(request, 'Aucun nouveau produit n’a été ajouté.')
-            return redirect('approvisionnement:sortie_detail', pk=bon.pk)
+        if request.method == 'POST':
+            if not request.user.has_perm('approvisionnement.create_sortie'):
+                raise PermissionDenied('Vous ne pouvez pas enregistrer une sortie.')
+            if formset.is_valid():
+                nouvelles = formset.save()
+                if nouvelles:
+                    messages.success(
+                        request,
+                        f'{len(nouvelles)} produit(s) enregistré(s). '
+                        'En attente de validation par le responsable.',
+                    )
+                else:
+                    messages.info(request, 'Aucun nouveau produit n’a été ajouté.')
+                return redirect('approvisionnement:sortie_detail', pk=bon.pk)
     return render(
         request,
         'approvisionnement/sortie_detail.html',
@@ -316,7 +323,7 @@ def sortie_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_sortie')
 def sortie_validation_liste(request):
     bons = (
         BonSortie.objects.filter(statut=BonSortie.Statut.BROUILLON)
@@ -379,7 +386,7 @@ def _valider_sortie_et_imprimer(request, bon, autorisation=False):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_sortie')
 def sortie_validation_detail(request, pk):
     from restauration.models import ServicePoste, service_poste_depuis_destination
     bon = get_object_or_404(
@@ -464,7 +471,7 @@ def sortie_validation_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_sortie')
 @require_POST
 def sortie_valider(request, pk):
     bon = get_object_or_404(
@@ -491,7 +498,7 @@ def sortie_valider(request, pk):
     return _valider_sortie_et_imprimer(request, bon)
 
 
-@login_required
+@require_permission('approvisionnement.view_sortie')
 def sortie_imprimer(request, pk):
     bon = get_object_or_404(
         BonSortie.objects.select_related('utilisateur', 'destination'),
@@ -507,7 +514,7 @@ def sortie_imprimer(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_rapport_approvisionnement')
 def historique(request):
     journaux = Approvisionnement.objects.select_related(
         'utilisateur', 'fournisseur', 'bon_entree', 'bon_sortie'
@@ -538,7 +545,7 @@ def historique(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_rapport_approvisionnement')
 def historique_detail(request, pk):
     journal = get_object_or_404(
         Approvisionnement.objects.select_related(
@@ -556,7 +563,7 @@ def historique_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.view_inventaire')
 def inventaire_liste(request):
     inventaires = Inventaire.objects.select_related('responsable')
     return render(
@@ -566,7 +573,7 @@ def inventaire_liste(request):
     )
 
 
-@login_required
+@require_permission('approvisionnement.create_inventaire')
 def inventaire_nouveau(request):
     formulaire = InventaireForm(request.POST if request.method == 'POST' else None)
     inventaire_existant = None
@@ -648,7 +655,7 @@ def _synchroniser_lignes_inventaire(inventaire):
             ligne.save(update_fields=['stock_systeme'])
 
 
-@login_required
+@require_permission('approvisionnement.view_inventaire')
 def inventaire_detail(request, pk):
     inventaire = get_object_or_404(
         Inventaire.objects.select_related('responsable'),
@@ -661,8 +668,10 @@ def inventaire_detail(request, pk):
     if inventaire.statut == Inventaire.Statut.VALIDE:
         formset = None
     elif request.method == 'POST' and formset.is_valid():
-        formset.save()
         if request.POST.get('action') == 'valider':
+            if not request.user.has_perm('approvisionnement.validate_inventaire'):
+                raise PermissionDenied('Vous ne pouvez pas valider un inventaire.')
+            formset.save()
             try:
                 inventaire.valider()
             except ValidationError as exc:
@@ -672,6 +681,9 @@ def inventaire_detail(request, pk):
                 return redirect('approvisionnement:inventaire_detail', pk=inventaire.pk)
             messages.success(request, 'Inventaire validé. Les écarts ont été audités.')
             return redirect('approvisionnement:inventaire_detail', pk=inventaire.pk)
+        if not request.user.has_perm('approvisionnement.create_inventaire'):
+            raise PermissionDenied('Vous ne pouvez pas enregistrer un inventaire.')
+        formset.save()
         messages.success(request, 'Lignes d’inventaire enregistrées.')
         return redirect('approvisionnement:inventaire_detail', pk=inventaire.pk)
     return render(
@@ -685,7 +697,7 @@ def inventaire_detail(request, pk):
     )
 
 
-@login_required
+@require_permission('approvisionnement.validate_inventaire')
 @require_POST
 def inventaire_valider(request, pk):
     inventaire = get_object_or_404(Inventaire, pk=pk)
@@ -794,7 +806,7 @@ def _donnees_rapport(debut, fin, type_rapport=None):
     }
 
 
-@login_required
+@require_permission('approvisionnement.view_rapport_approvisionnement')
 def rapport(request):
     formulaire, debut, fin, type_rapport = _periode_rapport(request)
     contexte = {'form': formulaire}
@@ -803,7 +815,7 @@ def rapport(request):
     return render(request, 'approvisionnement/rapport.html', contexte)
 
 
-@login_required
+@require_permission('approvisionnement.view_rapport_approvisionnement')
 def rapport_imprimer(request):
     formulaire, debut, fin, type_rapport = _periode_rapport(request)
     if not debut or not fin or not type_rapport:

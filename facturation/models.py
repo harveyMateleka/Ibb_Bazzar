@@ -90,6 +90,9 @@ class Facture(models.Model):
         verbose_name = 'facture'
         verbose_name_plural = 'factures'
         ordering = ['-date_facture']
+        permissions = [
+            ('cancel_facture', 'Peut annuler une facture déjà émise'),
+        ]
 
     def __str__(self):
         return self.numero

@@ -34,7 +34,7 @@
           <th>Plat</th>
           <th>Reste</th>
           <th>État</th>
-          {% if saisie_portions %}
+          {% if saisie_portions and perms.restauration.adjust_plat_portions %}
           <th class="_nosort">Plats préparés</th>
           <th class="_nosort">Corriger le reste</th>
           {% endif %}
@@ -50,7 +50,7 @@
             {% elif plat.en_alerte %}Alerte (reste {{ plat.quantite }})
             {% else %}OK{% endif %}
           </td>
-          {% if saisie_portions %}
+          {% if saisie_portions and perms.restauration.adjust_plat_portions %}
           <td>
             <form method="post" action="{% url 'restauration:plat_ajouter_portions' plat.pk %}" class="qty-controls">
               {% csrf_token %}
@@ -89,11 +89,13 @@
           <strong>{{ ligne.quantite }} × {{ ligne.libelle }}</strong>
           {% if ligne.imprimante_nom %}<span>{{ ligne.imprimante_nom }}</span>{% endif %}
         </div>
+        {% if perms.restauration.servir_ligne %}
         <form method="post" action="{% url 'restauration:commande_ligne_servir' groupe.grouper.pk ligne.pk %}">
           {% csrf_token %}
           <input type="hidden" name="suivant" value="{{ service|lower }}">
           <button type="submit" class="btn btn-primary">Servie</button>
         </form>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>

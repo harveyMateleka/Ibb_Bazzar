@@ -18,12 +18,14 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'restauration:dashboard' %}">Plan de salle</a>
+    {% if perms.restauration.validate_commande %}
     {% if commande.statut == 'VALIDEE' or commande.statut == 'SERVIE' or commande.statut == 'PAYEE' %}
     <a class="btn btn-ghost" href="{% url 'restauration:commande_tickets' commande.pk %}">Tickets des postes</a>
     {% endif %}
+    {% endif %}
     {% if commande.statut == 'PAYEE' %}
       {% if commande.facture_emise %}
-      <a class="btn btn-primary" href="{% url 'facturation:recu' commande.facture_emise.pk %}?auto=0">Reçu 80 mm</a>
+      <a class="btn btn-primary" href="{% url 'facturation:recu' commande.facture_emise.pk %}">Aperçu du reçu</a>
       {% else %}
       <a class="btn btn-primary" href="{% url 'restauration:commande_imprimer' commande.pk %}">Imprimer l'addition</a>
       {% endif %}
@@ -43,7 +45,7 @@
             <th>Qté</th>
             <th>P.U.</th>
             <th>Montant</th>
-            {% if commande.modifiable %}
+            {% if peut_modifier %}
             <th>Retirer</th>
             {% else %}
             <th>Statut</th>
@@ -60,7 +62,7 @@
             </td>
             <td>{{ ligne.get_service_display|default:"—" }}</td>
             <td>
-              {% if commande.modifiable %}
+              {% if peut_modifier %}
               <div class="qty-controls">
                 <form method="post" action="{% url 'restauration:commande_ligne_moins' commande.pk ligne.pk %}">
                   {% csrf_token %}
@@ -78,7 +80,7 @@
             </td>
             <td>{{ ligne.prix_unitaire }} {{ ligne.devise }}</td>
             <td>{{ ligne.montant }} {{ ligne.devise }}</td>
-            {% if commande.modifiable %}
+            {% if peut_modifier %}
             <td>
               <form method="post" action="{% url 'restauration:commande_ligne_supprimer' commande.pk ligne.pk %}">
                 {% csrf_token %}
@@ -119,26 +121,26 @@
     {% endif %}
 
     <div class="actions" style="margin-top: 1.2rem;">
-      {% if commande.statut == 'OUVERTE' %}
+      {% if peut_valider %}
       <form method="post" action="{% url 'restauration:commande_valider' commande.pk %}">
         {% csrf_token %}
-        <button type="submit" class="btn btn-primary">Valider la commande</button>
+        <button type="submit" class="btn btn-primary">Valider et prévisualiser les tickets</button>
       </form>
       {% endif %}
     </div>
 
-    {% if commande.peut_encaisser %}
+    {% if peut_encaisser_ui %}
     <form method="post" action="{% url 'restauration:commande_encaisser' commande.pk %}" class="auth-form" id="encaissement">
       {% csrf_token %}
       <div class="form-grid auth-grid">
         <div class="field">
           <label for="{{ encaissement_form.mode_paiement.id_for_label }}">{{ encaissement_form.mode_paiement.label }}</label>
           {{ encaissement_form.mode_paiement }}
-          <p class="help">Le reçu est émis, la table est libérée. Cuisine, barbecus et terrasse peuvent encore marquer leurs plats servis.</p>
+          <p class="help">La table est libérée et le reçu s’affiche en aperçu. Cuisine, barbecus et terrasse peuvent encore marquer leurs plats servis.</p>
         </div>
       </div>
       <div class="actions" style="margin-top: 1rem;">
-        <button type="submit" class="btn btn-primary">Encaisser, libérer la table et imprimer le reçu</button>
+        <button type="submit" class="btn btn-primary">Encaisser et afficher l’aperçu du reçu</button>
       </div>
     </form>
     {% endif %}
@@ -160,7 +162,7 @@
 
   <section class="panel">
     <h2>Menu</h2>
-    {% if commande.modifiable %}
+    {% if peut_modifier %}
       <nav class="local-tabs" aria-label="Services du menu">
         <a href="#menu" class="js-menu-tab is-active" data-service="">Tous</a>
         <a href="#menu" class="js-menu-tab" data-service="CUISINE">Cuisine</a>
@@ -179,14 +181,14 @@
         <h3 class="menu-categorie">{{ categorie.nom }}</h3>
         <div class="menu-grid">
           {% for plat in categorie.plats.all %}
-          <form method="post" action="{% url 'restauration:commande_ajouter' commande.pk %}" class="menu-plat js-ajout-plat{% if plat.en_alerte %} is-alerte{% endif %}{% if plat.en_rupture %} is-rupture{% endif %}" data-plat-id="{{ plat.pk }}" data-service="{{ plat.service }}" data-reste="{{ plat.quantite }}" data-nom="{{ plat.nom }}" data-deja="{% for ligne in commande.lignes.all %}{% if ligne.plat_id == plat.pk %}{{ ligne.quantite }}{% endif %}{% endfor %}">
+          <form method="post" action="{% url 'restauration:commande_ajouter' commande.pk %}" class="menu-plat js-ajout-plat{% if plat.en_alerte %} is-alerte{% endif %}{% if plat.en_rupture %} is-rupture{% endif %}" data-plat-id="{{ plat.pk }}" data-service="{{ plat.service }}" data-reste="{{ plat.quantite }}" data-nom="{{ plat.nom }}" data-deja="{% for pid, qte in deja_par_plat.items %}{% if pid == plat.pk %}{{ qte }}{% endif %}{% endfor %}">
             {% csrf_token %}
             <input type="hidden" name="plat" value="{{ plat.pk }}">
             <div class="plat-btn{% if plat.en_alerte %} is-alerte{% endif %}{% if plat.en_rupture %} is-rupture{% endif %}">
               <span class="eyebrow">{{ plat.get_service_display }}{% if plat.imprimante %} · {{ plat.imprimante.nom }}{% endif %}{% if plat.en_rupture %} · Rupture{% elif plat.en_alerte %} · Alerte{% endif %}</span>
               <strong>{{ plat.nom }}</strong>
               <span>{{ plat.prix_affiche }}</span>
-              <span class="plat-stock">Reste {{ plat.quantite }}</span>
+              <span class="plat-stock">{% if plat.en_rupture %}Rupture — 0 disponible{% elif plat.en_alerte %}Alerte — reste {{ plat.quantite }}{% else %}Reste {{ plat.quantite }}{% endif %}</span>
             </div>
             <div class="qty-controls plat-qte">
               <input type="number" name="quantite" min="0" step="1" value="0" class="input js-qte-plat" aria-label="Quantité {{ plat.nom }}" {% if plat.en_rupture %}disabled{% endif %}>

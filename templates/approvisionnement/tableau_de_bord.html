@@ -9,8 +9,12 @@
     <h1>Approvisionnement</h1>
   </div>
   <div class="actions">
+    {% if perms.approvisionnement.create_approvisionnement %}
     <a class="btn btn-primary" href="{% url 'approvisionnement:entree_nouveau' %}">Nouvelle entrée</a>
+    {% endif %}
+    {% if perms.approvisionnement.create_sortie %}
     <a class="btn btn-ghost" href="{% url 'approvisionnement:sortie_nouveau' %}">Nouvelle sortie</a>
+    {% endif %}
   </div>
 </div>
 

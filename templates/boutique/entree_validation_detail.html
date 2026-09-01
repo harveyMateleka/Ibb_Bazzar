@@ -13,14 +13,14 @@
 
 <section class="panel">
   <dl class="detail-grid">
-    <dt>Article</dt><dd>{{ bon.article.code }} — {{ bon.article.designation }} ({{ bon.get_devise_display }})</dd>
+    <dt>Article</dt><dd>{{ bon.article.designation }} ({{ bon.get_devise_display }})</dd>
     <dt>Variante</dt><dd>{{ bon.couleur }}/{{ bon.taille }}/{{ bon.get_genre_display }}{% if bon.type_tissu %} · {{ bon.type_tissu }}{% endif %}</dd>
     <dt>Quantité</dt><dd>{{ bon.quantite }}</dd>
     <dt>Prix d'achat</dt><dd>{{ bon.prix_achat }}</dd>
-    <dt>Prix unitaire</dt><dd>{{ bon.prix_unitaire }}</dd>
-    <dt>Prix minimum</dt><dd>{{ bon.prix_minimum }}</dd>
+    <dt>Prix de vente</dt><dd>{{ bon.prix_unitaire }}</dd>
+    <dt>Dernier prix</dt><dd>{{ bon.prix_minimum }}</dd>
     <dt>Seuil d'alerte</dt><dd>{{ bon.seuil_alerte }}</dd>
-    <dt>Emplacement</dt><dd>{{ bon.rayon }} · {{ bon.etagere }} · {{ bon.emplacement }}</dd>
+    <dt>Emplacement</dt><dd>{{ bon.emplacement|default:"—" }}{% if bon.etagere %} ({{ bon.etagere }}){% endif %}</dd>
     <dt>Créé par</dt><dd>{{ bon.cree_par }} ({{ bon.date_creation|date:"d/m/Y H:i" }})</dd>
     <dt>Statut</dt>
     <dd>
@@ -34,14 +34,18 @@
   </dl>
 </section>
 
-{% if bon.statut == 'BROUILLON' and perms.boutique.validate_entree %}
+{% if bon.statut == 'BROUILLON' %}
+{% if perms.boutique.validate_entree or perms.boutique.cancel_entree %}
 <section class="panel">
   <h2>Décision</h2>
   <div class="form-grid">
+    {% if perms.boutique.validate_entree %}
     <form action="{% url 'boutique:entree_valider' bon.pk %}" method="post" class="field">
       {% csrf_token %}
       <button type="submit" class="btn btn-primary">Valider la demande</button>
     </form>
+    {% endif %}
+    {% if perms.boutique.cancel_entree %}
     <form action="{% url 'boutique:entree_annuler' bon.pk %}" method="post" class="field">
       {% csrf_token %}
       <label for="id_commentaire">Raison de l'annulation (obligatoire)</label>
@@ -49,7 +53,9 @@
              placeholder="Motif de l'annulation de la demande">
       <button type="submit" class="btn btn-danger">Annuler la demande</button>
     </form>
+    {% endif %}
   </div>
 </section>
+{% endif %}
 {% endif %}
 {% endblock %}

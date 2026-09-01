@@ -493,7 +493,7 @@ def casse_declarer(request, pk):
     )
 
 
-@require_permission('immobilisations.report_damage_asset')
+@require_permission('immobilisations.validate_asset')
 @require_POST
 def casse_evaluer(request, pk, casse_pk):
     bien = _bien_du_perimetre(request, pk)
@@ -510,10 +510,15 @@ def casse_evaluer(request, pk, casse_pk):
             messages.success(request, f'Casse de {bien.code} évaluée.')
         except ValidationError as exc:
             messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+    else:
+        messages.error(
+            request,
+            'Évaluation incomplète : choisissez une décision et enregistrez à nouveau.',
+        )
     return redirect('immobilisations:bien_detail', pk=bien.pk)
 
 
-@require_permission('immobilisations.update_asset')
+@require_permission('immobilisations.decommission_asset')
 def declassement_demander(request, pk):
     bien = _bien_du_perimetre(request, pk)
     formulaire = DeclassementForm(
@@ -538,7 +543,7 @@ def declassement_demander(request, pk):
     )
 
 
-@require_permission('immobilisations.decommission_asset')
+@require_permission('immobilisations.validate_asset')
 @require_POST
 def declassement_valider(request, pk, dec_pk):
     bien = _bien_du_perimetre(request, pk)

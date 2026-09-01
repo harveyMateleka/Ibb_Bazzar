@@ -8,7 +8,9 @@
     <p class="eyebrow">APP-03</p>
     <h1>Enregistrement des sorties</h1>
   </div>
+  {% if perms.approvisionnement.create_sortie %}
   <a class="btn btn-primary" href="{% url 'approvisionnement:sortie_nouveau' %}">Nouvelle sortie</a>
+  {% endif %}
 </div>
 
 <section class="panel">

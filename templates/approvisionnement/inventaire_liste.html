@@ -8,7 +8,9 @@
     <p class="eyebrow">APP-06</p>
     <h1>Inventaires</h1>
   </div>
+  {% if perms.approvisionnement.create_inventaire %}
   <a class="btn btn-primary" href="{% url 'approvisionnement:inventaire_nouveau' %}">Nouvel inventaire</a>
+  {% endif %}
 </div>
 
 <section class="panel">

@@ -361,6 +361,16 @@ class Commande(models.Model):
         verbose_name = 'commande'
         verbose_name_plural = 'commandes'
         ordering = ['-date_ouverture']
+        permissions = [
+            ('view_restauration', 'Peut consulter la restauration'),
+            ('create_commande', 'Peut enregistrer une commande'),
+            ('modify_commande', 'Peut modifier une commande avant validation'),
+            ('validate_commande', 'Peut valider et imprimer une commande'),
+            ('cancel_commande', 'Peut annuler une commande non validée'),
+            ('encaisser_commande', 'Peut enregistrer le paiement d’une commande'),
+            ('servir_ligne', 'Peut marquer une ligne comme servie'),
+            ('adjust_plat_portions', 'Peut ajouter des plats préparés (cuisine / barbecus)'),
+        ]
 
     def __str__(self):
         return self.numero
@@ -460,13 +470,22 @@ class Commande(models.Model):
     def totaux_par_devise(self):
         totaux = {}
         for ligne in self.lignes.all():
+            if ligne.statut == LigneCommande.Statut.ANNULEE:
+                continue
             devise = ligne.devise or Plat.Devise.CDF
             totaux[devise] = totaux.get(devise, Decimal('0.00')) + ligne.montant
         return totaux
 
     @property
     def total(self):
-        return sum((ligne.montant for ligne in self.lignes.all()), Decimal('0.00'))
+        return sum(
+            (
+                ligne.montant
+                for ligne in self.lignes.all()
+                if ligne.statut != LigneCommande.Statut.ANNULEE
+            ),
+            Decimal('0.00'),
+        )
 
     def valider(self, utilisateur):
         if self.statut != self.Statut.OUVERTE:
@@ -523,8 +542,15 @@ class Commande(models.Model):
         # PAYEE n’est plus un statut actif : la table redevient libre.
 
     def annuler(self, utilisateur, motif):
-        if self.statut in (self.Statut.PAYEE, self.Statut.ANNULEE):
+        if self.statut == self.Statut.PAYEE:
+            raise ValidationError('Une facture déjà payée ne peut pas être annulée.')
+        if self.statut == self.Statut.ANNULEE:
             raise ValidationError('Cette commande ne peut plus être annulée.')
+        if self.statut == self.Statut.VALIDEE and not getattr(utilisateur, 'is_superuser', False):
+            raise ValidationError(
+                'Une commande déjà validée ne peut pas être annulée. '
+                'Seul un superuser peut le faire.'
+            )
         if self.lignes.filter(statut=LigneCommande.Statut.SERVIE).exists():
             raise ValidationError('Impossible d’annuler : des lignes sont déjà servies.')
         motif = (motif or '').strip()
