@@ -97,14 +97,19 @@ class BonEntreeService:
 
     @staticmethod
     def creer(*, article, succursale, domaine, quantite, cree_par,
+              variante=None,
               categorie=None, sous_categorie=None, unite=None, type_tissu=None,
               genre='', taille='',
               couleur='', marque='', modele='', rayon='', etagere='', emplacement='',
               devise='FC', prix_achat=0, prix_unitaire=0, prix_minimum=0, seuil_alerte=0):
         with transaction.atomic():
+            if variante and variante.article_id != article.pk:
+                raise ValidationError(
+                    'La variante sélectionnée n’appartient pas à l’article parent.')
             bon = BonEntreeBoutique.objects.create(
                 numero=BonEntreeBoutique.prochain_numero(),
                 article=article,
+                variante=variante,
                 succursale=succursale,
                 domaine=domaine,
                 categorie=categorie,
@@ -147,29 +152,32 @@ class BonEntreeService:
         if not par:
             raise ValidationError('Le validateur est obligatoire.')
         with transaction.atomic():
-            # Réapprovisionnement : réutilise la variante si elle existe déjà,
-            # sinon la crée (jamais de deuxième variante pour la même combinaison).
-            variante, _ = VarianteService.creer_ou_trouver(
-                article=bon.article,
-                categorie=bon.categorie,
-                sous_categorie=bon.sous_categorie,
-                unite=bon.unite,
-                type_tissu=bon.type_tissu,
-                genre=bon.genre,
-                taille=bon.taille,
-                couleur=bon.couleur,
-                marque=bon.marque,
-                modele=bon.modele,
-                rayon=bon.rayon,
-                etagere=bon.etagere,
-                emplacement=bon.emplacement,
-                devise=bon.devise,
-                prix_achat=bon.prix_achat,
-                prix_unitaire=bon.prix_unitaire,
-                prix_minimum=bon.prix_minimum,
-                seuil_alerte=bon.seuil_alerte,
-                par=par,
-            )
+            # Réapprovisionnement explicite : on n'enregistre pas une nouvelle
+            # variante, on ajoute uniquement la quantité au stock existant.
+            if bon.variante_id:
+                variante = bon.variante
+            else:
+                variante, _ = VarianteService.creer_ou_trouver(
+                    article=bon.article,
+                    categorie=bon.categorie,
+                    sous_categorie=bon.sous_categorie,
+                    unite=bon.unite,
+                    type_tissu=bon.type_tissu,
+                    genre=bon.genre,
+                    taille=bon.taille,
+                    couleur=bon.couleur,
+                    marque=bon.marque,
+                    modele=bon.modele,
+                    rayon=bon.rayon,
+                    etagere=bon.etagere,
+                    emplacement=bon.emplacement,
+                    devise=bon.devise,
+                    prix_achat=bon.prix_achat,
+                    prix_unitaire=bon.prix_unitaire,
+                    prix_minimum=bon.prix_minimum,
+                    seuil_alerte=bon.seuil_alerte,
+                    par=par,
+                )
             StockBoutiqueService.entrer(
                 variante=variante,
                 quantite=bon.quantite,

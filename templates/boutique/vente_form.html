@@ -107,7 +107,7 @@
              data-pk="{{ v.pk }}"
              data-search="{{ v.article.code }} {{ v.article.designation }}">
           <div class="variante-card-head">
-            <strong>{{ v.article.code }}</strong>
+            <strong>{{ v.article.designation }}</strong>
             {% if v.stock_qte <= 0 %}<span class="badge">Rupture</span>
             {% elif v.seuil_alerte and v.stock_qte <= v.seuil_alerte %}<span class="badge badge-alerte">Alerte</span>{% endif %}
           </div>

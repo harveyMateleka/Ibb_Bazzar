@@ -1,4 +1,5 @@
 {% extends "immobilisations/base.html" %}
+{% load static %}
 
 {% block app_content %}
 <div class="page-head">
@@ -20,6 +21,8 @@
   <article class="stat {% if nb_casses %}stat-alert{% endif %}"><span>Casses</span><strong>{{ nb_casses }}</strong></article>
   <article class="stat"><span>Déclassés</span><strong>{{ nb_declasses }}</strong></article>
 </div>
+
+{% include "includes/comparaison_mois.html" with comparaison=comparaison comparaison_id="comparaison-immo" %}
 
 <section class="panel">
   <h2>Derniers biens</h2>
@@ -84,4 +87,8 @@
     </table>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/dashboard_charts.js' %}?v=mois-1"></script>
 {% endblock %}

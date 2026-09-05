@@ -1,11 +1,30 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.utils import timezone
 
-from restauration.impression import ImpressionError, envoyer_texte_imprimante
+from restauration.impression import LARGEUR_TICKET, ImpressionError, envoyer_texte_imprimante
+
+
+def _montant_compact(valeur):
+    nombre = Decimal(valeur).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if nombre == nombre.to_integral_value():
+        return str(int(nombre))
+    return format(nombre, 'f').rstrip('0').rstrip('.')
+
+
+def _ligne_detail(plat, qte, pu, pt, largeur=LARGEUR_TICKET):
+    col_pt, col_pu, col_qte = 7, 7, 3
+    col_plat = max(8, largeur - col_pt - col_pu - col_qte - 3)
+    nom = (plat or '')[:col_plat].ljust(col_plat)
+    return (
+        f'{nom} {str(qte).rjust(col_qte)} '
+        f'{str(pu).rjust(col_pu)} {str(pt).rjust(col_pt)}'
+    )
 
 
 def texte_recu(facture, etablissement):
     heure = timezone.localtime(facture.date_facture)
-    largeur = 32
+    largeur = LARGEUR_TICKET
     lignes = [
         (etablissement.nom_societe or facture.nom_societe or 'IBBS BAZAR').center(largeur),
     ]
@@ -22,14 +41,23 @@ def texte_recu(facture, etablissement):
         f'{facture.table_liberee}'[:largeur],
         heure.strftime('%d/%m/%Y %H:%M'),
         '-' * largeur,
+        _ligne_detail('PLAT', 'QTE', 'PU', 'PT', largeur),
     ])
     for ligne in facture.lignes.all():
-        lignes.append(f'{ligne.quantite} x {ligne.designation}'[:largeur])
-        montant = f'{ligne.montant} {ligne.devise}'
-        lignes.append(montant.rjust(largeur))
+        lignes.append(_ligne_detail(
+            ligne.designation,
+            ligne.quantite,
+            _montant_compact(ligne.prix_unitaire),
+            _montant_compact(ligne.montant),
+            largeur,
+        ))
     lignes.append('-' * largeur)
     for devise, total in facture.totaux_par_devise.items():
-        lignes.append(f'TOTAL {devise}'.ljust(16) + f'{total}'.rjust(16))
+        moitie = largeur // 2
+        lignes.append(
+            f'TOTAL {devise}'.ljust(moitie)
+            + _montant_compact(total).rjust(largeur - moitie)
+        )
     lignes.append(f'Paiement : {facture.get_mode_paiement_display()}')
     message = etablissement.message_recu or 'Merci de votre visite'
     lignes.extend(['-' * largeur, message.center(largeur), ''])
@@ -42,4 +70,5 @@ def imprimer_recu(facture, etablissement):
     return envoyer_texte_imprimante(
         etablissement.imprimante_caisse,
         texte_recu(facture, etablissement),
+        compact=True,
     )

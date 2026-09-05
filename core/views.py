@@ -18,7 +18,7 @@ from .services import UserService
 
 @require_permission('core.view_utilisateur')
 def dashboard(request):
-    utilisateurs = User.objects.all()
+    utilisateurs = User.objects.select_related('compte')
     derniere_activite = AuditLog.objects.select_related(
         'utilisateur', 'succursale'
     )[:10]
@@ -27,8 +27,8 @@ def dashboard(request):
         'core/dashboard.html',
         {
             'nb_utilisateurs': utilisateurs.count(),
-            'nb_actifs': utilisateurs.filter(is_active=True).count(),
-            'nb_inactifs': utilisateurs.filter(is_active=False).count(),
+            'nb_actifs': utilisateurs.filter(compte__is_active=True).count(),
+            'nb_inactifs': utilisateurs.filter(compte__is_active=False).count(),
             'utilisateurs': utilisateurs.prefetch_related('roles')[:8],
             'derniere_activite': derniere_activite,
         },
@@ -38,18 +38,15 @@ def dashboard(request):
 @require_permission('core.view_utilisateur')
 def liste(request):
     recherche = request.GET.get('q', '').strip()
-    utilisateurs = User.objects.select_related('cree_par').prefetch_related(
+    utilisateurs = User.objects.select_related('compte', 'cree_par').prefetch_related(
         'roles',
-        'affectations_succursales__succursale',
-        'affectations_succursales__domaine',
-        'affectations_succursales__role',
     )
     if recherche:
         utilisateurs = utilisateurs.filter(
-            Q(username__icontains=recherche)
-            | Q(first_name__icontains=recherche)
-            | Q(last_name__icontains=recherche)
-            | Q(email__icontains=recherche)
+            Q(compte__username__icontains=recherche)
+            | Q(compte__first_name__icontains=recherche)
+            | Q(compte__last_name__icontains=recherche)
+            | Q(compte__email__icontains=recherche)
             | Q(telephone__icontains=recherche)
             | Q(fonction__icontains=recherche)
         )
@@ -63,12 +60,7 @@ def liste(request):
 @require_permission('core.view_utilisateur')
 def detail(request, pk):
     utilisateur = get_object_or_404(
-        User.objects.select_related('cree_par').prefetch_related(
-            'roles',
-            'affectations_succursales__succursale',
-            'affectations_succursales__domaine',
-            'affectations_succursales__role',
-        ),
+        User.objects.select_related('compte', 'cree_par').prefetch_related('roles'),
         pk=pk,
     )
     audits = (

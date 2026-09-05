@@ -6,10 +6,18 @@ Les opérations critiques passent par ces services afin de garantir :
 - contrôles métier (désactivation sans suppression, etc.).
 """
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.db import transaction
 
 from .models import AuditLog, Domaine, Role, Succursale, User, UserSuccursale
+
+
+def compte_de(utilisateur):
+    """Retourne le compte Django, qu'on reçoive un profil ou un auth.User."""
+    if utilisateur is None:
+        return None
+    return getattr(utilisateur, 'compte', utilisateur)
 
 
 class AuditService:
@@ -31,7 +39,7 @@ class AuditService:
         adresse_ip=None,
     ):
         AuditLog.objects.create(
-            utilisateur=utilisateur if getattr(utilisateur, 'pk', None) else None,
+            utilisateur=compte_de(utilisateur) if getattr(utilisateur, 'pk', None) else None,
             succursale=succursale,
             module=module,
             action=action,
@@ -156,20 +164,25 @@ class UserService:
         cree_par=None,
     ):
         with transaction.atomic():
-            utilisateur = User.objects.create_user(
+            compte = get_user_model().objects.create_user(
                 username=username,
                 password=password,
                 first_name=prenom or '',
                 last_name=nom or '',
                 email=email,
-                telephone=telephone,
-                fonction=fonction,
-                cree_par=cree_par,
+            )
+            utilisateur, _ = User.objects.update_or_create(
+                compte=compte,
+                defaults={
+                    'telephone': telephone,
+                    'fonction': fonction,
+                    'cree_par': compte_de(cree_par),
+                },
             )
             if roles:
                 utilisateur.roles.set(roles)
             AuditService.auditer(
-                utilisateur=cree_par or utilisateur,
+                utilisateur=compte_de(cree_par) or compte,
                 module='CORE',
                 action='user.create',
                 objet_type='User',
@@ -234,8 +247,9 @@ class UserService:
     @classmethod
     def affecter_succursale(cls, utilisateur, succursale, domaine, principale=False, role=None, par=None):
         with transaction.atomic():
+            compte = getattr(utilisateur, 'compte', utilisateur)
             affectation, cree = UserSuccursale.objects.get_or_create(
-                utilisateur=utilisateur,
+                utilisateur=compte,
                 succursale=succursale,
                 domaine=domaine,
                 defaults={'principale': principale, 'role': role},
@@ -245,10 +259,10 @@ class UserService:
                 affectation.save(update_fields=['role'])
             if principale and cree:
                 UserSuccursale.objects.filter(
-                    utilisateur=utilisateur, principale=True
+                    utilisateur=compte, principale=True
                 ).exclude(pk=affectation.pk).update(principale=False)
             AuditService.auditer(
-                utilisateur=par or utilisateur,
+                utilisateur=par or compte,
                 module='CORE',
                 action='user.affecter_succursale',
                 objet_type='UserSuccursale',

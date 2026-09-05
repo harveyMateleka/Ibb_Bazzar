@@ -1,3 +1,5 @@
+import unicodedata
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
@@ -78,6 +80,30 @@ class Categorie(models.Model):
     @property
     def exige_portions(self):
         return self.nombre_portions > 0
+
+
+def _normaliser_categorie(nom):
+    texte = unicodedata.normalize('NFD', nom or '')
+    texte = ''.join(car for car in texte if unicodedata.category(car) != 'Mn')
+    return ''.join(texte.casefold().split())
+
+
+def est_categorie_vivre_frais(nom):
+    compact = _normaliser_categorie(nom)
+    return 'vivrefrais' in compact or 'vivresfrais' in compact
+
+
+def ids_produits_vivre_frais():
+    categories = [
+        categorie.pk
+        for categorie in Categorie.objects.all()
+        if est_categorie_vivre_frais(categorie.nom)
+    ]
+    if not categories:
+        return set()
+    return set(
+        Produit.objects.filter(categorie_id__in=categories).values_list('pk', flat=True)
+    )
 
 
 class Unite(models.Model):
@@ -343,6 +369,20 @@ class BonSortie(models.Model):
                 raise ValidationError(
                     'Une sortie terrasse ne peut augmenter que les plats rattachés '
                     'au service terrasse. Produits refusés : '
+                    + ', '.join(hors_service)
+                    + '.'
+                )
+        if service == ServicePoste.BARBECUS:
+            autorises = ids_produits_vivre_frais()
+            hors_service = [
+                str(ligne.produit)
+                for ligne in lignes
+                if ligne.produit_id not in autorises
+            ]
+            if hors_service:
+                raise ValidationError(
+                    'Une sortie barbecus n’accepte que les produits de la catégorie '
+                    'vivre frais. Produits refusés : '
                     + ', '.join(hors_service)
                     + '.'
                 )

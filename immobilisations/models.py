@@ -188,7 +188,7 @@ class Immobilisation(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.code} — {self.designation}'
+        return self.designation
 
     @classmethod
     def prochain_numero(cls):

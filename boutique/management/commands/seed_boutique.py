@@ -20,6 +20,8 @@ from boutique.models import (
     ArticleBoutique,
     BonEntreeBoutique,
     CategorieBoutique,
+    EmplacementBoutique,
+    EtagereBoutique,
     FournisseurBoutique,
     InventaireBoutique,
     MouvementStockBoutique,
@@ -99,6 +101,8 @@ class Command(BaseCommand):
         SousCategorieBoutique.objects.all().delete()
         CategorieBoutique.objects.all().delete()
         UniteBoutique.objects.all().delete()
+        EmplacementBoutique.objects.all().delete()
+        EtagereBoutique.objects.all().delete()
         TypeTissuArticle.objects.all().delete()
         FournisseurBoutique.objects.all().delete()
 
@@ -151,6 +155,16 @@ class Command(BaseCommand):
 
         self.unite_pce, _ = UniteBoutique.objects.get_or_create(
             code='PCE', defaults={'nom': 'Pièce'})
+
+        for et_code, et_nom, emps in [
+            ('ETA', 'Étagère A', [('A1', 'A1'), ('A2', 'A2'), ('A3', 'A3')]),
+            ('ETB', 'Étagère B', [('B1', 'B1'), ('B2', 'B2'), ('B3', 'B3')]),
+        ]:
+            etagere, _ = EtagereBoutique.objects.get_or_create(
+                code=et_code, defaults={'nom': et_nom})
+            for emp_code, emp_nom in emps:
+                EmplacementBoutique.objects.get_or_create(
+                    etagere=etagere, code=emp_code, defaults={'nom': emp_nom})
 
         self.tissus = {}
         for code, nom in [('COT', 'Coton'), ('POL', 'Polyester'),

@@ -1,3 +1,4 @@
+import unicodedata
 from decimal import Decimal
 
 from django.conf import settings
@@ -402,7 +403,15 @@ class Commande(models.Model):
 
     @property
     def modifiable(self):
-        return self.statut == self.Statut.OUVERTE
+        return self.statut in self.STATUTS_ACTIFS
+
+    @property
+    def stock_deja_reserve(self):
+        return self.stock_consomme or self.statut in (
+            self.Statut.VALIDEE,
+            self.Statut.SERVIE,
+            self.Statut.PAYEE,
+        )
 
     @property
     def peut_encaisser(self):
@@ -418,13 +427,18 @@ class Commande(models.Model):
         services = {ligne.service for ligne in self.lignes.all() if ligne.service}
         return len(services) > 1
 
-    def groupes_impression(self):
+    def groupes_impression(self, seulement_non_imprimees=True):
         """Un ticket par service et imprimante : cuisine, barbecus et terrasse séparément."""
         groupes = {}
         ordre = []
-        lignes = [
+        toutes = [
             ligne for ligne in self.lignes.all()
-            if ligne.statut != LigneCommande.Statut.ANNULEE and ligne.service
+            if ligne.statut != LigneCommande.Statut.ANNULEE
+        ]
+        est_ajout = any(ligne.imprimee for ligne in toutes)
+        lignes = [
+            ligne for ligne in toutes
+            if ligne.service and (not seulement_non_imprimees or not ligne.imprimee)
         ]
         for ligne in lignes:
             imprimante = (ligne.imprimante_nom or '').strip()
@@ -437,11 +451,36 @@ class Commande(models.Model):
                     'service': ligne.service,
                     'libelle': ligne.get_service_display(),
                     'imprimante': imprimante,
+                    'ajout': est_ajout,
                     'lignes': [],
                 }
                 ordre.append(cle)
             groupes[cle]['lignes'].append(ligne)
         return [groupes[cle] for cle in ordre]
+
+    @property
+    def a_des_lignes_imprimees(self):
+        return any(
+            ligne.imprimee and ligne.statut != LigneCommande.Statut.ANNULEE
+            for ligne in self.lignes.all()
+        )
+
+    @property
+    def a_des_ajouts_a_imprimer(self):
+        return any(
+            (not ligne.imprimee)
+            and ligne.statut != LigneCommande.Statut.ANNULEE
+            and ligne.service
+            for ligne in self.lignes.all()
+        )
+
+    def marquer_lignes_imprimees(self, lignes):
+        ids = [ligne.pk for ligne in lignes if ligne.pk]
+        if not ids:
+            return
+        self.lignes.filter(pk__in=ids).update(imprimee=True)
+        for ligne in lignes:
+            ligne.imprimee = True
 
     @property
     def est_payee(self):
@@ -651,6 +690,11 @@ class LigneCommande(models.Model):
         blank=True,
     )
     stock_consomme = models.BooleanField('stock consommé', default=False)
+    imprimee = models.BooleanField(
+        'envoyée à l’imprimante',
+        default=False,
+        help_text='True après un envoi réussi en cuisine, barbecus ou terrasse.',
+    )
 
     class Meta:
         verbose_name = 'ligne de commande'
@@ -700,13 +744,24 @@ class LigneCommande(models.Model):
             self.commande.actualiser_apres_service()
 
 
+def _normaliser_destination(nom):
+    texte = unicodedata.normalize('NFD', nom or '')
+    texte = ''.join(car for car in texte if unicodedata.category(car) != 'Mn')
+    return texte.casefold()
+
+
 def service_poste_depuis_destination(nom):
-    texte = (nom or '').casefold()
+    texte = _normaliser_destination(nom)
     if 'cuisine' in texte:
         return ServicePoste.CUISINE
     if 'barbecus' in texte or 'barbecue' in texte:
         return ServicePoste.BARBECUS
-    if 'terrasse' in texte or 'terrace' in texte or 'bar' in texte:
+    if (
+        'terras' in texte
+        or 'teras' in texte
+        or 'terrace' in texte
+        or 'bar' in texte
+    ):
         return ServicePoste.TERRASSE
     return ''
 
@@ -720,31 +775,41 @@ def ids_produits_rattaches_au_poste(service):
     )
 
 
+def _plats_alimentes_par_produit(produit, service):
+    plats = list(
+        Plat.objects.filter(
+            compositions__produit=produit,
+            service=service,
+            actif=True,
+        ).distinct()
+    )
+    if plats:
+        return plats
+    return list(
+        Plat.objects.filter(
+            service=service,
+            actif=True,
+        ).filter(
+            models.Q(nom__iexact=produit.designation) | models.Q(nom__iexact=produit.code)
+        )
+    )
+
+
 def alimenter_plats_depuis_sortie(bon):
-    """N’augmente que les plats du service destinataire, via leur composition."""
+    """Augmente les plats terrasse vendables à partir des produits sortis."""
     service = service_poste_depuis_destination(getattr(bon, 'nom_destination', ''))
-    if service not in (ServicePoste.TERRASSE,):
+    if service != ServicePoste.TERRASSE:
         return []
     ajouts = []
     lignes = bon.lignes.filter(quantite__gt=0).select_related('produit', 'produit__categorie')
     for ligne in lignes:
         produit = ligne.produit
         qte = ligne.nombre_portions if produit.exige_portions and ligne.nombre_portions else ligne.quantite
-        compositions = CompositionPlat.objects.filter(
-            produit=produit,
-            plat__service=service,
-            plat__actif=True,
-        ).select_related('plat')
-        for composition in compositions:
-            if composition.quantite <= 0:
-                continue
-            portions = qte // composition.quantite
-            if portions <= 0:
-                continue
-            plat = Plat.objects.select_for_update().get(pk=composition.plat_id)
-            if plat.service != service:
-                continue
-            plat.quantite += portions
+        if qte <= 0:
+            continue
+        for plat_lie in _plats_alimentes_par_produit(produit, service):
+            plat = Plat.objects.select_for_update().get(pk=plat_lie.pk)
+            plat.quantite += qte
             plat.save(update_fields=['quantite'])
-            ajouts.append((plat.nom, portions, plat.quantite, service))
+            ajouts.append((plat.nom, qte, plat.quantite, service))
     return ajouts

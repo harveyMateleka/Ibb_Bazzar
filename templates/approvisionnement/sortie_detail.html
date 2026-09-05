@@ -51,7 +51,7 @@
 </section>
 
 {% if formset %}
-<form method="post" id="form-lignes-sortie" novalidate>
+<form method="post" id="form-lignes-sortie" data-produits-exclusifs novalidate>
   {% csrf_token %}
   {{ formset.management_form }}
   {{ formset.non_form_errors }}
@@ -65,6 +65,14 @@
     </p>
     {% if not nb_produits_terrasse %}
     <p class="help">Aucun produit n’est rattaché à un plat terrasse. Paramétrez la composition des plats Terrasse dans l’administration.</p>
+    {% endif %}
+    {% endif %}
+    {% if restriction_barbecus %}
+    <p class="help">
+      Sortie barbecus : seuls les produits de la catégorie vivre frais sont proposés.
+    </p>
+    {% if not nb_produits_barbecus %}
+    <p class="help">Aucun produit n’est classé en « vivre frais ». Créez ou renommez cette catégorie dans l’administration.</p>
     {% endif %}
     {% endif %}
     {% if not nb_produits %}
@@ -110,64 +118,5 @@
     </div>
   </section>
 </form>
-<script>
-  (function () {
-    const form = document.getElementById("form-lignes-sortie");
-    if (!form) return;
-
-    function selects() {
-      return Array.from(form.querySelectorAll("select[data-produit-ligne]"));
-    }
-
-    function syncProduits() {
-      const choisis = selects()
-        .map(function (select) { return select.value; })
-        .filter(Boolean);
-      selects().forEach(function (select) {
-        const courant = select.value;
-        Array.from(select.options).forEach(function (option) {
-          if (!option.value) return;
-          const pris = choisis.indexOf(option.value) !== -1 && option.value !== courant;
-          option.hidden = pris;
-          option.disabled = pris;
-        });
-      });
-    }
-
-    function syncPortions(row) {
-      const produit = row.querySelector("select[data-produit-ligne]");
-      const zone = row.querySelector(".portions-zone");
-      const input = zone && zone.querySelector("input");
-      if (!produit || !zone || !input) return;
-      const option = produit.options[produit.selectedIndex];
-      const defaut = Number((option && option.dataset.nombrePortions) || 0);
-      const visible = defaut > 0;
-      zone.hidden = !visible;
-      input.disabled = !visible;
-      if (visible) {
-        input.min = "1";
-        if (!input.value || Number(input.value) === 0) {
-          input.value = defaut;
-        }
-      } else {
-        input.min = "0";
-        input.value = 0;
-      }
-    }
-
-    form.querySelectorAll("[data-ligne]").forEach(function (row) {
-      syncPortions(row);
-    });
-    syncProduits();
-
-    form.addEventListener("change", function (event) {
-      const cible = event.target;
-      if (cible && cible.matches("select[data-produit-ligne]")) {
-        syncPortions(cible.closest("[data-ligne]"));
-        syncProduits();
-      }
-    });
-  })();
-</script>
 {% endif %}
 {% endblock %}

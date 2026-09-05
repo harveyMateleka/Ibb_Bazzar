@@ -2,10 +2,14 @@
 
 from decimal import Decimal
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from facturation.models import Etablissement, Facture
 
@@ -95,9 +99,134 @@ class RestaurationFluxTests(TestCase):
         self.assertEqual(Plat.objects.get(pk=self.plat.pk).quantite, 3)
 
         apercu = self.client.get(reverse('restauration:commande_tickets', args=[commande.pk]))
-        self.assertContains(apercu, 'Aperçu avant impression')
+        self.assertContains(apercu, 'Aperçu 80 mm')
+        self.assertContains(apercu, 'bon-80mm')
         self.assertContains(apercu, 'Poulet braisé')
-        self.assertContains(apercu, 'Envoyer à')
+        self.assertContains(apercu, 'Imprimer la commande')
+
+        retour = self.client.get(reverse('restauration:commande_detail', args=[commande.pk]))
+        self.assertEqual(retour.status_code, 200)
+        self.assertNotContains(retour, 'Encaisser et afficher')
+        self.assertContains(retour, 'Ajouter')
+        self.assertContains(retour, '20,00')
+        self.assertContains(retour, 'facturation')
+
+    def test_ajout_autorise_apres_validation_et_ouvrir(self):
+        commande = self._ouvrir()
+        self.client.post(
+            reverse('restauration:commande_ajouter', args=[commande.pk]),
+            {'plat': self.plat.pk, 'quantite': '1'},
+        )
+        self.client.post(reverse('restauration:commande_valider', args=[commande.pk]))
+        occupee = self.client.post(reverse('restauration:table_ouvrir', args=[self.table.pk]))
+        self.assertRedirects(occupee, reverse('restauration:commande_detail', args=[commande.pk]))
+
+        liste = self.client.get(reverse('restauration:commandes'))
+        self.assertContains(liste, 'Ouvrir')
+        self.assertContains(liste, reverse('restauration:commande_detail', args=[commande.pk]))
+
+        resp = self.client.post(
+            reverse('restauration:commande_ajouter', args=[commande.pk]),
+            {'plat': self.plat.pk, 'quantite': '1'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        commande.refresh_from_db()
+        self.assertEqual(commande.lignes.get().quantite, 2)
+        detail = self.client.get(reverse('restauration:commande_detail', args=[commande.pk]))
+        self.assertContains(detail, 'Ajouter')
+        self.assertContains(detail, 'Poulet braisé')
+        self.assertNotContains(detail, 'Encaisser et afficher')
+
+        caisse = self.client.get(reverse('facturation:encaisser', args=[commande.pk]))
+        self.assertEqual(caisse.status_code, 200)
+        self.assertContains(caisse, 'Encaisser')
+        self.assertNotContains(caisse, 'Ajouter')
+
+    def test_impression_tous_les_groupes_par_imprimante(self):
+        from unittest.mock import patch
+
+        from restauration.impression import imprimer_commande_aux_postes
+
+        imprimante_t, _ = Imprimante.objects.get_or_create(
+            nom='Terrasse',
+            defaults={'service': ServicePoste.TERRASSE, 'nom_systeme': 'Terrasse'},
+        )
+        plat_t = Plat.objects.create(
+            categorie=self.categorie,
+            nom='Jus',
+            prix=Decimal('3.00'),
+            service=ServicePoste.TERRASSE,
+            imprimante=imprimante_t,
+            quantite=10,
+        )
+        commande = Commande.objects.create(
+            numero='RST-TEST-PRINT',
+            table=self.table,
+            utilisateur=self.user,
+        )
+        LigneCommande.objects.create(
+            commande=commande, plat=self.plat, quantite=1,
+            prix_unitaire=self.plat.prix, service=ServicePoste.CUISINE,
+            imprimante_nom='Cuisine',
+        )
+        LigneCommande.objects.create(
+            commande=commande, plat=plat_t, quantite=2,
+            prix_unitaire=plat_t.prix, service=ServicePoste.TERRASSE,
+            imprimante_nom='Terrasse',
+        )
+        with patch(
+            'restauration.impression.envoyer_texte_imprimante',
+            side_effect=lambda nom, texte: nom,
+        ) as envoi:
+            resultats = imprimer_commande_aux_postes(commande)
+        self.assertEqual(len(resultats), 2)
+        self.assertTrue(all(item['ok'] for item in resultats))
+        self.assertEqual(envoi.call_count, 2)
+        cibles = {appel.args[0] for appel in envoi.call_args_list}
+        self.assertEqual(cibles, {'Cuisine', 'Terrasse'})
+        self.assertTrue(all(ligne.imprimee for ligne in commande.lignes.all()))
+
+    def test_impression_n_envoie_que_les_ajouts(self):
+        from restauration.impression import imprimer_commande_aux_postes
+
+        commande = self._ouvrir()
+        self.client.post(
+            reverse('restauration:commande_ajouter', args=[commande.pk]),
+            {'plat': self.plat.pk, 'quantite': '1'},
+        )
+        self.client.post(reverse('restauration:commande_valider', args=[commande.pk]))
+        with patch(
+            'restauration.impression.envoyer_texte_imprimante',
+            side_effect=lambda nom, texte: nom,
+        ):
+            imprimer_commande_aux_postes(commande)
+        self.assertTrue(commande.lignes.get().imprimee)
+
+        self.client.post(
+            reverse('restauration:commande_ajouter', args=[commande.pk]),
+            {'plat': self.plat.pk, 'quantite': '2'},
+        )
+        self.assertEqual(commande.lignes.count(), 2)
+        ajout = commande.lignes.get(imprimee=False)
+        self.assertEqual(ajout.quantite, 2)
+
+        apercu = self.client.get(reverse('restauration:commande_tickets', args=[commande.pk]))
+        self.assertContains(apercu, 'AJOUT')
+        self.assertContains(apercu, 'Imprimer les ajouts')
+        self.assertContains(apercu, '2')
+
+        with patch(
+            'restauration.impression.envoyer_texte_imprimante',
+            side_effect=lambda nom, texte: nom,
+        ) as envoi:
+            resultats = imprimer_commande_aux_postes(commande)
+        self.assertEqual(len(resultats), 1)
+        self.assertTrue(resultats[0]['ok'])
+        texte = envoi.call_args.args[1]
+        self.assertIn('AJOUT', texte)
+        self.assertIn('2 x Poulet braisé', texte)
+        self.assertEqual(texte.count('Poulet braisé'), 1)
+        self.assertTrue(all(ligne.imprimee for ligne in commande.lignes.all()))
 
     def test_encaissement_cree_facture_et_apercu_recu(self):
         commande = self._ouvrir()
@@ -119,7 +248,46 @@ class RestaurationFluxTests(TestCase):
         recu = self.client.get(reverse('facturation:recu', args=[facture.pk]))
         self.assertContains(recu, 'Aperçu du reçu')
         self.assertContains(recu, 'Envoyer à l’imprimante caisse')
+        self.assertContains(recu, 'Imprimer 80 mm')
+        self.assertContains(recu, 'ticket-recu')
+        self.assertContains(recu, 'imprimerApercu')
+        self.assertContains(recu, 'PU')
+        self.assertContains(recu, 'PT')
+        self.assertContains(recu, 'Qté')
+        self.assertContains(recu, '10,00')
+        self.assertContains(recu, 'recu-lignes')
+        from facturation.impression import texte_recu
+        from facturation.models import Etablissement
+        ticket = texte_recu(facture, Etablissement.actuel())
+        self.assertIn('PLAT', ticket)
+        self.assertIn('QTE', ticket)
+        self.assertRegex(ticket, r'Poulet braisé\s+1\s+10\s+10')
+        self.assertNotIn('1 x Poulet', ticket)
         self.assertNotContains(recu, 'window.addEventListener("load"')
+
+    def test_recu_imprimer_ajax_garde_l_apercu(self):
+        commande = self._ouvrir()
+        self.client.post(
+            reverse('restauration:commande_ajouter', args=[commande.pk]),
+            {'plat': self.plat.pk, 'quantite': '1'},
+        )
+        self.client.post(reverse('restauration:commande_valider', args=[commande.pk]))
+        self.client.post(
+            reverse('restauration:commande_encaisser', args=[commande.pk]),
+            {'mode_paiement': Commande.ModePaiement.ESPECES},
+        )
+        facture = Facture.objects.get(commande=commande)
+        with patch('facturation.views.imprimer_recu_caisse', return_value='Caisse'):
+            resp = self.client.post(
+                reverse('facturation:recu_imprimer', args=[facture.pk]),
+                HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['ok'], True)
+        apercu = self.client.get(reverse('facturation:recu', args=[facture.pk]))
+        self.assertContains(apercu, 'ticket-recu')
+        self.assertContains(apercu, 'Imprimer 80 mm')
+        self.assertContains(apercu, 'Aperçu du reçu')
 
     def test_poste_voit_ligne_apres_encaissement(self):
         commande = self._ouvrir()
@@ -292,3 +460,162 @@ class ProfilsRestaurationTests(TestCase):
         self.assertEqual(resp.status_code, 403)
         commande.refresh_from_db()
         self.assertEqual(commande.statut, Commande.Statut.PAYEE)
+
+
+class SortieTerrasseAlimenteCommandeTests(TestCase):
+    def setUp(self):
+        from approvisionnement.models import (
+            BonSortie,
+            Categorie,
+            LigneSortie,
+            Produit,
+            Service,
+            Unite,
+        )
+
+        from .models import CompositionPlat
+
+        self.BonSortie = BonSortie
+        self.LigneSortie = LigneSortie
+        self.CompositionPlat = CompositionPlat
+
+        self.user = User.objects.create_user('magasin', password='pass1234')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        self.salle, _ = Salle.objects.get_or_create(nom='Salle T')
+        self.table, _ = Table.objects.get_or_create(
+            salle=self.salle, numero='T1', defaults={'places': 4},
+        )
+        self.imprimante, _ = Imprimante.objects.get_or_create(
+            nom='Terrasse',
+            defaults={'service': ServicePoste.TERRASSE, 'nom_systeme': 'Terrasse'},
+        )
+        self.categorie_menu, _ = CategorieMenu.objects.get_or_create(nom='Boissons')
+        self.plat = Plat.objects.create(
+            categorie=self.categorie_menu,
+            nom='Coca',
+            prix=Decimal('2.00'),
+            service=ServicePoste.TERRASSE,
+            imprimante=self.imprimante,
+            quantite=0,
+        )
+        categorie = Categorie.objects.create(nom='Boissons magasin')
+        unite = Unite.objects.create(code='BTL', libelle='Bouteille')
+        self.produit = Produit.objects.create(
+            code='COCA',
+            designation='Coca',
+            categorie=categorie,
+            unite=unite,
+            stock=20,
+            seuil_minimum=0,
+        )
+        self.CompositionPlat.objects.create(
+            plat=self.plat,
+            produit=self.produit,
+            quantite=3,
+        )
+        self.destination, _ = Service.objects.get_or_create(nom='Terrasse')
+        Etablissement.objects.get_or_create(pk=1, defaults={'nom_societe': 'IBBS BAZAR'})
+        self.client.force_login(self.user)
+
+    def _valider_sortie(self, quantite=6):
+        bon = self.BonSortie.objects.create(
+            numero='SOR-TEST-0001',
+            motif='Réassort terrasse',
+            destination=self.destination,
+            utilisateur=self.user,
+        )
+        self.LigneSortie.objects.create(bon=bon, produit=self.produit, quantite=quantite)
+        bon.valider()
+        return bon
+
+    def test_sortie_terrasse_augmente_quantite_plat(self):
+        self._valider_sortie(6)
+        self.plat.refresh_from_db()
+        self.assertEqual(self.plat.quantite, 6)
+
+    def test_sortie_terrasse_permet_ajout_dans_la_commande(self):
+        self._valider_sortie(4)
+        resp = self.client.post(reverse('restauration:table_ouvrir', args=[self.table.pk]))
+        self.assertEqual(resp.status_code, 302)
+        commande = Commande.objects.get(table=self.table, statut=Commande.Statut.OUVERTE)
+        resp = self.client.post(
+            reverse('restauration:commande_ajouter', args=[commande.pk]),
+            {'plat': self.plat.pk, 'quantite': '2'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(commande.lignes.get().quantite, 2)
+
+    def test_sortie_sans_composition_si_meme_nom(self):
+        from restauration.models import alimenter_plats_depuis_sortie
+
+        self.plat.compositions.all().delete()
+        bon = self.BonSortie.objects.create(
+            numero='SOR-TEST-0002',
+            motif='Réassort terrasse',
+            destination=self.destination,
+            utilisateur=self.user,
+        )
+        self.LigneSortie.objects.create(bon=bon, produit=self.produit, quantite=5)
+        alimenter_plats_depuis_sortie(bon)
+        self.plat.refresh_from_db()
+        self.assertEqual(self.plat.quantite, 5)
+
+
+class TicketEscPosTests(SimpleTestCase):
+    def test_texte_ticket_occupe_80mm(self):
+        from .impression import LARGEUR_TICKET, texte_ticket
+
+        commande = SimpleNamespace(
+            numero=15,
+            nom_emplacement='Table 3',
+            nom_serveur='Jean',
+            date_validation=timezone.now(),
+            date_ouverture=timezone.now(),
+        )
+        groupe = {
+            'libelle': 'Cuisine',
+            'lignes': [SimpleNamespace(quantite=2, libelle='Brochette', note='')],
+        }
+        ticket = texte_ticket(commande, groupe)
+        self.assertIn('-' * LARGEUR_TICKET, ticket)
+        self.assertEqual(LARGEUR_TICKET, 42)
+        self.assertIn('CUISINE', ticket)
+        self.assertNotIn('PU', ticket)
+        self.assertNotIn('AJOUT', ticket)
+
+    def test_texte_ticket_ajout(self):
+        from .impression import texte_ticket
+
+        commande = SimpleNamespace(
+            numero=15,
+            nom_emplacement='Table 3',
+            nom_serveur='Jean',
+            date_validation=timezone.now(),
+            date_ouverture=timezone.now(),
+        )
+        groupe = {
+            'libelle': 'Cuisine',
+            'ajout': True,
+            'lignes': [SimpleNamespace(quantite=1, libelle='Brochette', note='')],
+        }
+        ticket = texte_ticket(commande, groupe)
+        self.assertIn('AJOUT', ticket)
+        self.assertIn('1 x Brochette', ticket)
+
+    def test_octets_escpos_init_gras_et_coupe(self):
+        from .impression import octets_escpos
+
+        brut = octets_escpos('IBBS BAZAR\nCUISINE\n2 x Brochette')
+        self.assertIn(b'\x1b@', brut)
+        self.assertIn(b'\x1bE\x01', brut)
+        self.assertIn(b'IBBS BAZAR', brut)
+        self.assertIn(b'CUISINE', brut)
+        self.assertIn(b'\x1dV', brut)
+
+    @patch('restauration.impression.lister_imprimantes_windows', return_value=[])
+    def test_imprimante_introuvable(self, _liste):
+        from .impression import ImpressionError, envoyer_texte_imprimante
+
+        with self.assertRaises(ImpressionError):
+            envoyer_texte_imprimante('Inconnue', 'test')

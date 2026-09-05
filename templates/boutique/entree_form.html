@@ -1,21 +1,26 @@
 {% extends "boutique/base.html" %}
+{% load static %}
 
 {% block app_content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Stock</p>
     <h1>Nouvelle entrée en stock</h1>
+    <p class="lead">Sélectionnez l’article parent, puis une variante existante pour n’ajouter que la quantité. Si la variante n’existe pas, laissez le champ vide et saisissez ses informations. Toute entrée reste à valider.</p>
   </div>
 </div>
 
 <section class="panel form-panel">
-  <form method="post" class="form-grid">
+  <form method="post" class="form-grid" id="form-entree-stock">
     {% csrf_token %}
     {{ form.non_field_errors }}
     {% for field in form %}
-    <div class="field">
+    <div class="field{% if field.name == 'variante' %} field-wide{% endif %}">
       <label for="{{ field.id_for_label }}">{{ field.label }}</label>
       {{ field }}
+      {% if field.name == 'variante' %}
+      <p class="help" id="stock-variante-actuel"></p>
+      {% endif %}
       {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
       {{ field.errors }}
     </div>
@@ -47,8 +52,12 @@
         {% for b in mes_entrees %}
         <tr>
           <td>{{ b.numero }}</td>
-          <td>{{ b.article.code }}</td>
-          <td>{{ b.couleur }}/{{ b.taille }}/{{ b.get_genre_display }}</td>
+          <td>{{ b.article.designation }}</td>
+          <td>
+            {% if b.variante %}{{ b.variante.libelle_recherche }}
+            {% else %}{{ b.couleur }}/{{ b.taille }}/{{ b.get_genre_display }}{% if b.type_tissu %} · {{ b.type_tissu }}{% endif %}
+            {% endif %}
+          </td>
           <td>{{ b.quantite }}</td>
           <td>
             {% if b.statut == 'BROUILLON' %}Brouillon
@@ -66,4 +75,11 @@
   </div>
 </section>
 {% endif %}
+
+{{ variantes_json|json_script:"variantes-entree-data" }}
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/boutique_entree.js' %}?v=entree-var-1"></script>
 {% endblock %}

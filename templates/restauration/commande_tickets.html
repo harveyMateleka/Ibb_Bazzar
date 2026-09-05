@@ -4,17 +4,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tickets {{ commande.numero }}</title>
+  <title>Aperçu tickets {{ commande.numero }}</title>
   <link rel="stylesheet" href="{% static 'css/brand.css' %}">
   <link rel="icon" href="{{ MEDIA_URL }}logo/logo.jpeg">
+  <style>
+    @page { size: 80mm auto; margin: 8mm 6mm 6mm 6mm; }
+  </style>
 </head>
-<body class="print-page">
+<body class="print-page bon-ticket">
   <div class="no-print print-toolbar">
-    <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' commande.pk %}">Retour</a>
+    <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' commande.pk %}">Retour à la commande</a>
+    {% if perms.restauration.validate_commande %}
     <form method="post" action="{% url 'restauration:commande_imprimer_postes' commande.pk %}">
       {% csrf_token %}
-      <button type="submit" class="btn btn-primary">Renvoyer aux imprimantes des postes</button>
+      <button type="submit" class="btn btn-primary">{% if est_ajout %}Imprimer les ajouts{% else %}Imprimer la commande{% endif %}</button>
     </form>
+    {% endif %}
   </div>
 
   {% if messages %}
@@ -25,9 +30,29 @@
   </div>
   {% endif %}
 
+  <section class="no-print impression-statut">
+    <h2>Aperçu 80 mm</h2>
+    <p class="help">
+      {% if est_ajout %}
+      Seuls les plats ajoutés après le dernier envoi sont affichés. Les plats déjà envoyés en cuisine ne sont pas réimprimés.
+      {% else %}
+      Contrôlez l’aperçu, puis cliquez sur « Imprimer la commande » :
+      chaque ticket part sur l’imprimante rattachée aux plats (cuisine, barbecus ou terrasse).
+      {% endif %}
+    </p>
+    <p class="commande-total">
+      Total commande
+      {% for devise, montant in commande.totaux_par_devise.items %}
+      <strong>{{ montant }} {{ devise }}</strong>
+      {% empty %}
+      <strong>0</strong>
+      {% endfor %}
+    </p>
+  </section>
+
   {% if impressions %}
   <section class="no-print impression-statut">
-    <h2>Envoi automatique</h2>
+    <h2>Résultat d’envoi</h2>
     <ul>
       {% for item in impressions %}
       <li>
@@ -41,28 +66,19 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="help">
-      Une commande mixte imprime un ticket par service : cuisine, barbecus et terrasse reçoivent uniquement leurs plats.
-    </p>
   </section>
   {% endif %}
 
   {% for groupe in groupes %}
-  <article class="bon-doc ticket-poste">
-    <header class="bon-head">
-      <img src="{{ MEDIA_URL }}logo/logo.jpeg" alt="IBBS BAZAR" class="bon-logo">
-      <div>
-        <p class="eyebrow">{{ groupe.libelle }}</p>
-        <h1>Bon de préparation</h1>
-        <p class="help" style="margin: 0.2rem 0 0;">Imprimante : {{ groupe.imprimante|default:"non enregistrée" }}</p>
-      </div>
-      <div class="bon-numero">
-        <span>N°</span>
-        <strong>{{ commande.numero }}</strong>
-      </div>
+  <article class="bon-80mm">
+    <header class="bon-80-head">
+      <img src="{{ MEDIA_URL }}logo/logo.jpeg" alt="IBBS BAZAR" class="bon-80-logo">
+      <p class="bon-80-nom">IBBS BAZAR</p>
+      <p class="bon-80-titre">{{ groupe.libelle }}{% if groupe.ajout %} · AJOUT{% endif %}</p>
+      <p class="bon-80-num">N° {{ commande.numero }}</p>
     </header>
-
-    <dl class="bon-meta">
+    <hr class="bon-80-sep">
+    <dl class="bon-80-meta">
       <div>
         <dt>Table</dt>
         <dd>{{ commande.nom_emplacement }}</dd>
@@ -75,31 +91,32 @@
         <dt>Heure</dt>
         <dd>{% if commande.date_validation %}{{ commande.date_validation|date:"d/m/Y H:i" }}{% else %}{{ commande.date_ouverture|date:"d/m/Y H:i" }}{% endif %}</dd>
       </div>
+      <div>
+        <dt>Imprimante</dt>
+        <dd>{{ groupe.imprimante|default:"non enregistrée" }}</dd>
+      </div>
     </dl>
-
-    <table class="bon-table">
+    <hr class="bon-80-sep">
+    <table class="bon-80-table">
       <thead>
         <tr>
           <th>Produit</th>
-          <th>Qté</th>
+          <th class="num">Qté</th>
         </tr>
       </thead>
       <tbody>
         {% for ligne in groupe.lignes %}
         <tr>
-          <td>{{ ligne.libelle }}</td>
-          <td>{{ ligne.quantite }}</td>
+          <td class="libelle">{{ ligne.libelle }}</td>
+          <td class="num">{{ ligne.quantite }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-
-    <p class="no-print actions" style="margin-top: 1rem;">
-      <a class="btn btn-ghost" href="{% url 'restauration:commande_ticket_service' commande.pk groupe.service %}">Imprimer {{ groupe.libelle|lower }}</a>
-    </p>
+    <p class="no-print help" style="margin-top: 1rem;">Imprimante : {{ groupe.imprimante|default:"non enregistrée" }}</p>
   </article>
   {% empty %}
-  <p class="help">Aucun plat à imprimer.</p>
+  <p class="help">{% if est_ajout %}Aucun nouvel ajout à imprimer.{% else %}Aucun plat à imprimer.{% endif %}</p>
   {% endfor %}
 </body>
 </html>

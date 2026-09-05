@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 
 from core.models import Domaine, Succursale
 from core.permissions import require_permission, succursales_autorisees
+from core.stats import bornes_deux_mois, comparaison_mois, compter_entre
 
 from .forms import (
     AffectationForm,
@@ -160,6 +161,39 @@ def tableau_de_bord(request):
     biens = _biens_perimetre(peri, inclure_declasses=_peut_voir_declasses(request.user))
     derniers = biens[:8]
     evenements = _timeline(peri, limite=8)
+    debut_p, debut_c, fin_c = bornes_deux_mois()
+    ids_biens = list(biens.values_list('pk', flat=True))
+    casses = Casse.objects.filter(immobilisation_id__in=ids_biens)
+    reparations = Reparation.objects.filter(immobilisation_id__in=ids_biens)
+    affectations = Affectation.objects.filter(immobilisation_id__in=ids_biens)
+    deplacements = Deplacement.objects.filter(immobilisation_id__in=ids_biens)
+    comparaison = comparaison_mois([
+        {
+            'label': 'Biens créés',
+            'precedent': compter_entre(biens, 'date_creation', debut_p, debut_c),
+            'courant': compter_entre(biens, 'date_creation', debut_c, fin_c),
+        },
+        {
+            'label': 'Casses',
+            'precedent': compter_entre(casses, 'date_casse', debut_p, debut_c),
+            'courant': compter_entre(casses, 'date_casse', debut_c, fin_c),
+        },
+        {
+            'label': 'Réparations',
+            'precedent': compter_entre(reparations, 'date_reparation', debut_p, debut_c),
+            'courant': compter_entre(reparations, 'date_reparation', debut_c, fin_c),
+        },
+        {
+            'label': 'Affectations',
+            'precedent': compter_entre(affectations, 'date_affectation', debut_p, debut_c),
+            'courant': compter_entre(affectations, 'date_affectation', debut_c, fin_c),
+        },
+        {
+            'label': 'Déplacements',
+            'precedent': compter_entre(deplacements, 'date_deplacement', debut_p, debut_c),
+            'courant': compter_entre(deplacements, 'date_deplacement', debut_c, fin_c),
+        },
+    ])
     return render(
         request,
         'immobilisations/tableau_de_bord.html',
@@ -172,6 +206,7 @@ def tableau_de_bord(request):
             'nb_en_reparation': biens.filter(statut_administratif='EN_REPARATION').count(),
             'nb_declasses': biens.filter(statut_administratif='DECLASSE').count(),
             'nb_casses': biens.filter(etat_physique='CASSE').count(),
+            'comparaison': comparaison,
         },
     )
 

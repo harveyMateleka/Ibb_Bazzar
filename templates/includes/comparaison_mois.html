@@ -1,0 +1,30 @@
+{% if comparaison %}
+<section class="panel comparaison-mois">
+  <h2>Comparaison {{ comparaison.mois_precedent }} → {{ comparaison.mois_courant }}</h2>
+  <p class="help">Évolution entre le mois dernier et le mois en cours.</p>
+  {{ comparaison|json_script:comparaison_id }}
+  <canvas class="comparaison-canvas" width="720" height="280" data-dashboard-chart="{{ comparaison_id }}"></canvas>
+  <div class="table-wrap" style="margin-top: 1rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Indicateur</th>
+          <th>{{ comparaison.mois_precedent }}</th>
+          <th>{{ comparaison.mois_courant }}</th>
+          <th>Écart</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in comparaison.lignes %}
+        <tr>
+          <td>{{ ligne.label }}</td>
+          <td>{{ ligne.precedent }}</td>
+          <td>{{ ligne.courant }}</td>
+          <td>{% if ligne.ecart > 0 %}+{{ ligne.ecart }}{% else %}{{ ligne.ecart }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}

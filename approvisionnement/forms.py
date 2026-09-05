@@ -240,6 +240,11 @@ class AutorisationDepassementForm(StyledFormMixin, forms.Form):
                 'Identifiant ou mot de passe incorrect. '
                 'L’autorisation du propriétaire n’a pas été accordée.'
             )
+        if not (utilisateur.is_superuser or utilisateur.is_staff):
+            raise forms.ValidationError(
+                'Ce compte n’a pas le droit d’autoriser un dépassement de seuil. '
+                'Seul un responsable (staff) peut valider.'
+            )
         cleaned['user'] = utilisateur
         return cleaned
 
@@ -253,9 +258,18 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
             'nombre_portions': forms.NumberInput(attrs={'min': 0}),
         }
 
-    def __init__(self, *args, portions_map=None, produits_exclus=None, produits_autorises=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        portions_map=None,
+        produits_exclus=None,
+        produits_autorises=None,
+        message_restriction='',
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.produits_autorises = produits_autorises
+        self.message_restriction = message_restriction
         produits = Produit.objects.select_related('categorie', 'unite')
         if produits_autorises is not None:
             produits = produits.filter(pk__in=produits_autorises)
@@ -326,7 +340,8 @@ class LigneSortieForm(StyledFormMixin, forms.ModelForm):
         ):
             self.add_error(
                 'produit',
-                'Ce produit n’est pas rattaché à un plat du service terrasse.',
+                self.message_restriction
+                or 'Ce produit n’est pas autorisé pour ce service.',
             )
         return cleaned
 
@@ -340,6 +355,7 @@ class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
         }
         instance = kwargs.get('instance')
         self.produits_autorises = None
+        self.message_restriction = ''
         nom = ''
         if instance is not None and getattr(instance, 'pk', None):
             nom = getattr(instance, 'nom_destination', '') or ''
@@ -348,14 +364,25 @@ class BaseLigneSortieFormSet(forms.BaseInlineFormSet):
             ids_produits_rattaches_au_poste,
             service_poste_depuis_destination,
         )
-        if service_poste_depuis_destination(nom) == ServicePoste.TERRASSE:
+        from .models import ids_produits_vivre_frais
+        service = service_poste_depuis_destination(nom)
+        if service == ServicePoste.TERRASSE:
             self.produits_autorises = ids_produits_rattaches_au_poste(ServicePoste.TERRASSE)
+            self.message_restriction = (
+                'Ce produit n’est pas rattaché à un plat du service terrasse.'
+            )
+        elif service == ServicePoste.BARBECUS:
+            self.produits_autorises = ids_produits_vivre_frais()
+            self.message_restriction = (
+                'Une sortie barbecus n’accepte que les produits de la catégorie vivre frais.'
+            )
         super().__init__(*args, **kwargs)
 
     def _construct_form(self, i, **kwargs):
         kwargs['portions_map'] = self.portions_map
         kwargs['produits_exclus'] = self.produits_exclus
         kwargs['produits_autorises'] = self.produits_autorises
+        kwargs['message_restriction'] = self.message_restriction
         return super()._construct_form(i, **kwargs)
 
     def clean(self):

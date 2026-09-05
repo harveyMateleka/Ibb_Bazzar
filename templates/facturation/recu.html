@@ -5,17 +5,75 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Reçu {{ facture.numero }}</title>
-  <link rel="stylesheet" href="{% static 'css/brand.css' %}">
+  <link rel="stylesheet" href="{% static 'css/brand.css' %}?v=recu-print-5">
   <link rel="icon" href="{% if etablissement.logo %}{{ etablissement.logo.url }}{% else %}{{ MEDIA_URL }}logo/logo.jpeg{% endif %}">
+  <style>
+    .recu-lignes {
+      font-size: 9px;
+      line-height: 1.25;
+    }
+    .recu-lignes th,
+    .recu-lignes td {
+      padding: 0.3mm 0.4mm;
+    }
+    .recu-lignes .libelle {
+      text-align: left;
+      word-break: break-word;
+    }
+    .recu-lignes .qte { width: 8mm; }
+    .recu-lignes .pu,
+    .recu-lignes .pt { width: 16mm; }
+    @media print {
+      @page { margin: 5mm; }
+      html, body.recu-page {
+        background: #fff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .no-print,
+      .print-toolbar,
+      .impression-statut,
+      .flash-wrap {
+        display: none !important;
+      }
+      .recu-80mm {
+        display: block !important;
+        visibility: visible !important;
+        position: static !important;
+        margin: 0 auto !important;
+        box-shadow: none !important;
+        width: 72mm !important;
+        max-width: 72mm !important;
+        background: #fff !important;
+        color: #111 !important;
+      }
+    }
+  </style>
 </head>
 <body class="print-page recu-page">
   <div class="no-print print-toolbar">
     <a class="btn btn-ghost" href="{% url 'restauration:commande_detail' facture.commande_id %}">Retour</a>
     <a class="btn btn-ghost" href="{% url 'facturation:journal' %}">Journal</a>
-    <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer 80 mm</button>
+    <form id="form-caisse" method="post" action="{% url 'facturation:recu_imprimer' facture.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary" id="btn-caisse">Envoyer à l’imprimante caisse</button>
+    </form>
+    <button type="button" class="btn btn-ghost" id="btn-apercu-80">Imprimer 80 mm</button>
   </div>
 
-  <article class="recu-80mm">
+  <div class="no-print flash-wrap impression-statut" id="impression-msg">
+    {% if messages %}
+      {% for message in messages %}
+      <p class="flash flash-{{ message.tags }}">{{ message }}</p>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <section class="no-print impression-statut">
+    <p class="help">Aperçu du reçu. Vérifiez le ticket, puis envoyez-le à l’imprimante caisse ou imprimez-le depuis le navigateur.</p>
+  </section>
+
+  <article class="recu-80mm" id="ticket-recu">
     {% if etablissement.logo %}
     <img src="{{ etablissement.logo.url }}" alt="{{ etablissement.nom_societe }}" class="recu-logo">
     {% else %}
@@ -35,12 +93,24 @@
     <p>Caissier : {{ facture.utilisateur }}</p>
     <p class="recu-sep">------------------------</p>
     <table class="recu-lignes">
-      {% for ligne in facture.lignes.all %}
-      <tr>
-        <td>{{ ligne.quantite }}× {{ ligne.designation }}</td>
-        <td>{{ ligne.montant }} {{ ligne.devise }}</td>
-      </tr>
-      {% endfor %}
+      <thead>
+        <tr>
+          <th class="libelle">Plat</th>
+          <th class="num qte">Qté</th>
+          <th class="num pu">PU</th>
+          <th class="num pt">PT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ligne in facture.lignes.all %}
+        <tr>
+          <td class="libelle">{{ ligne.designation }}</td>
+          <td class="num qte">{{ ligne.quantite }}</td>
+          <td class="num pu">{{ ligne.prix_unitaire }}</td>
+          <td class="num pt">{{ ligne.montant }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
     <p class="recu-sep">------------------------</p>
     {% for devise, montant in facture.totaux_par_devise.items %}
@@ -50,8 +120,59 @@
     <p class="recu-sep">************************</p>
     <p class="recu-merci">{{ etablissement.message_recu|default:"Merci de votre visite" }}</p>
   </article>
-  {% if auto_print %}
-  <script>window.addEventListener("load", function () { window.print(); });</script>
-  {% endif %}
+  <script>
+    (function () {
+      var boutonApercu = document.getElementById("btn-apercu-80");
+      var formulaire = document.getElementById("form-caisse");
+      var boutonCaisse = document.getElementById("btn-caisse");
+      var zoneMsg = document.getElementById("impression-msg");
+
+      function afficherMessage(niveau, texte) {
+        if (!zoneMsg || !texte) return;
+        zoneMsg.innerHTML = '<p class="flash flash-' + niveau + '">' + texte + "</p>";
+      }
+
+      var caisseConfiguree = {% if etablissement.imprimante_caisse %}true{% else %}false{% endif %};
+
+      function imprimerApercu() {
+        if (caisseConfiguree && formulaire) {
+          if (typeof formulaire.requestSubmit === "function") {
+            formulaire.requestSubmit();
+          } else {
+            formulaire.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+          }
+          return;
+        }
+        window.print();
+      }
+
+      if (boutonApercu) {
+        boutonApercu.addEventListener("click", imprimerApercu);
+      }
+
+      if (formulaire) {
+        formulaire.addEventListener("submit", function (event) {
+          event.preventDefault();
+          if (boutonCaisse) boutonCaisse.disabled = true;
+          fetch(formulaire.action, {
+            method: "POST",
+            body: new FormData(formulaire),
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+            credentials: "same-origin"
+          }).then(function (reponse) { return reponse.json(); }).then(function (data) {
+            afficherMessage(data.niveau || (data.ok ? "success" : "warning"), data.message || "");
+          }).catch(function () {
+            afficherMessage("warning", "L’envoi à l’imprimante caisse a échoué. Utilisez Imprimer 80 mm.");
+          }).finally(function () {
+            if (boutonCaisse) boutonCaisse.disabled = false;
+          });
+        });
+      }
+
+      {% if auto_print %}
+      window.addEventListener("load", imprimerApercu);
+      {% endif %}
+    })();
+  </script>
 </body>
 </html>

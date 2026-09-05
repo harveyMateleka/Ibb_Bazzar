@@ -48,7 +48,9 @@
       if (champ) champ.value = "0";
       return false;
     }
-    if (deja + demande > reste) {
+    const reserve = form.getAttribute("data-stock-reserve") === "1";
+    const utilise = reserve ? 0 : deja;
+    if (utilise + demande > reste) {
       if (champ) champ.value = "0";
       afficherStockModal(nom, reste, platId);
       return false;
@@ -68,7 +70,8 @@
     const deja = nombre(plus.getAttribute("data-deja"));
     const nom = plus.getAttribute("data-nom") || "Ce plat";
     const platId = plus.getAttribute("data-plat-id");
-    if (reste <= 0 || deja + 1 > reste) {
+    const reserve = plus.getAttribute("data-stock-reserve") === "1";
+    if (reste <= 0 || (!reserve && deja + 1 > reste)) {
       event.preventDefault();
       afficherStockModal(nom, reste, platId);
     }

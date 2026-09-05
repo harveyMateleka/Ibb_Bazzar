@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from core.permissions import require_permission
+from core.stats import bornes_deux_mois, comparaison_mois, compter_entre
 
 from .forms import (
     AutorisationDepassementForm,
@@ -40,6 +41,27 @@ def tableau_de_bord(request):
     derniers = Approvisionnement.objects.select_related(
         'utilisateur', 'fournisseur'
     ).prefetch_related('lignes__produit', 'lignes__produit__unite')[:8]
+    debut_p, debut_c, fin_c = bornes_deux_mois()
+    entrees = Approvisionnement.objects.filter(type_operation=Approvisionnement.Type.ENTREE)
+    sorties = Approvisionnement.objects.filter(type_operation=Approvisionnement.Type.SORTIE)
+    inventaires = Inventaire.objects.all()
+    comparaison = comparaison_mois([
+        {
+            'label': 'Entrées',
+            'precedent': compter_entre(entrees, 'date_operation', debut_p, debut_c),
+            'courant': compter_entre(entrees, 'date_operation', debut_c, fin_c),
+        },
+        {
+            'label': 'Sorties',
+            'precedent': compter_entre(sorties, 'date_operation', debut_p, debut_c),
+            'courant': compter_entre(sorties, 'date_operation', debut_c, fin_c),
+        },
+        {
+            'label': 'Inventaires',
+            'precedent': compter_entre(inventaires, 'date_inventaire', debut_p, debut_c),
+            'courant': compter_entre(inventaires, 'date_inventaire', debut_c, fin_c),
+        },
+    ])
     return render(
         request,
         'approvisionnement/tableau_de_bord.html',
@@ -50,6 +72,7 @@ def tableau_de_bord(request):
             'nb_alertes': alertes.count(),
             'nb_produits': produits.count(),
             'nb_mouvements': Approvisionnement.objects.count(),
+            'comparaison': comparaison,
         },
     )
 
@@ -279,14 +302,16 @@ def sortie_detail(request, pk):
         ids_produits_rattaches_au_poste,
         service_poste_depuis_destination,
     )
-    restriction_terrasse = (
-        service_poste_depuis_destination(bon.nom_destination) == ServicePoste.TERRASSE
-    )
+    from .models import ids_produits_vivre_frais
+    service_dest = service_poste_depuis_destination(bon.nom_destination)
+    restriction_terrasse = service_dest == ServicePoste.TERRASSE
+    restriction_barbecus = service_dest == ServicePoste.BARBECUS
     produits_terrasse = (
         ids_produits_rattaches_au_poste(ServicePoste.TERRASSE)
         if restriction_terrasse
         else set()
     )
+    produits_barbecus = ids_produits_vivre_frais() if restriction_barbecus else set()
     formset = None
     if bon.statut != BonSortie.Statut.VALIDE:
         formset = LigneSortieFormSet(
@@ -318,7 +343,9 @@ def sortie_detail(request, pk):
             'lignes': lignes,
             'nb_produits': Produit.objects.count(),
             'restriction_terrasse': restriction_terrasse,
+            'restriction_barbecus': restriction_barbecus,
             'nb_produits_terrasse': len(produits_terrasse) if restriction_terrasse else None,
+            'nb_produits_barbecus': len(produits_barbecus) if restriction_barbecus else None,
         },
     )
 

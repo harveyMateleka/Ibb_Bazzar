@@ -1,4 +1,5 @@
 {% extends "facturation/base.html" %}
+{% load static %}
 
 {% block app_title %}Journal de caisse{% endblock %}
 
@@ -50,7 +51,7 @@
             {% endfor %}
           </td>
           <td>
-            <a class="btn btn-primary" href="{% url 'restauration:commande_detail' commande.pk %}#encaissement">Encaisser</a>
+            <a class="btn btn-primary" href="{% url 'facturation:encaisser' commande.pk %}">Encaisser</a>
           </td>
         </tr>
         {% empty %}
@@ -85,6 +86,8 @@
   {% endfor %}
 </div>
 
+{% include "includes/comparaison_mois.html" with comparaison=comparaison comparaison_id="comparaison-caisse" %}
+
 <section class="panel">
   <h2>Reçus du jour</h2>
   <div class="table-wrap">
@@ -117,7 +120,7 @@
           </td>
           <td>{{ facture.utilisateur }}</td>
           <td>
-            <a class="btn btn-ghost" href="{% url 'facturation:recu' facture.pk %}?auto=0">Reçu 80 mm</a>
+            <a class="btn btn-ghost" href="{% url 'facturation:recu' facture.pk %}">Aperçu du reçu</a>
           </td>
         </tr>
         {% empty %}
@@ -129,4 +132,9 @@
     </table>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/dashboard_charts.js' %}?v=mois-1"></script>
 {% endblock %}

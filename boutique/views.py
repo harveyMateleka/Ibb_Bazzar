@@ -21,6 +21,7 @@ from django.views.decorators.http import require_POST
 from core.models import Domaine, Succursale, User
 from core.permissions import require_permission, succursales_autorisees
 from core.services import AuditService
+from core.stats import bornes_deux_mois, comparaison_mois, compter_entre, filtrer_periode
 
 from .forms import (
     ArticleBoutiqueForm,
@@ -35,6 +36,7 @@ from .models import (
     ArticleBoutique,
     BonEntreeBoutique,
     CategorieBoutique,
+    EmplacementBoutique,
     InventaireBoutique,
     MouvementStockBoutique,
     StockBoutique,
@@ -69,6 +71,68 @@ def _articles_perimetre(peri):
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
     )
+
+
+def _payload_variantes_entree(articles_qs):
+    """Données JSON pour préremplir le formulaire d'entrée depuis une variante."""
+    variantes = (
+        VarianteArticle.objects.filter(article__in=articles_qs)
+        .select_related('article', 'categorie', 'unite', 'type_tissu')
+        .prefetch_related('stocks')
+    )
+    emplacements = {
+        (e.nom, e.etagere.nom): e.pk
+        for e in EmplacementBoutique.objects.filter(actif=True).select_related('etagere')
+    }
+    payload = {}
+    for variante in variantes:
+        stocks = {str(s.succursale_id): s.quantite for s in variante.stocks.all()}
+        payload[str(variante.pk)] = {
+            'article': variante.article_id,
+            'code': variante.code_variante,
+            'designation': variante.article.designation,
+            'genre': variante.genre,
+            'taille': variante.taille,
+            'couleur': variante.couleur,
+            'marque': variante.marque,
+            'modele': variante.modele,
+            'categorie': variante.categorie_id or '',
+            'unite': variante.unite_id or '',
+            'type_tissu': variante.type_tissu_id or '',
+            'tissu': variante.type_tissu.nom if variante.type_tissu_id else '',
+            'rayon': variante.rayon,
+            'emplacement': emplacements.get((variante.emplacement, variante.etagere), ''),
+            'devise': variante.devise,
+            'prix_achat': str(variante.prix_achat),
+            'prix_unitaire': str(variante.prix_unitaire),
+            'prix_minimum': str(variante.prix_minimum),
+            'seuil_alerte': variante.seuil_alerte,
+            'stocks': stocks,
+        }
+    return payload
+
+
+def _snapshot_variante(variante):
+    """Recopie les caractéristiques d'une variante existante sur le bon."""
+    return {
+        'categorie': variante.categorie,
+        'sous_categorie': variante.sous_categorie,
+        'unite': variante.unite,
+        'type_tissu': variante.type_tissu,
+        'genre': variante.genre,
+        'taille': variante.taille,
+        'couleur': variante.couleur,
+        'marque': variante.marque,
+        'modele': variante.modele,
+        'rayon': variante.rayon,
+        'etagere': variante.etagere,
+        'emplacement': variante.emplacement,
+        'devise': variante.devise,
+        'prix_achat': variante.prix_achat,
+        'prix_unitaire': variante.prix_unitaire,
+        'prix_minimum': variante.prix_minimum,
+        'seuil_alerte': variante.seuil_alerte,
+    }
 
 
 def _articles_entree(peri):
@@ -180,6 +244,74 @@ def tableau_de_bord(request):
     dernieres = ventes_qs.select_related('utilisateur', 'succursale')[:8]
     stock_total = stocks.aggregate(total=Sum('quantite'))['total'] or 0
     ventes_jour = ventes_qs.filter(date_vente__date=timezone.localdate()).count()
+    debut_p, debut_c, fin_c = bornes_deux_mois()
+    ventes_ok = ventes_qs.exclude(statut=Vente.Statut.ANNULEE)
+    mouvements = MouvementStockBoutique.objects.filter(
+        succursale_id__in=peri['succursales_ids'],
+        domaine_id=peri['domaine_id'],
+    )
+    comparaison = comparaison_mois([
+        {
+            'label': 'Ventes',
+            'precedent': compter_entre(ventes_ok, 'date_vente', debut_p, debut_c),
+            'courant': compter_entre(ventes_ok, 'date_vente', debut_c, fin_c),
+        },
+        {
+            'label': 'CA',
+            'precedent': float(
+                filtrer_periode(ventes_ok, 'date_vente', debut_p, debut_c)
+                .aggregate(total=Sum('total'))['total'] or 0
+            ),
+            'courant': float(
+                filtrer_periode(ventes_ok, 'date_vente', debut_c, fin_c)
+                .aggregate(total=Sum('total'))['total'] or 0
+            ),
+        },
+        {
+            'label': 'Entrées',
+            'precedent': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.ENTREE),
+                'date_mouvement', debut_p, debut_c,
+            ),
+            'courant': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.ENTREE),
+                'date_mouvement', debut_c, fin_c,
+            ),
+        },
+        {
+            'label': 'Sorties',
+            'precedent': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.SORTIE),
+                'date_mouvement', debut_p, debut_c,
+            ),
+            'courant': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.SORTIE),
+                'date_mouvement', debut_c, fin_c,
+            ),
+        },
+        {
+            'label': 'Casses',
+            'precedent': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.CASSE),
+                'date_mouvement', debut_p, debut_c,
+            ),
+            'courant': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.CASSE),
+                'date_mouvement', debut_c, fin_c,
+            ),
+        },
+        {
+            'label': 'Pertes',
+            'precedent': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.PERTE),
+                'date_mouvement', debut_p, debut_c,
+            ),
+            'courant': compter_entre(
+                mouvements.filter(type=MouvementStockBoutique.Type.PERTE),
+                'date_mouvement', debut_c, fin_c,
+            ),
+        },
+    ])
     return render(
         request,
         'boutique/tableau_de_bord.html',
@@ -193,6 +325,7 @@ def tableau_de_bord(request):
             'stock_total': stock_total,
             'nb_ventes': ventes_qs.count(),
             'ventes_jour': ventes_jour,
+            'comparaison': comparaison,
         },
     )
 
@@ -347,29 +480,37 @@ def entree(request):
         d = formulaire.cleaned_data
         article = d['article']
         succursale = d['succursale']
+        variante = d.get('variante')
+        if variante:
+            snap = _snapshot_variante(variante)
+        else:
+            snap = {
+                'categorie': d.get('categorie'),
+                'unite': d.get('unite'),
+                'type_tissu': d.get('type_tissu'),
+                'genre': d.get('genre', ''),
+                'taille': d.get('taille', ''),
+                'couleur': d.get('couleur', ''),
+                'marque': d.get('marque', ''),
+                'modele': d.get('modele', ''),
+                'rayon': d.get('rayon', ''),
+                'etagere': d['emplacement'].etagere.nom if d.get('emplacement') else '',
+                'emplacement': d['emplacement'].nom if d.get('emplacement') else '',
+                'devise': d.get('devise', 'FC'),
+                'prix_achat': d.get('prix_achat', 0),
+                'prix_unitaire': d.get('prix_unitaire', 0),
+                'prix_minimum': d.get('prix_minimum', 0),
+                'seuil_alerte': d.get('seuil_alerte', 0),
+            }
         try:
             bon = BonEntreeService.creer(
                 article=article,
+                variante=variante,
                 succursale=succursale,
                 domaine=article.domaine or peri['domaine'],
                 quantite=d['quantite'],
                 cree_par=request.user,
-                categorie=d.get('categorie'),
-                unite=d.get('unite'),
-                type_tissu=d.get('type_tissu'),
-                genre=d.get('genre', ''),
-                taille=d.get('taille', ''),
-                couleur=d.get('couleur', ''),
-                marque=d.get('marque', ''),
-                modele=d.get('modele', ''),
-                rayon=d.get('rayon', ''),
-                etagere=d['emplacement'].etagere.nom if d.get('emplacement') else '',
-                emplacement=d['emplacement'].nom if d.get('emplacement') else '',
-                devise=d.get('devise', 'FC'),
-                prix_achat=d.get('prix_achat', 0),
-                prix_unitaire=d.get('prix_unitaire', 0),
-                prix_minimum=d.get('prix_minimum', 0),
-                seuil_alerte=d.get('seuil_alerte', 0),
+                **snap,
             )
             messages.success(
                 request,
@@ -384,11 +525,15 @@ def entree(request):
         cree_par=request.user,
         succursale_id__in=peri['succursales_ids'],
         domaine_id=peri['domaine_id'],
-    ).order_by('-date_creation')[:10]
+    ).select_related('article', 'variante', 'variante__article', 'variante__type_tissu', 'type_tissu').order_by('-date_creation')[:10]
     return render(
         request,
         'boutique/entree_form.html',
-        {'form': formulaire, 'mes_entrees': mes_entrees},
+        {
+            'form': formulaire,
+            'mes_entrees': mes_entrees,
+            'variantes_json': _payload_variantes_entree(_articles_entree(peri)),
+        },
     )
 
 
@@ -424,7 +569,8 @@ def entree_validation_detail(request, pk):
     peri = _perimetre(request.user)
     bon = get_object_or_404(
         BonEntreeBoutique.objects.select_related(
-            'article', 'cree_par', 'valide_par', 'succursale', 'categorie', 'unite'
+            'article', 'variante', 'cree_par', 'valide_par', 'succursale',
+            'categorie', 'unite', 'type_tissu',
         ).filter(
             succursale_id__in=peri['succursales_ids'],
             domaine_id=peri['domaine_id'],

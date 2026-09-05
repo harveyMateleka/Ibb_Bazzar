@@ -3,11 +3,13 @@ from decimal import Decimal
 from django import forms
 from django.forms import formset_factory, inlineformset_factory
 
+from core.models import Succursale
 from core.permissions import appliquer_contexte
 
 from .models import (
     ArticleBoutique,
     CategorieBoutique,
+    EmplacementBoutique,
     InventaireBoutique,
     LigneInventaireBoutique,
     TypeTissuArticle,
@@ -23,12 +25,12 @@ class ArticleBoutiqueForm(forms.ModelForm):
 
     class Meta:
         model = ArticleBoutique
-        fields = ['code', 'designation', 'succursale', 'domaine']
+        fields = ['code', 'designation', 'domaine']
 
     def __init__(self, *args, succursales=None, domaines=None, contexte=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.contexte = contexte
-        if succursales is not None:
+        if succursales is not None and 'succursale' in self.fields:
             self.fields['succursale'].queryset = succursales
         if domaines is not None:
             self.fields['domaine'].queryset = domaines
@@ -39,8 +41,8 @@ class ArticleBoutiqueForm(forms.ModelForm):
         code = cleaned.get('code')
         if not code:
             return cleaned
-        # Succursale/domaine du contexte (champs verrouillés = non soumis).
-        succursale = cleaned.get('succursale') or (self.contexte or {}).get('succursale')
+        # Succursale du contexte (plus saisie à l’arrivage) ; domaine éventuellement verrouillé.
+        succursale = (self.contexte or {}).get('succursale')
         domaine = cleaned.get('domaine') or (self.contexte or {}).get('domaine')
         if succursale:
             qs = ArticleBoutique.objects.filter(code=code, succursale=succursale, domaine=domaine)
@@ -56,13 +58,34 @@ class ArticleBoutiqueForm(forms.ModelForm):
 
 
 class StockEntreeForm(forms.Form):
-    """Nouvelle entrée en stock : sélection de l'article parent, création de la
-    variante (caractéristiques + prix + seuil) et quantité — le tout soumis d'un bloc."""
+    """Nouvelle entrée en stock : succursale, article parent, variante et quantité."""
 
+    succursale = forms.ModelChoiceField(
+        queryset=Succursale.objects.none(),
+        label='Succursale',
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
     article = forms.ModelChoiceField(
         queryset=ArticleBoutique.objects.none(),
         label='Article parent',
-        widget=forms.Select(attrs={'class': 'input'}),
+        widget=forms.Select(attrs={'class': 'input', 'id': 'id_article'}),
+    )
+    variante = forms.ModelChoiceField(
+        queryset=VarianteArticle.objects.none(),
+        label='Variante existante',
+        required=False,
+        empty_label='— Rechercher une variante (code, désignation, taille, couleur, tissu) —',
+        widget=forms.Select(attrs={
+            'class': 'input',
+            'id': 'id_variante',
+            'data-skip-select2': '1',
+            'data-entree-variante': '1',
+        }),
+        help_text=(
+            'Choisissez une variante pour réapprovisionner son stock '
+            '(seule la quantité est à saisir). Si elle n’apparaît pas, '
+            'laissez vide et renseignez les champs pour une nouvelle variante.'
+        ),
     )
     genre = forms.ChoiceField(label='Genre', required=False,
                               choices=VarianteArticle.Genre.choices,
@@ -90,34 +113,61 @@ class StockEntreeForm(forms.Form):
         widget=forms.Select(attrs={'class': 'input'}))
     rayon = forms.CharField(label='Rayon', required=False, max_length=50,
                             widget=forms.TextInput(attrs={'class': 'input'}))
-    etagere = forms.CharField(label='Étagère', required=False, max_length=50,
-                              widget=forms.TextInput(attrs={'class': 'input'}))
-    emplacement = forms.CharField(label='Emplacement', required=False, max_length=50,
-                                  widget=forms.TextInput(attrs={'class': 'input'}))
+    emplacement = forms.ModelChoiceField(
+        label='Emplacement',
+        required=False,
+        queryset=EmplacementBoutique.objects.none(),
+        empty_label='— Choisir un emplacement —',
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
     devise = forms.ChoiceField(
         label='Devise', choices=VarianteArticle.Devise.choices,
         initial=VarianteArticle.Devise.FC,
         widget=forms.Select(attrs={'class': 'input'}))
     prix_achat = forms.DecimalField(label='Prix d’achat', required=False, max_digits=12, decimal_places=2)
-    prix_unitaire = forms.DecimalField(label='Prix unitaire', required=False, max_digits=12, decimal_places=2)
-    prix_minimum = forms.DecimalField(label='Prix minimum', required=False, max_digits=12, decimal_places=2)
+    prix_unitaire = forms.DecimalField(label='Prix de vente', required=False, max_digits=12, decimal_places=2)
+    prix_minimum = forms.DecimalField(label='Dernier prix', required=False, max_digits=12, decimal_places=2)
     seuil_alerte = forms.IntegerField(label='Seuil d’alerte', required=False, min_value=0)
     quantite = forms.IntegerField(label='Quantité', min_value=1,
                                   widget=forms.NumberInput(attrs={'min': 1}))
 
-    def __init__(self, *args, articles=None, categories=None, unites=None, **kwargs):
+    def __init__(self, *args, articles=None, categories=None, unites=None, succursales=None, **kwargs):
         super().__init__(*args, **kwargs)
-        if articles is not None:
-            self.fields['article'].queryset = articles
+        if succursales is not None:
+            self.fields['succursale'].queryset = succursales
+        articles_qs = articles if articles is not None else ArticleBoutique.objects.none()
+        self.fields['article'].queryset = articles_qs
+        self.fields['article'].empty_label = '— Choisir un article —'
+        self.fields['variante'].queryset = VarianteArticle.objects.filter(
+            article__in=articles_qs,
+        ).select_related('article', 'type_tissu').order_by('code_variante')
+        self.fields['variante'].label_from_instance = lambda v: v.libelle_recherche
         self.fields['categorie'].queryset = categories or CategorieBoutique.objects.filter(actif=True)
         self.fields['unite'].queryset = unites or UniteBoutique.objects.all()
+        self.fields['unite'].label_from_instance = lambda u: u.nom
+        self.fields['emplacement'].queryset = EmplacementBoutique.objects.filter(
+            actif=True, etagere__actif=True,
+        ).select_related('etagere')
 
     def clean(self):
         cleaned = super().clean()
+        variante = cleaned.get('variante')
+        article = cleaned.get('article')
+        if variante and article and variante.article_id != article.pk:
+            self.add_error(
+                'variante',
+                'Cette variante n’appartient pas à l’article parent sélectionné.',
+            )
+            return cleaned
+        if variante:
+            return cleaned
         prix = cleaned.get('prix_unitaire')
         mini = cleaned.get('prix_minimum')
         if prix is not None and mini and prix < mini:
-            self.add_error('prix_unitaire', f'Le prix de vente ({prix}) est inférieur au prix minimum ({mini}).')
+            self.add_error(
+                'prix_unitaire',
+                f'Le prix de vente ({prix}) est inférieur au dernier prix ({mini}).',
+            )
         return cleaned
 
 

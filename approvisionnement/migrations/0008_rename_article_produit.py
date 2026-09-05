@@ -68,6 +68,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('approvisionnement', '0007_inventaire_unique_par_jour'),
+        ('restauration', '0001_initial'),
     ]
 
     operations = [

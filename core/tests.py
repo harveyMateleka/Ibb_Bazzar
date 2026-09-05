@@ -271,9 +271,23 @@ class TestModuleUtilisateurs(BaseCoreTest):
         self.assertIsNone(self.responsable.date_desactivation)
         self.assertEqual(response.status_code, 200)
 
+    def test_formulaire_fonction_est_un_select_service(self):
+        from approvisionnement.models import Service
+
+        Service.objects.get_or_create(nom='Barbecus')
+        self.client.login(username='admin_test', password=self.mot_de_passe)
+        response = self.client.get(reverse('core:utilisateur_nouveau'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<select')
+        self.assertContains(response, 'Barbecus')
+        self.assertContains(response, 'Fonction / service')
+
     def test_nouvel_utilisateur_avec_affectation(self):
+        from approvisionnement.models import Service
+
         self.client.login(username='admin_test', password=self.mot_de_passe)
         succ = Succursale.objects.create(nom='Succursale X', code='X')
+        Service.objects.get_or_create(nom='Caissier')
         response = self.client.post(
             reverse('core:utilisateur_nouveau'),
             {

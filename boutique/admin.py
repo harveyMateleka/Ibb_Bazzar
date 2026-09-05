@@ -5,6 +5,8 @@ from .models import (
     ArticleBoutique,
     BonEntreeBoutique,
     CategorieBoutique,
+    EmplacementBoutique,
+    EtagereBoutique,
     FournisseurBoutique,
     InventaireBoutique,
     LigneInventaireBoutique,
@@ -35,6 +37,20 @@ class SousCategorieBoutiqueAdmin(admin.ModelAdmin):
 @admin.register(UniteBoutique)
 class UniteBoutiqueAdmin(admin.ModelAdmin):
     list_display = ['nom', 'code']
+
+
+@admin.register(EtagereBoutique)
+class EtagereBoutiqueAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'code', 'actif']
+    search_fields = ['nom', 'code']
+    list_filter = ['actif']
+
+
+@admin.register(EmplacementBoutique)
+class EmplacementBoutiqueAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'code', 'etagere', 'actif']
+    list_filter = ['etagere', 'actif']
+    search_fields = ['nom', 'code', 'etagere__nom']
 
 
 @admin.register(TypeTissuArticle)

@@ -1,4 +1,5 @@
 {% extends "approvisionnement/base.html" %}
+{% load static %}
 
 {% block app_title %}Tableau de bord{% endblock %}
 
@@ -32,6 +33,8 @@
     <strong>{{ nb_mouvements }}</strong>
   </article>
 </div>
+
+{% include "includes/comparaison_mois.html" with comparaison=comparaison comparaison_id="comparaison-appro" %}
 
 {% if alertes %}
 <section class="panel">
@@ -179,4 +182,9 @@
   </div>
 </dialog>
 {% endfor %}
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/dashboard_charts.js' %}?v=mois-1"></script>
 {% endblock %}

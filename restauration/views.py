@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from core.permissions import require_permission
+from core.stats import bornes_deux_mois, comparaison_mois, compter_entre, filtrer_periode
 from facturation.services import encaisser_et_facturer
 from .forms import AnnulationForm, CommandeForm, EncaissementForm
 from .impression import imprimer_commande_aux_postes
@@ -59,6 +60,46 @@ def tableau_de_bord(request):
     )
     tables = [table for salle in salles for table in salle.tables.all()]
     nb_occupees = sum(1 for table in tables if table.commande_ouverte())
+    debut_p, debut_c, fin_c = bornes_deux_mois()
+    commandes = Commande.objects.all()
+    payees_mois = Commande.objects.filter(statut=Commande.Statut.PAYEE)
+
+    def _ca(debut, fin):
+        return float(sum(
+            (commande.total for commande in filtrer_periode(
+                payees_mois, 'date_ouverture', debut, fin
+            ).prefetch_related('lignes')),
+            Decimal('0.00'),
+        ))
+
+    comparaison = comparaison_mois([
+        {
+            'label': 'Commandes',
+            'precedent': compter_entre(commandes, 'date_ouverture', debut_p, debut_c),
+            'courant': compter_entre(commandes, 'date_ouverture', debut_c, fin_c),
+        },
+        {
+            'label': 'Payées',
+            'precedent': compter_entre(payees_mois, 'date_ouverture', debut_p, debut_c),
+            'courant': compter_entre(payees_mois, 'date_ouverture', debut_c, fin_c),
+        },
+        {
+            'label': 'CA',
+            'precedent': _ca(debut_p, debut_c),
+            'courant': _ca(debut_c, fin_c),
+        },
+        {
+            'label': 'Annulées',
+            'precedent': compter_entre(
+                commandes.filter(statut=Commande.Statut.ANNULEE),
+                'date_annulation', debut_p, debut_c,
+            ),
+            'courant': compter_entre(
+                commandes.filter(statut=Commande.Statut.ANNULEE),
+                'date_annulation', debut_c, fin_c,
+            ),
+        },
+    ])
     return render(
         request,
         'restauration/tableau_de_bord.html',
@@ -75,6 +116,7 @@ def tableau_de_bord(request):
             'commandes_actives': Commande.objects.filter(
                 statut__in=Commande.STATUTS_ACTIFS
             ).select_related('table', 'table__salle', 'utilisateur').prefetch_related('lignes')[:12],
+            'comparaison': comparaison,
         },
     )
 
@@ -307,13 +349,16 @@ def commande_detail(request, pk):
                 and request.user.is_superuser
             ),
             'peut_modifier': commande.modifiable and request.user.has_perm('restauration.modify_commande'),
+            'stock_deja_reserve': commande.stock_deja_reserve,
             'peut_valider': (
                 commande.statut == Commande.Statut.OUVERTE
                 and request.user.has_perm('restauration.validate_commande')
             ),
-            'peut_encaisser_ui': (
-                commande.peut_encaisser
-                and request.user.has_perm('restauration.encaisser_commande')
+            'peut_imprimer_ajouts': (
+                commande.statut in (Commande.Statut.VALIDEE, Commande.Statut.SERVIE)
+                and commande.a_des_lignes_imprimees
+                and commande.a_des_ajouts_a_imprimer
+                and request.user.has_perm('restauration.validate_commande')
             ),
         },
     )
@@ -330,9 +375,44 @@ def _avertir_stock_plat(request, plat):
 def _commande_modifiable(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
     if not commande.modifiable:
-        messages.error(request, 'Cette commande est validée : elle ne peut plus être modifiée.')
+        messages.error(
+            request,
+            'Cette commande est clôturée : plus d’ajout possible. '
+            'L’encaissement se fait dans la facturation.',
+        )
         return None
     return commande
+
+
+def _ligne_non_imprimee(commande, plat, note=''):
+    return commande.lignes.filter(
+        plat=plat,
+        note=note,
+        imprimee=False,
+    ).exclude(statut=LigneCommande.Statut.ANNULEE).first()
+
+
+def _quantite_deja_commandee(commande, plat):
+    total = 0
+    for ligne in commande.lignes.exclude(statut=LigneCommande.Statut.ANNULEE):
+        if ligne.plat_id == plat.pk:
+            total += ligne.quantite
+    return total
+
+
+def _appliquer_ajout_stock(commande, plat, nombre, deja):
+    if commande.stock_deja_reserve:
+        if plat.quantite < nombre:
+            raise ValidationError(
+                f'{plat.nom} : il ne reste que {plat.quantite} portion(s).'
+            )
+        plat.reserver(nombre)
+    else:
+        if deja + nombre > plat.quantite:
+            raise ValidationError(
+                f'{plat.nom} : il ne reste que {plat.quantite} portion(s).'
+            )
+        plat.verifier_disponible(deja + nombre)
 
 
 def _signaler_stock_insuffisant(request, plat):
@@ -363,19 +443,19 @@ def commande_ajouter_plat(request, pk):
     if plat.quantite <= 0:
         _signaler_stock_insuffisant(request, plat)
         return redirect('restauration:commande_detail', pk=commande.pk)
-    deja = 0
-    ligne = commande.lignes.filter(plat=plat, note='').first()
-    if ligne:
-        deja = ligne.quantite
-    if deja + nombre > plat.quantite:
-        _signaler_stock_insuffisant(request, plat)
-        return redirect('restauration:commande_detail', pk=commande.pk)
+    deja = _quantite_deja_commandee(commande, plat)
+    ligne = _ligne_non_imprimee(commande, plat)
     try:
-        plat.verifier_disponible(deja + nombre)
         with transaction.atomic():
+            _appliquer_ajout_stock(commande, plat, nombre, deja)
             if ligne:
                 ligne.quantite += nombre
-                ligne.save(update_fields=['quantite'])
+                champs = ['quantite']
+                if commande.stock_deja_reserve:
+                    ligne.stock_consomme = True
+                    ligne.figer_destination()
+                    champs += ['stock_consomme', 'service', 'imprimante_nom', 'devise', 'designation', 'description_plat']
+                ligne.save(update_fields=champs)
             else:
                 ligne = LigneCommande(
                     commande=commande,
@@ -383,6 +463,7 @@ def commande_ajouter_plat(request, pk):
                     quantite=nombre,
                     prix_unitaire=plat.prix,
                     devise=plat.devise,
+                    stock_consomme=commande.stock_deja_reserve,
                 )
                 ligne.figer_destination()
                 ligne.save()
@@ -398,15 +479,33 @@ def commande_ligne_plus(request, pk, ligne_pk):
     if commande is None:
         return redirect('restauration:commande_detail', pk=pk)
     ligne = get_object_or_404(commande.lignes.select_related('plat'), pk=ligne_pk)
-    if ligne.quantite + 1 > ligne.plat.quantite:
-        _signaler_stock_insuffisant(request, ligne.plat)
-        return redirect('restauration:commande_detail', pk=commande.pk)
+    plat = ligne.plat
+    deja = _quantite_deja_commandee(commande, plat)
+    cible = ligne if not ligne.imprimee else _ligne_non_imprimee(commande, plat, ligne.note)
     try:
-        ligne.plat.verifier_disponible(ligne.quantite + 1)
-        ligne.quantite += 1
-        ligne.save(update_fields=['quantite'])
+        with transaction.atomic():
+            _appliquer_ajout_stock(commande, plat, 1, deja)
+            if cible:
+                cible.quantite += 1
+                champs = ['quantite']
+                if commande.stock_deja_reserve:
+                    cible.stock_consomme = True
+                    champs.append('stock_consomme')
+                cible.save(update_fields=champs)
+            else:
+                ajout = LigneCommande(
+                    commande=commande,
+                    plat=plat,
+                    quantite=1,
+                    prix_unitaire=plat.prix,
+                    devise=plat.devise,
+                    note=ligne.note,
+                    stock_consomme=commande.stock_deja_reserve,
+                )
+                ajout.figer_destination()
+                ajout.save()
     except ValidationError:
-        _signaler_stock_insuffisant(request, ligne.plat)
+        _signaler_stock_insuffisant(request, plat)
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
@@ -417,11 +516,20 @@ def commande_ligne_moins(request, pk, ligne_pk):
     if commande is None:
         return redirect('restauration:commande_detail', pk=pk)
     ligne = get_object_or_404(commande.lignes.select_related('plat'), pk=ligne_pk)
-    if ligne.quantite <= 1:
-        ligne.delete()
-    else:
-        ligne.quantite -= 1
-        ligne.save(update_fields=['quantite'])
+    if ligne.imprimee:
+        messages.error(request, 'Ce plat a déjà été envoyé en cuisine : retirez seulement un ajout non imprimé.')
+        return redirect('restauration:commande_detail', pk=commande.pk)
+    if ligne.statut == LigneCommande.Statut.SERVIE:
+        messages.error(request, 'Une ligne déjà servie ne peut plus être diminuée.')
+        return redirect('restauration:commande_detail', pk=commande.pk)
+    with transaction.atomic():
+        if commande.stock_deja_reserve:
+            ligne.plat.liberer(1)
+        if ligne.quantite <= 1:
+            ligne.delete()
+        else:
+            ligne.quantite -= 1
+            ligne.save(update_fields=['quantite'])
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
@@ -432,7 +540,16 @@ def commande_ligne_supprimer(request, pk, ligne_pk):
     if commande is None:
         return redirect('restauration:commande_detail', pk=pk)
     ligne = get_object_or_404(commande.lignes.select_related('plat'), pk=ligne_pk)
-    ligne.delete()
+    if ligne.imprimee:
+        messages.error(request, 'Ce plat a déjà été envoyé en cuisine : il ne peut plus être retiré.')
+        return redirect('restauration:commande_detail', pk=commande.pk)
+    if ligne.statut == LigneCommande.Statut.SERVIE:
+        messages.error(request, 'Une ligne déjà servie ne peut plus être retirée.')
+        return redirect('restauration:commande_detail', pk=commande.pk)
+    with transaction.atomic():
+        if commande.stock_deja_reserve:
+            ligne.plat.liberer(ligne.quantite)
+        ligne.delete()
     return redirect('restauration:commande_detail', pk=commande.pk)
 
 
@@ -440,6 +557,8 @@ def commande_ligne_supprimer(request, pk, ligne_pk):
 @require_POST
 def commande_valider(request, pk):
     commande = get_object_or_404(Commande, pk=pk)
+    if commande.statut != Commande.Statut.OUVERTE:
+        return redirect('restauration:commande_tickets', pk=commande.pk)
     try:
         commande.valider(request.user)
         messages.success(
@@ -540,7 +659,7 @@ def commande_imprimer(request, pk):
     )
 
 
-@require_permission('restauration.validate_commande')
+@require_permission('restauration.view_restauration')
 def commande_tickets(request, pk):
     commande = get_object_or_404(
         Commande.objects.select_related('table', 'table__salle', 'utilisateur').prefetch_related(
@@ -550,6 +669,7 @@ def commande_tickets(request, pk):
     )
     groupes = commande.groupes_impression()
     impressions = request.session.pop('impressions_commande', None)
+    est_ajout = commande.a_des_lignes_imprimees
     return render(
         request,
         'restauration/commande_tickets.html',
@@ -557,6 +677,7 @@ def commande_tickets(request, pk):
             'commande': commande,
             'groupes': groupes,
             'impressions': impressions,
+            'est_ajout': est_ajout,
         },
     )
 
@@ -587,7 +708,10 @@ def commande_imprimer_postes(request, pk):
             'Ticket(s) envoyé(s) à l’imprimante rattachée au(x) plat(s).',
         )
     elif not impressions:
-        messages.warning(request, 'Aucun ticket à envoyer pour cette sélection.')
+        if commande.a_des_lignes_imprimees:
+            messages.warning(request, 'Aucun nouvel ajout à imprimer : tous les plats ont déjà été envoyés.')
+        else:
+            messages.warning(request, 'Aucun ticket à envoyer pour cette sélection.')
     else:
         messages.warning(
             request,
@@ -597,7 +721,7 @@ def commande_imprimer_postes(request, pk):
     return redirect('restauration:commande_tickets', pk=commande.pk)
 
 
-@require_permission('restauration.validate_commande')
+@require_permission('restauration.view_restauration')
 def commande_ticket_service(request, pk, service):
     if service == 'BAR':
         service = ServicePoste.TERRASSE
@@ -609,7 +733,12 @@ def commande_ticket_service(request, pk, service):
         ),
         pk=pk,
     )
-    lignes = [ligne for ligne in commande.lignes.all() if ligne.service == service]
+    lignes = [
+        ligne for ligne in commande.lignes.all()
+        if ligne.service == service
+        and ligne.statut != LigneCommande.Statut.ANNULEE
+        and not ligne.imprimee
+    ]
     return render(
         request,
         'restauration/ticket_service.html',
@@ -618,6 +747,7 @@ def commande_ticket_service(request, pk, service):
             'service': service,
             'service_libelle': dict(ServicePoste.choices).get(service, service),
             'lignes': lignes,
+            'est_ajout': commande.a_des_lignes_imprimees,
             'auto_print': request.GET.get('print') == '1',
         },
     )

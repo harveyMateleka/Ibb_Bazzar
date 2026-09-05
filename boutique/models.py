@@ -344,6 +344,15 @@ class VarianteArticle(models.Model):
         return f'{self.article.designation} — {self.label}'
 
     @property
+    def libelle_recherche(self):
+        """Libellé Select2 : code, désignation parent, taille, couleur, tissu."""
+        tissu = self.type_tissu.nom if self.type_tissu_id else '—'
+        return (
+            f'{self.code_variante} — {self.article.designation} — '
+            f'{self.taille or "—"} — {self.couleur or "—"} — {tissu}'
+        )
+
+    @property
     def label(self):
         tissu = self.type_tissu.nom if self.type_tissu else ''
         parties = [p for p in (tissu, self.couleur, self.taille, self.get_genre_display()) if p]
@@ -398,6 +407,15 @@ class BonEntreeBoutique(models.Model):
         on_delete=models.PROTECT,
         related_name='bons_entree',
         verbose_name='article',
+    )
+    variante = models.ForeignKey(
+        'VarianteArticle',
+        on_delete=models.PROTECT,
+        related_name='bons_entree',
+        verbose_name='variante existante',
+        null=True,
+        blank=True,
+        help_text='Renseignée pour un réapprovisionnement : la validation n’ajoute que du stock.',
     )
     succursale = models.ForeignKey(
         'core.Succursale',

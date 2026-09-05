@@ -1,8 +1,25 @@
+from django import forms
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.models import Permission
 
+from approvisionnement.models import Service
+
 from .models import AuditLog, Domaine, Role, Succursale, User, UserSuccursale
+
+
+class UserAdminForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        services = [(service.nom, service.nom) for service in Service.objects.order_by('nom')]
+        self.fields['fonction'] = forms.ChoiceField(
+            label='Fonction / service',
+            required=False,
+            choices=[('', 'Sélectionnez un service')] + services,
+        )
 
 
 @admin.register(Role)
@@ -54,31 +71,13 @@ class AuditLogAdmin(admin.ModelAdmin):
 
 
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):
-    list_display = ['username', 'get_full_name', 'email', 'telephone', 'fonction', 'is_active', 'is_staff']
-    search_fields = ['username', 'first_name', 'last_name', 'email', 'telephone', 'fonction']
-    list_filter = ['is_active', 'is_staff', 'roles', 'succursales']
-    fieldsets = DjangoUserAdmin.fieldsets + (
-        ('Profil', {'fields': ('telephone', 'fonction', 'cree_par', 'date_desactivation')}),
-        ('Rôles & succursales', {'fields': ('roles',)}),
-    )
-    filter_horizontal = DjangoUserAdmin.filter_horizontal + ('roles',)
-
-    def save_model(self, request, obj, form, change):
-        if not change and not obj.cree_par_id:
-            obj.cree_par = request.user
-        super().save_model(request, obj, form, change)
-        # Traçabilité des créations / modifications effectuées dans l'admin.
-        from .services import AuditService
-
-        AuditService.auditer(
-            utilisateur=request.user,
-            module='CORE',
-            action='user.create' if not change else 'user.update',
-            objet_type='User',
-            objet_id=obj.pk,
-            nouvelle_valeur={'username': obj.username},
-        )
+class UserAdmin(admin.ModelAdmin):
+    form = UserAdminForm
+    list_display = ['compte', 'telephone', 'fonction', 'date_desactivation']
+    search_fields = ['compte__username', 'compte__first_name', 'compte__last_name', 'telephone', 'fonction']
+    list_filter = ['roles']
+    raw_id_fields = ['compte', 'cree_par']
+    filter_horizontal = ['roles']
 
 
 @admin.register(Permission)

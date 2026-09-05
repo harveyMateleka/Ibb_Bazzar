@@ -1,11 +1,10 @@
-"""Modèles centraux : utilisateur, rôles, succursales, domaines, audit.
+"""Modèles centraux : profil, rôles, succursales, domaines, audit.
 
-L'utilisateur (AUTH_USER_MODEL = 'core.User') est le point de contrôle central
-de l'application. Tous les modules (Approvisionnement, Boutique, Immobilisations)
-partagent ce même modèle.
+Le compte de connexion reste django.contrib.auth.User (déjà en base).
+core.User est le profil étendu (téléphone, rôles, succursales).
 """
 
-from django.contrib.auth.models import AbstractUser
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -64,7 +63,7 @@ class Succursale(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.nom} ({self.code})'
+        return self.nom
 
 
 class Domaine(models.Model):
@@ -83,9 +82,16 @@ class Domaine(models.Model):
         return self.libelle
 
 
-class User(AbstractUser):
-    """Utilisateur central étendu (profil, rôle, succursales, désactivation)."""
+class User(models.Model):
+    """Profil étendu du compte Django déjà présent dans BDDIBB_BAZAR."""
 
+    compte = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name='profil',
+        verbose_name='compte',
+    )
     telephone = models.CharField('téléphone', max_length=30, blank=True)
     fonction = models.CharField(
         'fonction / service',
@@ -94,7 +100,7 @@ class User(AbstractUser):
         help_text='Ex. : Magasinier, Caissière, Chef de cuisine…',
     )
     cree_par = models.ForeignKey(
-        'self',
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -113,18 +119,11 @@ class User(AbstractUser):
         blank=True,
         verbose_name='rôles',
     )
-    succursales = models.ManyToManyField(
-        Succursale,
-        through='UserSuccursale',
-        related_name='utilisateurs',
-        blank=True,
-        verbose_name='succursales autorisées',
-    )
 
     class Meta:
-        verbose_name = 'utilisateur'
-        verbose_name_plural = 'utilisateurs'
-        ordering = ['username']
+        verbose_name = 'profil utilisateur'
+        verbose_name_plural = 'profils utilisateurs'
+        ordering = ['compte__username']
         permissions = [
             ('view_utilisateur', 'Peut consulter les utilisateurs'),
             ('create_utilisateur', 'Peut créer un utilisateur'),
@@ -134,36 +133,106 @@ class User(AbstractUser):
         ]
 
     def __str__(self):
-        return self.get_full_name() or self.username
+        return self.compte.get_full_name() or self.compte.username
+
+    @property
+    def username(self):
+        return self.compte.username
+
+    @property
+    def first_name(self):
+        return self.compte.first_name
+
+    @property
+    def last_name(self):
+        return self.compte.last_name
+
+    @property
+    def email(self):
+        return self.compte.email
+
+    @property
+    def is_active(self):
+        return self.compte.is_active
+
+    @property
+    def is_superuser(self):
+        return self.compte.is_superuser
+
+    @property
+    def is_staff(self):
+        return self.compte.is_staff
+
+    @is_staff.setter
+    def is_staff(self, value):
+        self.compte.is_staff = value
+
+    @is_superuser.setter
+    def is_superuser(self, value):
+        self.compte.is_superuser = value
+
+    @is_active.setter
+    def is_active(self, value):
+        self.compte.is_active = value
+
+    def get_full_name(self):
+        return self.compte.get_full_name()
+
+    @property
+    def date_joined(self):
+        return self.compte.date_joined
+
+    @property
+    def last_login(self):
+        return self.compte.last_login
+
+    @property
+    def affectations_succursales(self):
+        return UserSuccursale.objects.filter(utilisateur=self.compte)
+
+    def check_password(self, raw_password):
+        return self.compte.check_password(raw_password)
+
+    def get_all_permissions(self, obj=None):
+        return self.compte.get_all_permissions(obj)
 
     def has_perm(self, perm, obj=None):
-        """Vérifie la permission en tenant compte des rôles dynamiques.
-
-        Django ne connaît pas nativement notre M2M `roles` : on ajoute la
-        vérification des permissions portées par les rôles de l'utilisateur.
-        """
         if not self.is_active:
             return False
         if self.is_superuser:
             return True
-        # Permissions directes + groupes Django natifs.
-        if super().has_perm(perm, obj):
+        if self.compte.has_perm(perm, obj):
             return True
-        # Permissions issues des rôles dynamiques.
         app_label, _, codename = perm.partition('.')
         return self.roles.filter(
             permissions__content_type__app_label=app_label,
             permissions__codename=codename,
         ).exists()
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        compte_fields = ('is_staff', 'is_superuser', 'is_active')
+        if update_fields:
+            a_reporter = [f for f in update_fields if f in compte_fields]
+            profil_fields = [f for f in update_fields if f not in compte_fields]
+            if a_reporter:
+                self.compte.save(update_fields=a_reporter)
+            if profil_fields:
+                kwargs['update_fields'] = profil_fields
+                super().save(*args, **kwargs)
+            return
+        self.compte.save()
+        super().save(*args, **kwargs)
+
     def deactiver(self, par=None):
         """Désactive sans supprimer : l'historique est conservé."""
-        self.is_active = False
+        self.compte.is_active = False
+        self.compte.save(update_fields=['is_active'])
         self.date_desactivation = timezone.now()
-        self.save(update_fields=['is_active', 'date_desactivation'])
+        self.save(update_fields=['date_desactivation'])
         from .services import AuditService
         AuditService.auditer(
-            utilisateur=par or self,
+            utilisateur=par if getattr(par, 'pk', None) else self.compte,
             module='CORE',
             action='user.deactivate',
             objet_type='User',
@@ -174,12 +243,13 @@ class User(AbstractUser):
 
     def activer(self, par=None):
         """Réactive un compte désactivé."""
-        self.is_active = True
+        self.compte.is_active = True
+        self.compte.save(update_fields=['is_active'])
         self.date_desactivation = None
-        self.save(update_fields=['is_active', 'date_desactivation'])
+        self.save(update_fields=['date_desactivation'])
         from .services import AuditService
         AuditService.auditer(
-            utilisateur=par or self,
+            utilisateur=par if getattr(par, 'pk', None) else self.compte,
             module='CORE',
             action='user.activate',
             objet_type='User',
@@ -189,19 +259,10 @@ class User(AbstractUser):
         )
 
     def succursales_autorisees(self, domaine=None):
-        """Succursales accessibles, filtrées par domaine si demandé.
-
-        Un superutilisateur accède à toutes les succursales actives.
-        Sinon, on ne considère QUE les affectations (UserSuccursale) de
-        l'utilisateur lui-même : succursale + domaine.
-        """
         if self.is_superuser:
-            qs = Succursale.objects.filter(actif=True)
-            if domaine is not None:
-                qs = qs.filter(affectations__domaine=domaine)
-            return qs.distinct()
+            return Succursale.objects.filter(actif=True)
         qs = UserSuccursale.objects.filter(
-            utilisateur=self,
+            utilisateur=self.compte,
             succursale__actif=True,
         )
         if domaine is not None:
@@ -209,24 +270,16 @@ class User(AbstractUser):
         return Succursale.objects.filter(pk__in=qs.values('succursale_id'))
 
     def domaines_autorisees(self):
-        """Domaines d'activité accessibles, selon les affectations de l'utilisateur."""
         if self.is_superuser:
             return Domaine.objects.all()
         return Domaine.objects.filter(
-            affectations__utilisateur=self
+            affectations__utilisateur=self.compte
         ).distinct()
 
     def contexte_actif(self):
-        """Contexte par défaut (succursale, domaine) pour les bons.
-
-        Toujours basé sur l'affectation principale (ou la première si aucune
-        n'est marquée principale) de l'utilisateur.
-        - Superutilisateur : auto-rempli mais non verrouillé (il peut tout voir).
-        - Autres utilisateurs : auto-rempli et VERROUILLÉ (readonly) pour éviter
-          les incohérences.
-        """
         aff = (
-            self.affectations_succursales.select_related('succursale', 'domaine')
+            UserSuccursale.objects.filter(utilisateur=self.compte)
+            .select_related('succursale', 'domaine')
             .order_by('-principale', 'date_affectation')
             .first()
         )
@@ -243,7 +296,7 @@ class UserSuccursale(models.Model):
     """Rattachement utilisateur ↔ succursale ↔ domaine."""
 
     utilisateur = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='affectations_succursales',
         verbose_name='utilisateur',
@@ -285,7 +338,7 @@ class AuditLog(models.Model):
     """Audit centralisé de toutes les opérations sensibles."""
 
     utilisateur = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

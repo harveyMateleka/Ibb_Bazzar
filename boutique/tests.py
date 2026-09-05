@@ -287,6 +287,48 @@ class TestArticleEtVariante(BoutiqueBase):
         self.assertEqual(bon.etagere, self.etagere_a.nom)
         self.assertEqual(bon.emplacement, self.emp_a1.nom)
 
+    def test_entree_formulaire_propose_variantes_du_parent(self):
+        """Après l’article parent, le select variante affiche code, désignation, taille, couleur, tissu."""
+        self.var_noir_m.type_tissu = self.tissu_coton
+        self.var_noir_m.save(update_fields=['type_tissu'])
+        self.client.force_login(self.responsable)
+        resp = self.client.get(reverse('boutique:entree'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'name="variante"')
+        self.assertContains(resp, self.var_noir_m.code_variante)
+        self.assertContains(resp, self.art_tshirt.designation)
+        self.assertContains(resp, 'Noir')
+        self.assertContains(resp, 'M')
+        self.assertContains(resp, self.tissu_coton.nom)
+
+    def test_entree_variante_existante_via_formulaire(self):
+        """Réappro : brouillon sans nouvelle variante ; la validation ajoute la quantité."""
+        self._entrer(self.var_noir_m, 10)
+        nb = VarianteArticle.objects.filter(article=self.art_tshirt).count()
+        self.client.force_login(self.responsable)
+        resp = self.client.post(
+            reverse('boutique:entree'),
+            {
+                'succursale': self.succ_a.pk,
+                'article': self.art_tshirt.pk,
+                'variante': self.var_noir_m.pk,
+                'quantite': 5,
+                'devise': 'FC',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb)
+        bon = BonEntreeBoutique.objects.get(variante=self.var_noir_m, quantite=5)
+        self.assertEqual(bon.statut, BonEntreeBoutique.Statut.BROUILLON)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 10)
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        self.assertEqual(
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 15)
+
     def test_variante_porte_la_devise(self):
         """La devise vit sur la variante (défaut FC), plus sur l'article."""
         self.assertFalse(hasattr(self.art_tshirt, 'devise'))
@@ -545,6 +587,21 @@ class TestBonEntreeBoutique(BoutiqueBase):
         self.assertFalse(
             StockBoutique.objects.filter(
                 variante=var, succursale=self.succ_a).exists())
+
+    def test_validation_variante_liee_ajoute_uniquement_le_stock(self):
+        """Bon lié à une variante : la validation n’en crée pas une autre."""
+        StockBoutiqueService.entrer(
+            variante=self.var_noir_m, quantite=8, utilisateur=self.responsable)
+        nb = VarianteArticle.objects.filter(article=self.art_tshirt).count()
+        bon = BonEntreeService.creer(
+            article=self.art_tshirt, succursale=self.succ_a, domaine=self.domaine,
+            quantite=7, cree_par=self.responsable, variante=self.var_noir_m,
+            couleur='Noir', taille='M', genre='HOMME')
+        BonEntreeService.valider(bon=bon, par=self.responsable)
+        self.assertEqual(
+            VarianteArticle.objects.filter(article=self.art_tshirt).count(), nb)
+        self.assertEqual(
+            StockBoutique.objects.get(variante=self.var_noir_m).quantite, 15)
 
     def test_entree_variante_existante_reeapprovisionnement(self):
         """Nouvelle entrée sur une variante existante = réapprovisionnement autorisé :

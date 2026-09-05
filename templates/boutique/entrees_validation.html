@@ -13,6 +13,7 @@
     <option value="">Tous les statuts</option>
     <option value="BROUILLON" {% if statut == 'BROUILLON' %}selected{% endif %}>Brouillon</option>
     <option value="VALIDE" {% if statut == 'VALIDE' %}selected{% endif %}>Validé</option>
+    <option value="ANNULEE" {% if statut == 'ANNULEE' %}selected{% endif %}>Annulé</option>
   </select>
   <button type="submit" class="btn btn-primary">Filtrer</button>
 </form>
@@ -26,7 +27,7 @@
           <th>Article</th>
           <th>Variante</th>
           <th>Quantité</th>
-          <th>Prix unitaire</th>
+          <th>Prix de vente</th>
           <th>Créé par</th>
           <th>Date</th>
           <th>Statut</th>
@@ -37,13 +38,13 @@
         {% for b in bons %}
         <tr>
           <td>{{ b.numero }}</td>
-          <td>{{ b.article.code }}</td>
+          <td>{{ b.article.designation }}</td>
           <td>{{ b.couleur }}/{{ b.taille }}/{{ b.get_genre_display }}</td>
           <td>{{ b.quantite }}</td>
           <td>{{ b.prix_unitaire }}</td>
           <td>{{ b.cree_par }}</td>
           <td>{{ b.date_creation|date:"d/m/Y H:i" }}</td>
-          <td>{% if b.statut == 'BROUILLON' %}Brouillon{% else %}Validé{% endif %}</td>
+          <td>{{ b.get_statut_display }}</td>
           <td class="actions">
             <a class="btn btn-ghost" href="{% url 'boutique:entree_validation_detail' b.pk %}">Voir</a>
           </td>

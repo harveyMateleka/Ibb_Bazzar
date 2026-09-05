@@ -1,4 +1,5 @@
 {% extends "restauration/base.html" %}
+{% load static %}
 
 {% block app_title %}Plan de salle{% endblock %}
 
@@ -44,6 +45,8 @@
     <strong>{{ ca_jour }}</strong>
   </article>
 </div>
+
+{% include "includes/comparaison_mois.html" with comparaison=comparaison comparaison_id="comparaison-restauration" %}
 
 {% for salle in salles %}
 <section class="panel">
@@ -117,4 +120,9 @@
     </table>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/dashboard_charts.js' %}?v=mois-1"></script>
 {% endblock %}

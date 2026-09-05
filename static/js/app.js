@@ -55,6 +55,7 @@
     var $selects = $root.is('select') ? $root : $root.find('select');
     $selects
       .not('[data-article-ligne]')  // lignes de vente : sélection via le panneau droit
+      .not('[data-skip-select2]')
       .filter(function () { return !$(this).closest('.filters').length; })
       .each(function () {
         var $sel = $(this);

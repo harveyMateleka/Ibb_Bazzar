@@ -1,4 +1,5 @@
 {% extends "boutique/base.html" %}
+{% load static %}
 
 {% block app_content %}
 <div class="page-head">
@@ -22,6 +23,8 @@
   <article class="stat {% if nb_alertes %}stat-alert{% endif %}"><span>Alertes stock</span><strong>{{ nb_alertes }}</strong></article>
   <article class="stat"><span>Ventes du jour</span><strong>{{ ventes_jour }}</strong></article>
 </div>
+
+{% include "includes/comparaison_mois.html" with comparaison=comparaison comparaison_id="comparaison-boutique" %}
 
 <section class="panel">
   <h2>État des stocks</h2>
@@ -122,4 +125,8 @@
     </table>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/dashboard_charts.js' %}?v=mois-1"></script>
 {% endblock %}
