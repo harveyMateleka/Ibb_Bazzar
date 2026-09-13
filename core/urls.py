@@ -12,6 +12,7 @@ urlpatterns = [
     path('utilisateurs/<int:pk>/activer/', views.activer, name='utilisateur_activer'),
     path('utilisateurs/<int:pk>/desactiver/', views.desactiver, name='utilisateur_desactiver'),
     path('roles/', views.roles, name='roles'),
+    path('roles/<int:pk>/permissions/', views.role_permissions, name='role_permissions'),
     path('succursales/', views.succursales, name='succursales'),
     path('permissions/', views.permissions, name='permissions'),
     path('audit/', views.audit, name='audit'),

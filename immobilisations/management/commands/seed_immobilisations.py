@@ -98,8 +98,8 @@ class Command(BaseCommand):
         return Service.objects.get_or_create(nom=nom)[0]
 
     @staticmethod
-    def _emplacement(nom):
-        return Emplacement.objects.get_or_create(nom=nom)[0]
+    def _emplacement(nom, service):
+        return Emplacement.objects.get_or_create(nom=nom, service=service)[0]
 
     def _bien(self, code, designation, categorie, numero_serie, valeur,
               service=None, emplacement=None):
@@ -127,10 +127,10 @@ class Command(BaseCommand):
         comptabilite = self._service('Comptabilité')
         direction = self._service('Direction')
         logistique = self._service('Logistique')
-        bureau_01 = self._emplacement('Bureau 01')
-        bureau_12 = self._emplacement('Bureau 12')
-        bureau_14 = self._emplacement('Bureau 14')
-        parking = self._emplacement('Parking')
+        bureau_01 = self._emplacement('Bureau 01', direction)
+        bureau_12 = self._emplacement('Bureau 12', comptabilite)
+        bureau_14 = self._emplacement('Bureau 14', comptabilite)
+        parking = self._emplacement('Parking', logistique)
 
         # Bien 1 : en service (affecté puis déplacé)
         b1 = self._bien('IMM', 'Ordinateur Dell XPS', 'INFO', 'DLX-001', 1500000)

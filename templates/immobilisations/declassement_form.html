@@ -5,23 +5,57 @@
   <div>
     <p class="eyebrow">Déclassements</p>
     <h1>Demander le déclassement — {{ bien.code }}</h1>
+    <p class="help">{{ bien.designation }}</p>
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' bien.pk %}">← Retour</a>
   </div>
 </div>
 
+<section class="panel">
+  <h2>Affectations actuelles</h2>
+  <p class="help">Cliquez sur Choisir pour renseigner le service et l’emplacement, puis saisissez le reste du formulaire.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Service</th><th>Emplacement</th><th>Quantité</th><th class="no-sort"></th></tr>
+      </thead>
+      <tbody>
+        {% for a in affectations %}
+        <tr>
+          <td>{{ a.service|default:"—" }}</td>
+          <td>{{ a.emplacement|default:"—" }}</td>
+          <td>{{ a.quantite }}</td>
+          <td class="actions">
+            <button type="button" class="btn btn-ghost"
+                    data-choisir-affectation
+                    data-id="{{ a.pk }}"
+                    data-service="{{ a.service|default:'' }}"
+                    data-emplacement="{{ a.emplacement|default:'' }}"
+                    data-quantite="{{ a.quantite }}">Choisir</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <section class="panel form-panel">
-  <form method="post" class="form-grid">
+  <form method="post" class="form-grid" data-choix-affectation>
     {% csrf_token %}
     {{ form.non_field_errors }}
     {% for field in form %}
+    {% if field.is_hidden %}
+    {{ field }}
+    {% else %}
     <div class="field">
       <label for="{{ field.id_for_label }}">{{ field.label }}</label>
       {{ field }}
       {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
       {{ field.errors }}
     </div>
+    {% endif %}
     {% endfor %}
     <div class="actions">
       <button type="submit" class="btn btn-danger">Enregistrer la demande</button>

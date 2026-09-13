@@ -1,0 +1,48 @@
+{% extends "core/base.html" %}
+
+{% block app_content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Profil</p>
+    <h1>{{ role.nom }}</h1>
+    <p class="lead">{{ role.description|default:"Cochez les actions autorisées pour ce profil." }}</p>
+  </div>
+  <a class="btn btn-ghost" href="{% url 'core:roles' %}">Retour aux rôles</a>
+</div>
+
+<p class="help">
+  L’annulation est indépendante de l’enregistrement. Exemple : un opérateur peut avoir
+  la commande sans le droit d’annuler une commande.
+</p>
+
+<form method="post">
+  {% csrf_token %}
+  {% for groupe in groupes %}
+  <section class="panel perm-group">
+    <h2>{{ groupe.libelle }}</h2>
+    <div class="perm-list">
+      {% for item in groupe.permissions %}
+      <label class="perm-item{% if item.est_annulation %} is-annulation{% endif %}" for="perm-{{ item.perm.pk }}">
+        <input type="checkbox" name="permissions" id="perm-{{ item.perm.pk }}" value="{{ item.perm.pk }}"
+               {% if item.perm.pk in selection %}checked{% endif %}>
+        <span>
+          <strong>{{ item.perm.name }}</strong>
+          {% if item.est_annulation %}
+          <span class="help">Bouton d’annulation de ce workflow — à accorder uniquement aux profils habilités.</span>
+          {% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+  {% empty %}
+  <section class="panel">
+    <p class="help">Aucune permission métier n’est encore déclarée.</p>
+  </section>
+  {% endfor %}
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Enregistrer le profil</button>
+    <a class="btn btn-ghost" href="{% url 'core:roles' %}">Annuler</a>
+  </div>
+</form>
+{% endblock %}

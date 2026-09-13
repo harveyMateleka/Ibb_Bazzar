@@ -62,14 +62,11 @@
         <p>{{ table.places }} places</p>
       </a>
       {% else %}
-      <form method="post" action="{% url 'restauration:table_ouvrir' table.pk %}">
-        {% csrf_token %}
-        <button type="submit" class="table-tile is-free">
-          <span class="eyebrow">Libre</span>
-          <strong>Table {{ table.numero }}</strong>
-          <p>{{ table.places }} places</p>
-        </button>
-      </form>
+      <a class="table-tile is-free" href="{% url 'restauration:commande_nouveau' %}?table={{ table.pk }}">
+        <span class="eyebrow">Libre</span>
+        <strong>Table {{ table.numero }}</strong>
+        <p>{{ table.places }} places</p>
+      </a>
       {% endif %}
       {% endwith %}
     {% empty %}

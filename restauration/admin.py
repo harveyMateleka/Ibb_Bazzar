@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .forms import ImprimanteAdminForm, PlatAdminForm
 from .impression import lister_imprimantes_windows, resoudre_imprimante_windows
-from .models import CategorieMenu, CompositionPlat, Imprimante, Plat, Salle, ServicePoste, Table
+from .models import CategorieMenu, CompositionPlat, Imprimante, Plat, Salle, ServicePoste, Serveur, Table
 
 
 class CompositionPlatInline(admin.TabularInline):
@@ -23,6 +23,13 @@ class TableAdmin(admin.ModelAdmin):
     list_filter = ['salle']
     search_fields = ['numero']
     autocomplete_fields = ['salle']
+
+
+@admin.register(Serveur)
+class ServeurAdmin(admin.ModelAdmin):
+    list_display = ['nom', 'prenom', 'actif']
+    list_filter = ['actif']
+    search_fields = ['nom', 'prenom']
 
 
 @admin.register(CategorieMenu)

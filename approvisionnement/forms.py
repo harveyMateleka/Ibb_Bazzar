@@ -48,7 +48,9 @@ class StyledFormMixin:
 
 
 class ConnexionForm(StyledFormMixin, AuthenticationForm):
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['password'].widget.attrs['autocomplete'] = 'current-password'
 
 
 class BonApprovisionnementForm(StyledFormMixin, forms.ModelForm):

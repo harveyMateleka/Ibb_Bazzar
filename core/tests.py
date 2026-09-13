@@ -204,6 +204,13 @@ class TestURLsEtVues(BaseCoreTest):
         # Succès de connexion → redirection (302).
         self.assertEqual(response.status_code, 302)
 
+    def test_connexion_peut_afficher_le_mot_de_passe(self):
+        response = self.client.get(reverse('login'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'js-password-toggle')
+        self.assertContains(response, 'Afficher le mot de passe')
+        self.assertContains(response, 'type="password"')
+
     def test_admin_django(self):
         self.client.login(username='admin_test', password=self.mot_de_passe)
         response = self.client.get('/admin/')
@@ -214,7 +221,17 @@ class TestModuleUtilisateurs(BaseCoreTest):
     def test_liste_sans_permission_forbidden(self):
         self.client.login(username='resp', password=self.mot_de_passe)
         response = self.client.get(reverse('core:utilisateur_liste'))
-        self.assertEqual(response.status_code, 403)
+        self.assertContains(
+            response,
+            'Vous n’avez pas le droit pour ce module',
+            status_code=403,
+        )
+        self.assertContains(
+            response,
+            'Prière de contacter votre administrateur',
+            status_code=403,
+        )
+        self.assertNotContains(response, '403 Forbidden', status_code=403)
 
     def test_liste_avec_permission(self):
         self.client.login(username='admin_test', password=self.mot_de_passe)
@@ -247,7 +264,11 @@ class TestModuleUtilisateurs(BaseCoreTest):
         response = self.client.post(
             reverse('core:utilisateur_desactiver', kwargs={'pk': self.admin.pk})
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertContains(
+            response,
+            'Prière de contacter votre administrateur',
+            status_code=403,
+        )
 
     def test_auto_desactivation_interdite(self):
         self.client.login(username='admin_test', password=self.mot_de_passe)
@@ -281,6 +302,10 @@ class TestModuleUtilisateurs(BaseCoreTest):
         self.assertContains(response, '<select')
         self.assertContains(response, 'Barbecus')
         self.assertContains(response, 'Fonction / service')
+        self.assertContains(response, 'js-password-toggle')
+        self.assertContains(response, 'id_password')
+        self.assertContains(response, 'id_password2')
+        self.assertContains(response, 'Afficher le mot de passe')
 
     def test_nouvel_utilisateur_avec_affectation(self):
         from approvisionnement.models import Service
@@ -323,3 +348,46 @@ class TestModuleUtilisateurs(BaseCoreTest):
         contexte = self.responsable.contexte_actif()
         self.assertTrue(contexte['verrouille'])
         self.assertIn(contexte['succursale'], (self.succ_a, succ_b))
+
+
+class TestProfilAnnulation(BaseCoreTest):
+    def test_operateur_commande_sans_droit_annuler(self):
+        from django.core.management import call_command
+
+        call_command('init_core')
+        operateur = Role.objects.get(code='OPERATEUR_COMMANDE')
+        self.assertTrue(operateur.permissions.filter(codename='create_commande').exists())
+        self.assertFalse(operateur.permissions.filter(codename='cancel_commande').exists())
+        direction = Role.objects.get(code='DIRECTION')
+        self.assertTrue(direction.permissions.filter(codename='cancel_commande').exists())
+        self.assertTrue(direction.permissions.filter(codename='cancel_vente').exists())
+
+    def test_configurer_annulation_sur_le_profil(self):
+        perm_create = Permission.objects.get(
+            content_type__app_label='restauration', codename='create_commande',
+        )
+        perm_cancel = Permission.objects.get(
+            content_type__app_label='restauration', codename='cancel_commande',
+        )
+        role = Role.objects.create(nom='Opérateur test', code='OP_TEST')
+        role.permissions.add(perm_create)
+        self.client.login(username='admin_test', password=self.mot_de_passe)
+        response = self.client.get(reverse('core:role_permissions', args=[role.pk]))
+        self.assertContains(response, 'Peut annuler une commande')
+        self.assertContains(response, 'indépendante')
+        self.client.post(
+            reverse('core:role_permissions', args=[role.pk]),
+            {'permissions': [perm_create.pk, perm_cancel.pk]},
+        )
+        self.assertTrue(role.permissions.filter(codename='cancel_commande').exists())
+        self.assertTrue(role.permissions.filter(codename='create_commande').exists())
+
+    def test_configurer_profil_sans_droit_interdit(self):
+        role = Role.objects.create(nom='X', code='XTEST')
+        self.client.login(username='resp', password=self.mot_de_passe)
+        response = self.client.get(reverse('core:role_permissions', args=[role.pk]))
+        self.assertContains(
+            response,
+            'Vous n’avez pas le droit pour ce module',
+            status_code=403,
+        )

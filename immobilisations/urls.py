@@ -11,6 +11,7 @@ urlpatterns = [
     path('biens/<int:pk>/', views.bien_detail, name='bien_detail'),
     path('biens/<int:pk>/affecter/', views.affectation_nouvelle, name='affectation_nouvelle'),
     path('biens/<int:pk>/deplacer/', views.deplacement_nouveau, name='deplacement_nouveau'),
+    path('affectations/<int:aff_pk>/deplacer/', views.deplacement_depuis_affectation, name='deplacement_depuis_affectation'),
     path('biens/<int:pk>/casse/', views.casse_declarer, name='casse_declarer'),
     path('biens/<int:pk>/casses/<int:casse_pk>/evaluer/', views.casse_evaluer, name='casse_evaluer'),
     path('biens/<int:pk>/reparation/', views.reparation_declarer, name='reparation_declarer'),

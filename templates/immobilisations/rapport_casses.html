@@ -36,20 +36,24 @@
     <div class="table-wrap">
       <table data-datatable>
         <thead>
-          <tr><th>Date</th><th>Bien</th><th>Motif</th><th>Responsable</th><th>Décision</th><th>Par</th></tr>
+          <tr><th>Date</th><th>Bien</th><th>Service</th><th>Emplacement</th><th>Quantité</th><th>Cause</th><th>Commentaire</th><th>Responsable</th><th>Décision</th><th>Par</th></tr>
         </thead>
         <tbody>
           {% for c in casses %}
           <tr>
             <td>{{ c.date_casse|date:"d/m/Y H:i" }}</td>
             <td>{{ c.immobilisation.code }}</td>
+            <td>{{ c.service|default:"—" }}</td>
+            <td>{{ c.emplacement|default:"—" }}</td>
+            <td>{{ c.quantite }}</td>
             <td>{{ c.motif }}</td>
+            <td>{{ c.description|default:"—" }}</td>
             <td>{{ c.responsable_dommage|default:"—" }}</td>
             <td>{{ c.get_decision_display|default:"—" }}</td>
             <td>{{ c.par }}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="6">Aucune casse.</td></tr>
+          <tr><td colspan="10">Aucune casse.</td></tr>
           {% endfor %}
         </tbody>
       </table>

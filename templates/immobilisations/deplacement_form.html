@@ -5,11 +5,23 @@
   <div>
     <p class="eyebrow">Déplacements</p>
     <h1>Déplacer {{ bien.code }}</h1>
+    <p class="help">{{ bien.designation }}</p>
   </div>
   <div class="actions">
-    <a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' bien.pk %}">← Retour</a>
+    <a class="btn btn-ghost" href="{% url 'immobilisations:deplacements' %}">← Retour</a>
   </div>
 </div>
+
+<section class="panel">
+  <dl class="detail-grid">
+    <dt>Situation actuelle</dt>
+    <dd>
+      {{ affectation.service|default:"—" }}
+      · {{ affectation.emplacement|default:"—" }}
+      · {{ affectation.quantite }} unité(s)
+    </dd>
+  </dl>
+</section>
 
 <section class="panel form-panel">
   <form method="post" class="form-grid">

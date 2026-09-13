@@ -36,8 +36,12 @@ IMMO_VALIDATION = [
 
 RESTO_OPERATEUR = [
     'view_restauration', 'create_commande', 'modify_commande',
-    'validate_commande', 'cancel_commande', 'adjust_plat_portions',
+    'validate_commande', 'adjust_plat_portions',
 ]
+ANNULATION_RESTO = ['cancel_commande']
+ANNULATION_APPRO = ['cancel_approvisionnement', 'cancel_sortie']
+ANNULATION_BOUTIQUE = ['cancel_vente', 'cancel_entree']
+ANNULATION_FACTURE = ['cancel_facture']
 RESTO_CAISSE = ['view_restauration', 'encaisser_commande']
 RESTO_SERVICE = ['view_restauration', 'servir_ligne']
 RESTO_CUISINE = ['view_restauration', 'servir_ligne', 'adjust_plat_portions']
@@ -103,23 +107,23 @@ PERMISSIONS_ROLES = {
     'DIRECTION': [
         (APPROVISIONNEMENT, APPRO_SAISIE + [
             'validate_approvisionnement', 'validate_sortie', 'validate_inventaire',
-        ]),
+        ] + ANNULATION_APPRO),
         (BOUTIQUE, [
             'view_boutique', 'view_stock', 'view_vente', 'create_vente',
             'validate_vente', 'apply_remise', 'adjust_stock', 'validate_entree',
-        ]),
+        ] + ANNULATION_BOUTIQUE),
         (IMMOBILISATIONS, IMMO_TOUTES),
-        (RESTAURATION, RESTO_OPERATEUR + ['encaisser_commande', 'servir_ligne']),
-        (FACTURATION, ['view_facture']),
-        (CORE, ['view_audit', 'view_utilisateur', 'view_succursale']),
+        (RESTAURATION, RESTO_OPERATEUR + ['encaisser_commande', 'servir_ligne'] + ANNULATION_RESTO),
+        (FACTURATION, ['view_facture'] + ANNULATION_FACTURE),
+        (CORE, ['view_audit', 'view_utilisateur', 'view_succursale', 'view_role', 'update_role']),
     ],
     'RESPONSABLE': [
         (BOUTIQUE, [
             'view_boutique', 'view_stock', 'view_vente', 'create_vente',
             'validate_vente', 'apply_remise', 'adjust_stock', 'validate_entree',
-        ]),
-        (APPROVISIONNEMENT, APPRO_VALIDATION),
-        (RESTAURATION, RESTO_OPERATEUR + ['encaisser_commande']),
+        ] + ANNULATION_BOUTIQUE),
+        (APPROVISIONNEMENT, APPRO_VALIDATION + ANNULATION_APPRO),
+        (RESTAURATION, RESTO_OPERATEUR + ['encaisser_commande'] + ANNULATION_RESTO),
         (CORE, ['view_audit']),
     ],
 }
@@ -129,7 +133,7 @@ ROLES = {
     'OPERATEUR_COMMANDE': (
         'Opérateur de la commande',
         'Enregistre, modifie, valide et imprime une commande. '
-        'Ne peut pas annuler une commande déjà validée. '
+        'N’a pas le droit d’annuler : cette action se coche à part sur le profil. '
         'Peut ajouter des portions cuisine / barbecus.',
     ),
     'OPERATEUR': (

@@ -20,6 +20,7 @@ from .models import (
     LigneCommande,
     Plat,
     Salle,
+    Serveur,
     ServicePoste,
     Table,
 )
@@ -64,10 +65,18 @@ class RestaurationFluxTests(TestCase):
             pk=1,
             defaults={'nom_societe': 'IBBS BAZAR'},
         )
+        self.serveur_fiche = Serveur.objects.create(nom='Mbala', prenom='Jean')
         self.client.force_login(self.user)
 
     def _ouvrir(self):
-        resp = self.client.post(reverse('restauration:table_ouvrir', args=[self.table.pk]))
+        resp = self.client.post(
+            reverse('restauration:commande_nouveau'),
+            {
+                'source': Commande.Source.TABLETTE,
+                'table': self.table.pk,
+                'serveur': self.serveur_fiche.pk,
+            },
+        )
         self.assertEqual(resp.status_code, 302)
         return Commande.objects.get(table=self.table, statut=Commande.Statut.OUVERTE)
 
@@ -141,6 +150,25 @@ class RestaurationFluxTests(TestCase):
         self.assertEqual(caisse.status_code, 200)
         self.assertContains(caisse, 'Encaisser')
         self.assertNotContains(caisse, 'Ajouter')
+
+    def test_bon_commande_serveur_en_liste_select2(self):
+        page = self.client.get(reverse('restauration:commande_nouveau'))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'id="id_serveur"')
+        self.assertContains(page, '<select')
+        self.assertContains(page, 'Jean Mbala')
+
+    def test_ouverture_sans_serveur_refusee(self):
+        resp = self.client.post(
+            reverse('restauration:commande_nouveau'),
+            {
+                'source': Commande.Source.TABLETTE,
+                'table': self.table.pk,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Commande.objects.exists())
+        self.assertContains(resp, 'Choisissez le serveur')
 
     def test_impression_tous_les_groupes_par_imprimante(self):
         from unittest.mock import patch
@@ -373,7 +401,18 @@ class ProfilsRestaurationTests(TestCase):
                 'restauration',
                 [
                     'view_restauration', 'create_commande', 'modify_commande',
-                    'validate_commande', 'cancel_commande', 'adjust_plat_portions',
+                    'validate_commande', 'adjust_plat_portions',
+                ],
+            )],
+        )
+        self.responsable = utilisateur(
+            'responsable_resto',
+            'RESPONSABLE',
+            [(
+                'restauration',
+                [
+                    'view_restauration', 'create_commande', 'modify_commande',
+                    'validate_commande', 'cancel_commande',
                 ],
             )],
         )
@@ -388,7 +427,15 @@ class ProfilsRestaurationTests(TestCase):
 
     def _commande_ouverte(self, user):
         self.client.force_login(user)
-        self.client.post(reverse('restauration:table_ouvrir', args=[self.table.pk]))
+        serveur, _ = Serveur.objects.get_or_create(nom='Serveur salle', prenom='')
+        self.client.post(
+            reverse('restauration:commande_nouveau'),
+            {
+                'source': Commande.Source.TABLETTE,
+                'table': self.table.pk,
+                'serveur': serveur.pk,
+            },
+        )
         return Commande.objects.get(table=self.table, statut=Commande.Statut.OUVERTE)
 
     def test_operateur_retire_ligne_avant_validation_pas_apres(self):
@@ -418,9 +465,33 @@ class ProfilsRestaurationTests(TestCase):
             reverse('restauration:commande_annuler', args=[commande.pk]),
             {'motif': 'Erreur'},
         )
-        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.status_code, 403)
         commande.refresh_from_db()
         self.assertEqual(commande.statut, Commande.Statut.VALIDEE)
+
+    def test_operateur_ne_peut_pas_annuler_commande_ouverte(self):
+        commande = self._commande_ouverte(self.operateur)
+        page = self.client.get(reverse('restauration:commande_detail', args=[commande.pk]))
+        self.assertNotContains(page, 'Annuler la commande')
+        resp = self.client.post(
+            reverse('restauration:commande_annuler', args=[commande.pk]),
+            {'motif': 'Erreur de saisie'},
+        )
+        self.assertEqual(resp.status_code, 403)
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.Statut.OUVERTE)
+
+    def test_responsable_peut_annuler_commande_ouverte(self):
+        commande = self._commande_ouverte(self.responsable)
+        page = self.client.get(reverse('restauration:commande_detail', args=[commande.pk]))
+        self.assertContains(page, 'Annuler la commande')
+        resp = self.client.post(
+            reverse('restauration:commande_annuler', args=[commande.pk]),
+            {'motif': 'Client parti'},
+        )
+        self.assertEqual(resp.status_code, 302)
+        commande.refresh_from_db()
+        self.assertEqual(commande.statut, Commande.Statut.ANNULEE)
 
     def test_caissier_encaisse_sans_annuler_la_facture(self):
         commande = Commande.objects.create(
@@ -515,6 +586,7 @@ class SortieTerrasseAlimenteCommandeTests(TestCase):
             quantite=3,
         )
         self.destination, _ = Service.objects.get_or_create(nom='Terrasse')
+        self.serveur_fiche = Serveur.objects.create(nom='Léa', prenom='')
         Etablissement.objects.get_or_create(pk=1, defaults={'nom_societe': 'IBBS BAZAR'})
         self.client.force_login(self.user)
 
@@ -536,7 +608,14 @@ class SortieTerrasseAlimenteCommandeTests(TestCase):
 
     def test_sortie_terrasse_permet_ajout_dans_la_commande(self):
         self._valider_sortie(4)
-        resp = self.client.post(reverse('restauration:table_ouvrir', args=[self.table.pk]))
+        resp = self.client.post(
+            reverse('restauration:commande_nouveau'),
+            {
+                'source': Commande.Source.TABLETTE,
+                'table': self.table.pk,
+                'serveur': self.serveur_fiche.pk,
+            },
+        )
         self.assertEqual(resp.status_code, 302)
         commande = Commande.objects.get(table=self.table, statut=Commande.Statut.OUVERTE)
         resp = self.client.post(

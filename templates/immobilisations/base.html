@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}{% block app_title %}Immobilisations{% endblock %} · IBBS BAZAR{% endblock %}
 
@@ -20,4 +21,9 @@
     {% block app_content %}{% endblock %}
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/immobilisations.js' %}?v=choix-aff-1"></script>
 {% endblock %}

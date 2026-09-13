@@ -12,8 +12,8 @@ from django.views.decorators.http import require_POST
 
 from .forms import UtilisateurForm
 from .models import AuditLog, Role, Succursale, User
-from .permissions import require_permission
-from .services import UserService
+from .permissions import groupes_permissions_metier, permissions_metier, require_permission
+from .services import RoleService, UserService
 
 
 @require_permission('core.view_utilisateur')
@@ -148,6 +148,34 @@ def roles(request):
         request,
         'core/roles.html',
         {'roles': roles_qs},
+    )
+
+
+@require_permission('core.update_role')
+def role_permissions(request, pk):
+    role = get_object_or_404(Role, pk=pk)
+    groupes = groupes_permissions_metier()
+    metier = permissions_metier()
+    if request.method == 'POST':
+        ids = [int(pk_perm) for pk_perm in request.POST.getlist('permissions') if str(pk_perm).isdigit()]
+        choisies = list(metier.filter(pk__in=ids))
+        techniques = list(role.permissions.exclude(pk__in=metier.values('pk')))
+        RoleService.definir_permissions(role, techniques + choisies, par=request.user)
+        messages.success(
+            request,
+            f'Permissions du profil « {role.nom} » enregistrées. '
+            'L’annulation se coche à part de l’enregistrement du document.',
+        )
+        return redirect('core:role_permissions', pk=role.pk)
+    selection = set(role.permissions.values_list('pk', flat=True))
+    return render(
+        request,
+        'core/role_form.html',
+        {
+            'role': role,
+            'groupes': groupes,
+            'selection': selection,
+        },
     )
 
 

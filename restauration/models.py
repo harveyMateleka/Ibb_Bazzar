@@ -61,6 +61,28 @@ class Table(models.Model):
         return self.commande_ouverte() is not None
 
 
+class Serveur(models.Model):
+    """Serveur / serveuse enregistré(e) dans les tables de paramètre."""
+
+    nom = models.CharField('nom', max_length=100)
+    prenom = models.CharField('prénom', max_length=100, blank=True)
+    actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'serveur'
+        verbose_name_plural = 'serveurs'
+        ordering = ['nom', 'prenom']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['nom', 'prenom'],
+                name='serveur_unique_nom_prenom',
+            ),
+        ]
+
+    def __str__(self):
+        return ' '.join(part for part in (self.prenom, self.nom) if part).strip()
+
+
 class CategorieMenu(models.Model):
     nom = models.CharField('nom', max_length=100, unique=True)
     ordre = models.PositiveIntegerField('ordre', default=0)
@@ -315,7 +337,14 @@ class Commande(models.Model):
         blank=True,
         help_text='Obligatoire si la commande est saisie à partir d’un bon papier.',
     )
-    serveur = models.CharField('serveur', max_length=150, blank=True)
+    serveur = models.ForeignKey(
+        Serveur,
+        on_delete=models.PROTECT,
+        related_name='commandes',
+        verbose_name='serveur',
+        null=True,
+        blank=True,
+    )
     date_ouverture = models.DateTimeField('ouverture', default=timezone.now)
     date_cloture = models.DateTimeField('clôture', null=True, blank=True)
     utilisateur = models.ForeignKey(
@@ -399,7 +428,9 @@ class Commande(models.Model):
 
     @property
     def nom_serveur(self):
-        return self.serveur or str(self.utilisateur)
+        if self.serveur_id:
+            return str(self.serveur)
+        return str(self.utilisateur)
 
     @property
     def modifiable(self):

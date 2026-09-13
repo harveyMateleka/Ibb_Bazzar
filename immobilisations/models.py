@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Sum
 from django.utils import timezone
 
 
@@ -54,16 +55,28 @@ class Service(models.Model):
 
 
 class Emplacement(models.Model):
-    """Emplacement d'un bien (référentiel maintenu en admin)."""
+    """Emplacement d'un bien : appartient à un seul service."""
 
-    nom = models.CharField('nom', max_length=150, unique=True)
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='emplacements',
+        verbose_name='service',
+    )
+    nom = models.CharField('nom', max_length=150)
     description = models.TextField('description', blank=True)
     actif = models.BooleanField('actif', default=True)
 
     class Meta:
         verbose_name = 'emplacement'
         verbose_name_plural = 'emplacements'
-        ordering = ['nom']
+        ordering = ['service__nom', 'nom']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['service', 'nom'],
+                name='immo_emplacement_unique_par_service',
+            ),
+        ]
 
     def __str__(self):
         return self.nom
@@ -104,6 +117,9 @@ class Immobilisation(models.Model):
     valeur_acquisition = models.DecimalField(
         'valeur d’acquisition', max_digits=14, decimal_places=2, default=Decimal('0'))
     date_acquisition = models.DateField('date d’acquisition', null=True, blank=True)
+    quantite_achetee = models.PositiveIntegerField(
+        'quantité achetée', default=1,
+        help_text='Nombre d’unités acquises.')
 
     # Contexte centralisé (auto + readonly dans les formulaires).
     succursale = models.ForeignKey(
@@ -211,6 +227,30 @@ class Immobilisation(models.Model):
             .first()
         )
 
+    @property
+    def quantite_affectee(self):
+        return self.affectations.filter(actif=True).aggregate(
+            total=Sum('quantite'))['total'] or 0
+
+    @property
+    def quantite_restante(self):
+        """Reste à affecter = acheté − (affecté + cassé + déclassé)."""
+        return max(
+            0,
+            self.quantite_achetee
+            - self.quantite_affectee
+            - self.quantite_cassee
+            - self.quantite_declassee,
+        )
+
+    @property
+    def quantite_cassee(self):
+        return self.casses.aggregate(total=Sum('quantite'))['total'] or 0
+
+    @property
+    def quantite_declassee(self):
+        return self.declassements.aggregate(total=Sum('quantite'))['total'] or 0
+
 
 class Affectation(models.Model):
     """Affectation d'un bien à un service / succursale / emplacement.
@@ -246,7 +286,9 @@ class Affectation(models.Model):
         null=True,
         blank=True,
     )
+    quantite = models.PositiveIntegerField('nombre à affecter', default=1)
     date_affectation = models.DateTimeField('date d’affectation', default=timezone.now)
+    commentaire = models.TextField('commentaire', blank=True)
     par = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -322,6 +364,7 @@ class Deplacement(models.Model):
         null=True,
         blank=True,
     )
+    quantite = models.PositiveIntegerField('quantité à déplacer', default=1)
     date_deplacement = models.DateTimeField('date de déplacement', default=timezone.now)
     motif = models.CharField('motif', max_length=200, blank=True)
     par = models.ForeignKey(
@@ -392,8 +435,25 @@ class Casse(models.Model):
     date_casse = models.DateTimeField('date', default=timezone.now)
     date_dommage = models.DateField('date du dommage', null=True, blank=True,
                                     help_text='Date à laquelle le dommage est survenu (facultatif).')
-    motif = models.CharField('motif', max_length=200)
-    description = models.TextField('description', blank=True)
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='casses',
+        verbose_name='service d’affectation',
+        null=True,
+        blank=True,
+    )
+    emplacement = models.ForeignKey(
+        Emplacement,
+        on_delete=models.PROTECT,
+        related_name='casses',
+        verbose_name='emplacement',
+        null=True,
+        blank=True,
+    )
+    quantite = models.PositiveIntegerField('quantité cassée', default=1)
+    motif = models.CharField('cause', max_length=200)
+    description = models.TextField('commentaire', blank=True)
     responsable_dommage = models.CharField(
         'responsable du dommage', max_length=150, blank=True)
     decision = models.CharField(
@@ -429,6 +489,23 @@ class Declassement(models.Model):
         verbose_name='immobilisation',
     )
     date_demande = models.DateTimeField('demande le', default=timezone.now)
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='declassements',
+        verbose_name='service d’affectation',
+        null=True,
+        blank=True,
+    )
+    emplacement = models.ForeignKey(
+        Emplacement,
+        on_delete=models.PROTECT,
+        related_name='declassements',
+        verbose_name='emplacement',
+        null=True,
+        blank=True,
+    )
+    quantite = models.PositiveIntegerField('quantité à déclasser', default=1)
     motif = models.CharField('motif', max_length=200)
     statut = models.CharField(
         'statut', max_length=10, choices=Statut.choices, default=Statut.DEMANDE)

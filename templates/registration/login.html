@@ -12,14 +12,21 @@
       </div>
     </div>
     <section class="panel form-panel">
-      <form method="post">
+      <form method="post" class="login-form">
         {% csrf_token %}
         {{ form.non_field_errors }}
         <div class="form-grid">
           {% for field in form %}
           <div class="field">
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {% if field.field.widget.input_type == 'password' %}
+            <div class="password-wrap">
+              {{ field }}
+              {% include "includes/password_toggle.html" with field_id=field.id_for_label %}
+            </div>
+            {% else %}
             {{ field }}
+            {% endif %}
             {{ field.errors }}
           </div>
           {% endfor %}

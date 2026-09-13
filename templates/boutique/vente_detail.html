@@ -85,13 +85,6 @@
       {% csrf_token %}
       <button type="submit" class="btn btn-primary">Traiter la vente</button>
     </form>
-    {% if perms.boutique.cancel_vente %}
-    <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="field">
-      {% csrf_token %}
-      <input class="input" type="text" name="commentaire" required placeholder="Motif de l'annulation de la demande">
-      <button type="submit" class="btn btn-danger">Annuler la demande</button>
-    </form>
-    {% endif %}
   </div>
 </section>
 <script>
@@ -132,6 +125,20 @@
   document.addEventListener("ibbs:select2:init", viaJQuery);
 })();
 </script>
+{% endif %}
+
+{% if vente.statut != 'VALIDEE' and vente.statut != 'CONFIRMEE' and vente.statut != 'ANNULEE' %}
+{% if perms.boutique.cancel_vente %}
+<section class="panel">
+  <h2>Annuler la vente</h2>
+  <p class="help">Ce bouton n’apparaît que si le profil a le droit d’annuler une vente.</p>
+  <form action="{% url 'boutique:vente_annuler' vente.pk %}" method="post" class="field">
+    {% csrf_token %}
+    <input class="input" type="text" name="commentaire" required placeholder="Motif de l'annulation">
+    <button type="submit" class="btn btn-danger">Annuler la vente</button>
+  </form>
+</section>
+{% endif %}
 {% endif %}
 
 {% if vente.statut == 'TRAITEE' %}

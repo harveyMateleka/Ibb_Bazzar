@@ -35,21 +35,23 @@
     <div class="table-wrap">
       <table data-datatable>
         <thead>
-          <tr><th>Date</th><th>Bien</th><th>Succursale</th><th>Service</th><th>Emplacement</th><th>Par</th><th>Statut</th></tr>
+          <tr><th>Date</th><th>Bien</th><th>Quantité</th><th>Succursale</th><th>Service</th><th>Emplacement</th><th>Commentaire</th><th>Par</th><th>Statut</th></tr>
         </thead>
         <tbody>
           {% for a in affectations %}
           <tr>
-            <td>{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+            <td>{{ a.date_affectation|date:"d/m/Y" }}</td>
             <td>{{ a.immobilisation.code }}</td>
+            <td>{{ a.quantite }}</td>
             <td>{{ a.succursale }}</td>
             <td>{{ a.service|default:"—" }}</td>
             <td>{{ a.emplacement|default:"—" }}</td>
+            <td>{{ a.commentaire|default:"—" }}</td>
             <td>{{ a.par }}</td>
             <td>{% if a.actif %}Active{% else %}Clôturée{% endif %}</td>
           </tr>
           {% empty %}
-          <tr><td colspan="7">Aucune affectation.</td></tr>
+          <tr><td colspan="9">Aucune affectation.</td></tr>
           {% endfor %}
         </tbody>
       </table>

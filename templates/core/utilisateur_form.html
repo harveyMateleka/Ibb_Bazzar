@@ -15,7 +15,14 @@
     {% for field in form %}
     <div class="field">
       <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {% if field.field.widget.input_type == 'password' %}
+      <div class="password-wrap">
+        {{ field }}
+        {% include "includes/password_toggle.html" with field_id=field.id_for_label %}
+      </div>
+      {% else %}
       {{ field }}
+      {% endif %}
       {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
       {{ field.errors }}
     </div>

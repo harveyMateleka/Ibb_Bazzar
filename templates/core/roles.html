@@ -17,6 +17,7 @@
           <th>Code</th>
           <th>Description</th>
           <th>Utilisateurs</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -26,9 +27,14 @@
           <td>{{ role.code }}</td>
           <td>{{ role.description|default:"—" }}</td>
           <td>{{ role.nb_utilisateurs }}</td>
+          <td class="actions">
+            {% if perms.core.update_role %}
+            <a class="btn btn-ghost" href="{% url 'core:role_permissions' role.pk %}">Configurer</a>
+            {% endif %}
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="4">Aucun rôle.</td></tr>
+        <tr><td colspan="5">Aucun rôle.</td></tr>
         {% endfor %}
       </tbody>
     </table>

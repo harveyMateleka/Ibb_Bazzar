@@ -5,6 +5,7 @@
   <div>
     <p class="eyebrow">Affectations</p>
     <h1>Affecter {{ bien.code }}</h1>
+    <p class="help">{{ bien.designation }} · acheté(s) : {{ bien.quantite_achetee }} · reste : {{ quantite_restante }}</p>
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'immobilisations:bien_detail' bien.pk %}">← Retour</a>

@@ -10,11 +10,29 @@ Le frontend n'est JAMAIS utilisé comme mécanisme de sécurité.
 
 from functools import wraps
 
+from django.apps import apps
 from django.contrib.admin import ModelAdmin
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import Permission
+from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
 from .models import Domaine
+
+PERMISSIONS_METIER_GROUPES = (
+    ('restauration', 'Restauration'),
+    ('approvisionnement', 'Approvisionnement'),
+    ('boutique', 'Boutique'),
+    ('facturation', 'Facturation'),
+    ('immobilisations', 'Immobilisations'),
+    ('core', 'Utilisateurs et sécurité'),
+)
+
+MESSAGE_ACCES_REFUSE = (
+    'Vous n’avez pas le droit pour ce module. '
+    'Prière de contacter votre administrateur.'
+)
 
 
 def interdire_suppression_sauf_superuser(utilisateur):
@@ -37,6 +55,61 @@ def restreindre_suppressions_admin():
     ModelAdmin.has_delete_permission = has_delete_permission
 
 
+def permissions_metier():
+    """Permissions métier (Meta.permissions), sans add/change/delete Django."""
+    filtres = Q()
+    vide = True
+    for model in apps.get_models():
+        extra = tuple(model._meta.permissions or ())
+        if not extra:
+            continue
+        ct = ContentType.objects.get_for_model(model, for_concrete_model=False)
+        for codename, _libelle in extra:
+            vide = False
+            filtres |= Q(content_type_id=ct.pk, codename=codename)
+    if vide:
+        return Permission.objects.none()
+    return Permission.objects.filter(filtres).select_related('content_type').order_by(
+        'content_type__app_label', 'codename'
+    )
+
+
+def groupes_permissions_metier():
+    """Permissions métier regroupées par module, pour l’écran des profils."""
+    par_app = {}
+    for perm in permissions_metier():
+        par_app.setdefault(perm.content_type.app_label, []).append(perm)
+    groupes = []
+    for app_label, libelle in PERMISSIONS_METIER_GROUPES:
+        perms = par_app.pop(app_label, [])
+        if not perms:
+            continue
+        groupes.append({
+            'app_label': app_label,
+            'libelle': libelle,
+            'permissions': [
+                {
+                    'perm': perm,
+                    'est_annulation': perm.codename.startswith('cancel_'),
+                }
+                for perm in perms
+            ],
+        })
+    for app_label, perms in sorted(par_app.items()):
+        groupes.append({
+            'app_label': app_label,
+            'libelle': app_label.title(),
+            'permissions': [
+                {
+                    'perm': perm,
+                    'est_annulation': perm.codename.startswith('cancel_'),
+                }
+                for perm in perms
+            ],
+        })
+    return groupes
+
+
 def require_permission(codename):
     """Décorateur : authentifie + vérifie la permission granulaire.
 
@@ -49,11 +122,11 @@ def require_permission(codename):
         @login_required
         def _wrapped(request, *args, **kwargs):
             if not request.user.is_active:
-                raise PermissionDenied('Compte désactivé.')
-            if not request.user.has_perm(codename):
                 raise PermissionDenied(
-                    f'Vous n’avez pas la permission requise : {codename}'
+                    'Votre compte est désactivé. Prière de contacter votre administrateur.'
                 )
+            if not request.user.has_perm(codename):
+                raise PermissionDenied(MESSAGE_ACCES_REFUSE)
             return view_func(request, *args, **kwargs)
 
         return _wrapped

@@ -8,19 +8,19 @@
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'immobilisations:biens' %}">← Retour</a>
-    {% if perms.immobilisations.assign_asset %}
+    {% if bien.statut_validation == 'VALIDE' and quantite_restante > 0 and perms.immobilisations.assign_asset %}
     <a class="btn btn-primary" href="{% url 'immobilisations:affectation_nouvelle' bien.pk %}">Affecter</a>
     {% endif %}
-    {% if perms.immobilisations.move_asset %}
+    {% if bien.statut_validation == 'VALIDE' and affectation_courante and perms.immobilisations.move_asset %}
     <a class="btn btn-ghost" href="{% url 'immobilisations:deplacement_nouveau' bien.pk %}">Déplacer</a>
     {% endif %}
     {% if perms.immobilisations.repair_asset %}
     <a class="btn btn-ghost" href="{% url 'immobilisations:reparation_declarer' bien.pk %}">Réparer</a>
     {% endif %}
-    {% if perms.immobilisations.report_damage_asset %}
+    {% if bien.statut_validation == 'VALIDE' and affectation_courante and perms.immobilisations.report_damage_asset %}
     <a class="btn btn-ghost" href="{% url 'immobilisations:casse_declarer' bien.pk %}">Déclarer une casse</a>
     {% endif %}
-    {% if perms.immobilisations.decommission_asset %}
+    {% if bien.statut_validation == 'VALIDE' and affectation_courante and perms.immobilisations.decommission_asset %}
     <a class="btn btn-danger" href="{% url 'immobilisations:declassement_demander' bien.pk %}">Déclasser</a>
     {% endif %}
   </div>
@@ -32,6 +32,10 @@
     <dt>Catégorie</dt><dd>{{ bien.categorie|default:"—" }}</dd>
     <dt>N° de série</dt><dd>{{ bien.numero_serie|default:"—" }}</dd>
     <dt>Valeur d'acquisition</dt><dd>{{ bien.valeur_acquisition }}</dd>
+    <dt>Quantité achetée</dt><dd>{{ bien.quantite_achetee }}</dd>
+    <dt>Reste à affecter</dt><dd>{{ quantite_restante }}</dd>
+    <dt>Quantité cassée</dt><dd>{{ bien.quantite_cassee }}</dd>
+    <dt>Quantité déclassée</dt><dd>{{ bien.quantite_declassee }}</dd>
     <dt>Date d'acquisition</dt><dd>{{ bien.date_acquisition|default:"—" }}</dd>
     <dt>Succursale</dt><dd>{{ bien.succursale }}</dd>
     <dt>Domaine</dt><dd>{{ bien.domaine|default:"—" }}</dd>
@@ -65,7 +69,7 @@
 {% elif bien.statut_validation == 'EN_ATTENTE' and perms.immobilisations.validate_asset %}
 <section class="panel">
   <h2>Validation</h2>
-  <p>Ce bien est <strong>en attente de validation</strong>.</p>
+  <p>Ce bien est <strong>en attente de validation</strong>. Après validation, il pourra être affecté.</p>
   <div class="actions">
     <form action="{% url 'immobilisations:bien_valider' bien.pk %}" method="post">
       {% csrf_token %}
@@ -78,6 +82,12 @@
     </form>
   </div>
 </section>
+{% elif bien.statut_validation == 'VALIDE' and quantite_restante > 0 and perms.immobilisations.assign_asset %}
+<section class="panel">
+  <h2>Affectation</h2>
+  <p>Ce bien est validé. Il reste <strong>{{ quantite_restante }}</strong> unité(s) à affecter.</p>
+  <a class="btn btn-primary" href="{% url 'immobilisations:affectation_nouvelle' bien.pk %}">Affecter le bien</a>
+</section>
 {% endif %}
 
 <section class="panel">
@@ -85,20 +95,22 @@
   <div class="table-wrap">
     <table data-datatable>
       <thead>
-        <tr><th>Date</th><th>Succursale</th><th>Service</th><th>Emplacement</th><th>Par</th><th>Statut</th></tr>
+        <tr><th>Date</th><th>Quantité</th><th>Succursale</th><th>Service</th><th>Emplacement</th><th>Commentaire</th><th>Par</th><th>Statut</th></tr>
       </thead>
       <tbody>
         {% for a in affectations %}
         <tr>
-          <td>{{ a.date_affectation|date:"d/m/Y H:i" }}</td>
+          <td>{{ a.date_affectation|date:"d/m/Y" }}</td>
+          <td>{{ a.quantite }}</td>
           <td>{{ a.succursale }}</td>
           <td>{{ a.service|default:"—" }}</td>
           <td>{{ a.emplacement|default:"—" }}</td>
+          <td>{{ a.commentaire|default:"—" }}</td>
           <td>{{ a.par }}</td>
           <td>{% if a.actif %}Active{% else %}Clôturée{% endif %}</td>
         </tr>
         {% empty %}
-        <tr><td colspan="6">Aucune affectation.</td></tr>
+        <tr><td colspan="8">Aucune affectation.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -166,14 +178,17 @@
   <div class="table-wrap">
     <table data-datatable>
       <thead>
-        <tr><th>Date</th><th>Date du dommage</th><th>Motif</th><th>Responsable du dommage</th><th>Décision</th><th>Par</th><th class="no-sort"></th></tr>
+        <tr><th>Date</th><th>Service</th><th>Emplacement</th><th>Quantité</th><th>Cause</th><th>Commentaire</th><th>Responsable du dommage</th><th>Décision</th><th>Par</th><th class="no-sort"></th></tr>
       </thead>
       <tbody>
         {% for c in casses %}
         <tr>
           <td>{{ c.date_casse|date:"d/m/Y H:i" }}</td>
-          <td>{{ c.date_dommage|default:"—" }}</td>
+          <td>{{ c.service|default:"—" }}</td>
+          <td>{{ c.emplacement|default:"—" }}</td>
+          <td>{{ c.quantite }}</td>
           <td>{{ c.motif }}</td>
+          <td>{{ c.description|default:"—" }}</td>
           <td>{{ c.responsable_dommage|default:"—" }}</td>
           <td>{{ c.get_decision_display|default:"—" }}</td>
           <td>{{ c.par }}</td>
@@ -193,7 +208,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7">Aucune casse.</td></tr>
+        <tr><td colspan="10">Aucune casse.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -205,12 +220,15 @@
   <div class="table-wrap">
     <table data-datatable>
       <thead>
-        <tr><th>Demande le</th><th>Motif</th><th>Statut</th><th>Demandé par</th><th>Validé par</th><th class="no-sort"></th></tr>
+        <tr><th>Demande le</th><th>Service</th><th>Emplacement</th><th>Quantité</th><th>Motif</th><th>Statut</th><th>Demandé par</th><th>Validé par</th><th class="no-sort"></th></tr>
       </thead>
       <tbody>
         {% for d in declassements %}
         <tr>
           <td>{{ d.date_demande|date:"d/m/Y H:i" }}</td>
+          <td>{{ d.service|default:"—" }}</td>
+          <td>{{ d.emplacement|default:"—" }}</td>
+          <td>{{ d.quantite }}</td>
           <td>{{ d.motif }}</td>
           <td>{{ d.get_statut_display }}</td>
           <td>{{ d.par }}</td>
@@ -225,7 +243,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="6">Aucun déclassement.</td></tr>
+        <tr><td colspan="9">Aucun déclassement.</td></tr>
         {% endfor %}
       </tbody>
     </table>

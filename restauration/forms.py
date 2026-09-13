@@ -1,7 +1,7 @@
 from django import forms
 
 from .impression import lister_imprimantes_windows
-from .models import Commande, Imprimante, Plat, Table, imprimante_par_defaut
+from .models import Commande, Imprimante, Plat, Serveur, Table, imprimante_par_defaut
 
 
 class StyledFormMixin:
@@ -33,7 +33,14 @@ class CommandeForm(StyledFormMixin, forms.ModelForm):
         self.fields['table'].required = False
         self.fields['emporter'].label = 'Commande à emporter'
         self.fields['source'].label = 'Origine de la saisie'
-        self.fields['serveur'].help_text = 'Nom du serveur / de la serveuse.'
+        self.fields['serveur'].queryset = Serveur.objects.filter(actif=True)
+        self.fields['serveur'].required = True
+        self.fields['serveur'].empty_label = 'Sélectionnez un serveur'
+        self.fields['serveur'].label = 'Serveur'
+        self.fields['serveur'].help_text = (
+            'Liste des serveurs enregistrés dans Paramètres → Serveurs. '
+            'Utilisez la recherche de la liste pour trouver un nom.'
+        )
 
     def clean(self):
         cleaned = super().clean()
@@ -46,6 +53,8 @@ class CommandeForm(StyledFormMixin, forms.ModelForm):
                 'reference_bon',
                 'La référence du bon papier doit être conservée.',
             )
+        if not cleaned.get('serveur'):
+            self.add_error('serveur', 'Choisissez le serveur de cette commande.')
         return cleaned
 
 

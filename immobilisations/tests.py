@@ -5,6 +5,7 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from core.models import Domaine, Role, Succursale
 from core.services import UserService
@@ -92,10 +93,17 @@ class TestImmobilisationService(ImmobilisationBase):
         self.assertTrue(self.bien.code.startswith('IMM-'))
         self.assertEqual(self.bien.etat_physique, Immobilisation.EtatPhysique.NEUF)
         self.assertEqual(self.bien.statut_administratif, Immobilisation.StatutAdministratif.STOCKE)
+        self.assertEqual(self.bien.quantite_achetee, 1)
+
+    def test_creation_avec_quantite_achetee(self):
+        bien = ImmobilisationService.creer(
+            designation='Chaises', succursale=self.succ_a, domaine=self.domaine,
+            quantite_achetee=12, par=self.gestionnaire)
+        self.assertEqual(bien.quantite_achetee, 12)
 
     def test_affectation_statut_en_service(self):
         svc = Service.objects.create(nom='Comptabilité')
-        emp = Emplacement.objects.create(nom='Bureau 12')
+        emp = Emplacement.objects.create(nom='Bureau 12', service=svc)
         affect = AffectationService.affecter(
             immobilisation=self.bien, succursale=self.succ_a,
             service=svc, emplacement=emp, par=self.gestionnaire)
@@ -105,26 +113,74 @@ class TestImmobilisationService(ImmobilisationBase):
         self.assertEqual(self.bien.service, svc)
         self.assertEqual(self.bien.emplacement, emp)
 
-    def test_affectation_historisée(self):
+    def test_emplacement_doit_appartenir_au_service(self):
+        compta = Service.objects.create(nom='Comptabilité')
+        direction = Service.objects.create(nom='Direction')
+        bureau = Emplacement.objects.create(nom='Bureau 12', service=compta)
+        with self.assertRaises(ValidationError):
+            AffectationService.affecter(
+                immobilisation=self.bien, succursale=self.succ_a,
+                service=direction, emplacement=bureau, par=self.gestionnaire)
+
+    def test_affectation_partielle_par_quantite(self):
+        lot = ImmobilisationService.creer(
+            designation='Chaises', succursale=self.succ_a, domaine=self.domaine,
+            quantite_achetee=5, par=self.gestionnaire)
+        self._valider(lot)
         svc_a = Service.objects.create(nom='A')
         svc_b = Service.objects.create(nom='B')
-        emp_1 = Emplacement.objects.create(nom='E1')
-        emp_2 = Emplacement.objects.create(nom='E2')
+        emp_1 = Emplacement.objects.create(nom='E1', service=svc_a)
+        emp_2 = Emplacement.objects.create(nom='E2', service=svc_b)
         AffectationService.affecter(
-            immobilisation=self.bien, succursale=self.succ_a,
-            service=svc_a, emplacement=emp_1, par=self.gestionnaire)
+            immobilisation=lot, succursale=self.succ_a,
+            service=svc_a, emplacement=emp_1, quantite=2, par=self.gestionnaire)
         AffectationService.affecter(
-            immobilisation=self.bien, succursale=self.succ_a,
-            service=svc_b, emplacement=emp_2, par=self.gestionnaire)
-        self.assertEqual(Affectation.objects.filter(immobilisation=self.bien).count(), 2)
-        self.assertEqual(Affectation.objects.filter(immobilisation=self.bien, actif=True).count(), 1)
-        active = self.bien.affectation_courante
-        self.assertEqual(active.service, svc_b)
+            immobilisation=lot, succursale=self.succ_a,
+            service=svc_b, emplacement=emp_2, quantite=3,
+            commentaire='Solde du lot', par=self.gestionnaire)
+        self.assertEqual(Affectation.objects.filter(immobilisation=lot, actif=True).count(), 2)
+        lot.refresh_from_db()
+        self.assertEqual(lot.quantite_affectee, 5)
+        self.assertEqual(lot.quantite_restante, 0)
+
+    def test_reste_a_affecter_deduit_casse_et_declassement(self):
+        lot = ImmobilisationService.creer(
+            designation='Chaises', succursale=self.succ_a, domaine=self.domaine,
+            quantite_achetee=5, par=self.gestionnaire)
+        self._valider(lot)
+        svc = Service.objects.create(nom='A')
+        emp = Emplacement.objects.create(nom='E1', service=svc)
+        aff = AffectationService.affecter(
+            immobilisation=lot, succursale=self.succ_a,
+            service=svc, emplacement=emp, quantite=2, par=self.gestionnaire)
+        self.assertEqual(lot.quantite_restante, 3)
+        CasseService.declarer(
+            immobilisation=lot, motif='Chute', par=self.gestionnaire,
+            affectation=aff, quantite=1)
+        DeclassementService.demander(
+            immobilisation=lot, motif='Usure', par=self.gestionnaire,
+            affectation=aff, quantite=1)
+        lot.refresh_from_db()
+        aff.refresh_from_db()
+        self.assertEqual(lot.quantite_restante, 1)
+        self.assertEqual(lot.quantite_affectee, 2)
+        self.assertEqual(aff.quantite, 2)
+        self.assertTrue(aff.actif)
+        self.assertEqual(lot.quantite_cassee, 1)
+        self.assertEqual(lot.quantite_declassee, 1)
+
+    def test_affectation_refusee_si_quantite_depassee(self):
+        svc = Service.objects.create(nom='A')
+        emp = Emplacement.objects.create(nom='E1', service=svc)
+        with self.assertRaises(ValidationError):
+            AffectationService.affecter(
+                immobilisation=self.bien, succursale=self.succ_a,
+                service=svc, emplacement=emp, quantite=2, par=self.gestionnaire)
 
     def test_deplacement_historisé(self):
         svc = Service.objects.create(nom='A')
-        emp_1 = Emplacement.objects.create(nom='E1')
-        emp_2 = Emplacement.objects.create(nom='E2')
+        emp_1 = Emplacement.objects.create(nom='E1', service=svc)
+        emp_2 = Emplacement.objects.create(nom='E2', service=svc)
         AffectationService.affecter(
             immobilisation=self.bien, succursale=self.succ_a,
             service=svc, emplacement=emp_1, par=self.gestionnaire)
@@ -137,7 +193,35 @@ class TestImmobilisationService(ImmobilisationBase):
         dep = Deplacement.objects.get(immobilisation=self.bien)
         self.assertEqual(dep.ancien_emplacement, emp_1)
         self.assertEqual(dep.nouvel_emplacement, emp_2)
+        self.assertEqual(dep.quantite, 1)
         self.assertEqual(dep.par, self.gestionnaire)
+        self.assertEqual(
+            Affectation.objects.filter(
+                immobilisation=self.bien, actif=True, emplacement=emp_2,
+            ).get().quantite,
+            1,
+        )
+
+    def test_deplacement_partiel_par_quantite(self):
+        lot = ImmobilisationService.creer(
+            designation='Tables', succursale=self.succ_a, domaine=self.domaine,
+            quantite_achetee=5, par=self.gestionnaire)
+        self._valider(lot)
+        svc = Service.objects.create(nom='A')
+        emp_1 = Emplacement.objects.create(nom='E1', service=svc)
+        emp_2 = Emplacement.objects.create(nom='E2', service=svc)
+        source = AffectationService.affecter(
+            immobilisation=lot, succursale=self.succ_a,
+            service=svc, emplacement=emp_1, quantite=5, par=self.gestionnaire)
+        DeplacementService.deplacer(
+            affectation=source, nouveau_service=svc, nouvel_emplacement=emp_2,
+            quantite=2, par=self.gestionnaire)
+        source.refresh_from_db()
+        self.assertTrue(source.actif)
+        self.assertEqual(source.quantite, 3)
+        dest = Affectation.objects.get(
+            immobilisation=lot, actif=True, emplacement=emp_2)
+        self.assertEqual(dest.quantite, 2)
 
     def test_reparation_cycle(self):
         rep = ReparationService.declarer(
@@ -182,6 +266,7 @@ class TestImmobilisationService(ImmobilisationBase):
             immobilisation=self.bien, motif='Chute', par=self.gestionnaire)
         self.bien.refresh_from_db()
         self.assertEqual(self.bien.etat_physique, 'CASSE')
+        self.assertEqual(casse.quantite, 1)
         # Le responsable du dommage est facultatif.
         self.assertEqual(casse.responsable_dommage, '')
 
@@ -311,6 +396,21 @@ class TestValidationBien(ImmobilisationBase):
             reverse('immobilisations:bien_valider', kwargs={'pk': b.pk}))
         self.assertEqual(resp.status_code, 403)
 
+    def test_validation_ouvre_l_affectation(self):
+        b = self._brouillon()
+        ImmobilisationService.soumettre(immobilisation=b, par=self.gestionnaire)
+        self.client.force_login(self.gestionnaire)
+        resp = self.client.post(
+            reverse('immobilisations:bien_valider', kwargs={'pk': b.pk}))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(
+            resp.url,
+            reverse('immobilisations:affectation_nouvelle', kwargs={'pk': b.pk}),
+        )
+        b.refresh_from_db()
+        self.assertEqual(b.statut_validation, Immobilisation.StatutValidation.VALIDE)
+        self.assertIsNone(b.affectation_courante)
+
 
 class TestPerimetreEtPermissions(ImmobilisationBase):
     def test_liste_biens_sans_permission_forbidden(self):
@@ -415,8 +515,25 @@ class TestProfilsLogistique(ImmobilisationBase):
 
     def test_charge_enregistre_et_signale_sans_valider(self):
         self.client.force_login(self.charge)
-        self.assertEqual(
-            self.client.get(reverse('immobilisations:bien_nouveau')).status_code, 200)
+        resp = self.client.get(reverse('immobilisations:bien_nouveau'))
+        self.assertEqual(resp.status_code, 200)
+        form = resp.context['form']
+        self.assertIn('quantite_achetee', form.fields)
+        self.assertNotIn('succursale', form.fields)
+        self.assertNotIn('service', form.fields)
+        self.assertNotIn('emplacement', form.fields)
+
+        resp = self.client.post(reverse('immobilisations:bien_nouveau'), {
+            'designation': 'Lot de tables',
+            'valeur_acquisition': '1500',
+            'quantite_achetee': '8',
+        })
+        self.assertEqual(resp.status_code, 302)
+        cree = Immobilisation.objects.get(designation='Lot de tables')
+        self.assertEqual(cree.quantite_achetee, 8)
+        self.assertEqual(cree.succursale, self.succ_a)
+        self.assertIsNone(cree.service)
+        self.assertIsNone(cree.emplacement)
         self.assertEqual(
             self.client.get(
                 reverse('immobilisations:affectation_nouvelle', kwargs={'pk': self.bien.pk})
@@ -427,19 +544,25 @@ class TestProfilsLogistique(ImmobilisationBase):
             self.client.get(
                 reverse('immobilisations:casse_declarer', kwargs={'pk': self.bien.pk})
             ).status_code,
-            200,
+            302,
         )
         self.assertEqual(
             self.client.get(
                 reverse('immobilisations:declassement_demander', kwargs={'pk': self.bien.pk})
             ).status_code,
-            200,
+            302,
         )
 
         brouillon = ImmobilisationService.creer(
             designation='Table', succursale=self.succ_a, domaine=self.domaine,
             par=self.charge)
         ImmobilisationService.soumettre(immobilisation=brouillon, par=self.charge)
+        self.assertEqual(
+            self.client.get(
+                reverse('immobilisations:affectation_nouvelle', kwargs={'pk': brouillon.pk})
+            ).status_code,
+            302,
+        )
         self.assertEqual(
             self.client.post(
                 reverse('immobilisations:bien_valider', kwargs={'pk': brouillon.pk})
@@ -487,11 +610,21 @@ class TestProfilsLogistique(ImmobilisationBase):
             designation='Chaise', succursale=self.succ_a, domaine=self.domaine,
             par=self.charge)
         ImmobilisationService.soumettre(immobilisation=brouillon, par=self.charge)
+        resp = self.client.get(reverse('immobilisations:bien_detail', kwargs={'pk': brouillon.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Valider le bien')
+        self.assertNotContains(resp, 'id_service')
         resp = self.client.post(
             reverse('immobilisations:bien_valider', kwargs={'pk': brouillon.pk}))
         self.assertEqual(resp.status_code, 302)
+        self.assertEqual(
+            resp.url,
+            reverse('immobilisations:bien_detail', kwargs={'pk': brouillon.pk}),
+        )
         brouillon.refresh_from_db()
         self.assertEqual(brouillon.statut_validation, Immobilisation.StatutValidation.VALIDE)
+        self.assertEqual(brouillon.statut_administratif, Immobilisation.StatutAdministratif.STOCKE)
+        self.assertIsNone(brouillon.affectation_courante)
 
         casse = CasseService.declarer(
             immobilisation=self.bien, motif='Choc', par=self.charge)
@@ -521,3 +654,147 @@ class TestProfilsLogistique(ImmobilisationBase):
         self.assertEqual(resp.status_code, 302)
         demande.refresh_from_db()
         self.assertEqual(demande.statut, Declassement.Statut.VALIDE)
+
+    def test_charge_affecte_apres_validation(self):
+        self.client.force_login(self.charge)
+        svc = Service.objects.create(nom='Comptabilité')
+        emp = Emplacement.objects.create(nom='Bureau 1', service=svc)
+        resp = self.client.get(
+            reverse('immobilisations:affectation_nouvelle', kwargs={'pk': self.bien.pk}))
+        self.assertEqual(resp.status_code, 200)
+        form = resp.context['form']
+        self.assertEqual(list(form.fields), [
+            'quantite', 'service', 'emplacement', 'date_affectation', 'commentaire',
+        ])
+        self.assertContains(resp, 'data-filtre-emplacements')
+        self.assertContains(resp, f'data-service="{emp.service_id}"')
+        resp = self.client.post(
+            reverse('immobilisations:affectation_nouvelle', kwargs={'pk': self.bien.pk}),
+            {
+                'quantite': 1,
+                'service': svc.pk,
+                'emplacement': emp.pk,
+                'date_affectation': timezone.localdate().isoformat(),
+                'commentaire': 'Mise en service',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        aff = Affectation.objects.get(immobilisation=self.bien, actif=True)
+        self.assertEqual(aff.quantite, 1)
+        self.assertEqual(aff.service, svc)
+        self.assertEqual(aff.emplacement, emp)
+        self.assertEqual(aff.commentaire, 'Mise en service')
+
+    def test_charge_deplace_depuis_la_grille(self):
+        self.client.force_login(self.charge)
+        svc = Service.objects.create(nom='Comptabilité')
+        emp_1 = Emplacement.objects.create(nom='Bureau 1', service=svc)
+        emp_2 = Emplacement.objects.create(nom='Bureau 2', service=svc)
+        aff = AffectationService.affecter(
+            immobilisation=self.bien, succursale=self.succ_a,
+            service=svc, emplacement=emp_1, par=self.charge)
+        resp = self.client.get(reverse('immobilisations:deplacements'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, self.bien.code)
+        self.assertContains(resp, 'Bureau 1')
+        resp = self.client.get(
+            reverse(
+                'immobilisations:deplacement_depuis_affectation',
+                kwargs={'aff_pk': aff.pk},
+            )
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(list(resp.context['form'].fields), [
+            'quantite', 'nouveau_service', 'nouvel_emplacement',
+        ])
+        self.assertContains(resp, f'data-service="{emp_2.service_id}"')
+        resp = self.client.post(
+            reverse(
+                'immobilisations:deplacement_depuis_affectation',
+                kwargs={'aff_pk': aff.pk},
+            ),
+            {
+                'quantite': 1,
+                'nouveau_service': svc.pk,
+                'nouvel_emplacement': emp_2.pk,
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.bien.refresh_from_db()
+        self.assertEqual(self.bien.emplacement, emp_2)
+
+    def test_charge_declare_casse_avec_service_et_quantite(self):
+        self.client.force_login(self.charge)
+        svc = Service.objects.create(nom='Comptabilité')
+        emp = Emplacement.objects.create(nom='Bureau 1', service=svc)
+        aff = AffectationService.affecter(
+            immobilisation=self.bien, succursale=self.succ_a,
+            service=svc, emplacement=emp, par=self.charge)
+        resp = self.client.get(
+            reverse('immobilisations:casse_declarer', kwargs={'pk': self.bien.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Choisir')
+        self.assertContains(resp, 'Service d’affectation')
+        self.assertContains(resp, 'Emplacement')
+        self.assertContains(resp, 'Quantité cassée')
+        self.assertContains(resp, 'Cause')
+        self.assertContains(resp, 'Commentaire')
+        resp = self.client.post(
+            reverse('immobilisations:casse_declarer', kwargs={'pk': self.bien.pk}),
+            {
+                'affectation_id': aff.pk,
+                'quantite': 1,
+                'motif': 'Chute',
+                'description': 'Écran fêlé',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        casse = Casse.objects.get(immobilisation=self.bien)
+        self.assertEqual(casse.service, svc)
+        self.assertEqual(casse.emplacement, emp)
+        self.assertEqual(casse.quantite, 1)
+        self.assertEqual(casse.motif, 'Chute')
+        self.assertEqual(casse.description, 'Écran fêlé')
+        aff.refresh_from_db()
+        self.assertTrue(aff.actif)
+        self.assertEqual(aff.quantite, 1)
+        self.bien.refresh_from_db()
+        self.assertEqual(self.bien.quantite_restante, 0)
+        self.assertEqual(self.bien.quantite_cassee, 1)
+        self.assertEqual(self.bien.quantite_affectee, 1)
+
+    def test_charge_demande_declassement_avec_affectation(self):
+        self.client.force_login(self.charge)
+        svc = Service.objects.create(nom='Comptabilité')
+        emp = Emplacement.objects.create(nom='Bureau 1', service=svc)
+        aff = AffectationService.affecter(
+            immobilisation=self.bien, succursale=self.succ_a,
+            service=svc, emplacement=emp, par=self.charge)
+        resp = self.client.get(
+            reverse('immobilisations:declassement_demander', kwargs={'pk': self.bien.pk}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Choisir')
+        self.assertContains(resp, 'Service d’affectation')
+        self.assertContains(resp, 'Emplacement')
+        self.assertContains(resp, 'Quantité à déclasser')
+        resp = self.client.post(
+            reverse('immobilisations:declassement_demander', kwargs={'pk': self.bien.pk}),
+            {
+                'affectation_id': aff.pk,
+                'quantite': 1,
+                'motif': 'Hors d’usage',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        dec = Declassement.objects.get(immobilisation=self.bien)
+        self.assertEqual(dec.service, svc)
+        self.assertEqual(dec.emplacement, emp)
+        self.assertEqual(dec.quantite, 1)
+        self.assertEqual(dec.motif, 'Hors d’usage')
+        aff.refresh_from_db()
+        self.assertTrue(aff.actif)
+        self.assertEqual(aff.quantite, 1)
+        self.bien.refresh_from_db()
+        self.assertEqual(self.bien.quantite_restante, 0)
+        self.assertEqual(self.bien.quantite_declassee, 1)
+        self.assertEqual(self.bien.quantite_affectee, 1)

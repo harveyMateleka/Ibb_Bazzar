@@ -24,6 +24,9 @@ from approvisionnement.forms import ConnexionForm
 
 from .views import home
 
+handler403 = 'IBB_Bazzar.views.erreur_acces'
+handler404 = 'IBB_Bazzar.views.page_introuvable'
+
 admin.site.site_header = 'IBBS BAZAR — Paramètres'
 admin.site.site_title = 'IBBS BAZAR'
 admin.site.index_title = 'Tables de paramètre'

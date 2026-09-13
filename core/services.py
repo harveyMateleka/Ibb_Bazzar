@@ -108,7 +108,12 @@ class RoleService:
     def definir_permissions(cls, role, permissions, par=None):
         with transaction.atomic():
             anciennes = list(role.permissions.values_list('codename', flat=True))
-            role.permissions.set(permissions)
+            pks = [
+                perm.pk if hasattr(perm, 'pk') else perm
+                for perm in (permissions or [])
+            ]
+            choisies = Permission.objects.filter(pk__in=pks)
+            role.permissions.set(choisies)
             AuditService.auditer(
                 utilisateur=par,
                 module='CORE',
@@ -117,7 +122,7 @@ class RoleService:
                 objet_id=role.pk,
                 ancienne_valeur={'permissions': anciennes},
                 nouvelle_valeur={
-                    'permissions': list(permissions.values_list('codename', flat=True))
+                    'permissions': list(choisies.values_list('codename', flat=True))
                 },
             )
         return role

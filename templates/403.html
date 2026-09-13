@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Accès refusé · IBBS BAZAR{% endblock %}
+
+{% block content %}
+<section class="app-shell">
+  <div class="section-inner">
+    <section class="panel form-panel">
+      <p class="eyebrow">Accès refusé</p>
+      <h1>Droit insuffisant</h1>
+      <p class="lead">{{ message }}</p>
+      <div class="actions" style="margin-top: 1.2rem;">
+        <a class="btn btn-primary" href="{% url 'home' %}">Retour à l’accueil</a>
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}

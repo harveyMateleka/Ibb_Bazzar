@@ -68,15 +68,46 @@
     document.dispatchEvent(new CustomEvent('ibbs:select2:init'));
   }
 
+  function initPasswordToggles() {
+    if (document.documentElement.dataset.ibbPwdToggle === '1') return;
+    document.documentElement.dataset.ibbPwdToggle = '1';
+    document.addEventListener('click', function (event) {
+      var btn = event.target.closest('.js-password-toggle');
+      if (!btn) return;
+      event.preventDefault();
+      var wrap = btn.closest('.password-wrap');
+      var input = wrap ? wrap.querySelector('input') : null;
+      if (!input) {
+        var cible = btn.getAttribute('aria-controls');
+        input = cible ? document.getElementById(cible) : null;
+      }
+      if (!input) return;
+      var montrer = input.type === 'password';
+      input.type = montrer ? 'text' : 'password';
+      btn.classList.toggle('is-visible', montrer);
+      btn.setAttribute('aria-pressed', montrer ? 'true' : 'false');
+      btn.setAttribute(
+        'aria-label',
+        montrer ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
+      );
+      btn.setAttribute(
+        'title',
+        montrer ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
+      );
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       initDataTables(document);
       initSelect2(document);
+      initPasswordToggles();
       signalerSelect2Pret();
     });
   } else {
     initDataTables(document);
     initSelect2(document);
+    initPasswordToggles();
     signalerSelect2Pret();
   }
 

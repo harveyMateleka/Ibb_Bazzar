@@ -14,7 +14,7 @@ from core.stats import bornes_deux_mois, comparaison_mois, compter_entre, filtre
 from facturation.services import encaisser_et_facturer
 from .forms import AnnulationForm, CommandeForm, EncaissementForm
 from .impression import imprimer_commande_aux_postes
-from .models import CategorieMenu, Commande, LigneCommande, Plat, Salle, ServicePoste, Table
+from .models import CategorieMenu, Commande, LigneCommande, Plat, Salle, Serveur, ServicePoste, Table
 
 
 def _message_erreur(exc):
@@ -115,7 +115,7 @@ def tableau_de_bord(request):
             'nb_terrasse': _lignes_poste(ServicePoste.TERRASSE).count(),
             'commandes_actives': Commande.objects.filter(
                 statut__in=Commande.STATUTS_ACTIFS
-            ).select_related('table', 'table__salle', 'utilisateur').prefetch_related('lignes')[:12],
+            ).select_related('table', 'table__salle', 'utilisateur', 'serveur').prefetch_related('lignes')[:12],
             'comparaison': comparaison,
         },
     )
@@ -237,7 +237,7 @@ def plat_ajuster_quantite(request, pk):
 def commande_liste(request):
     filtre = request.GET.get('paiement', 'impayee')
     commandes = Commande.objects.select_related(
-        'table', 'table__salle', 'utilisateur', 'facture'
+        'table', 'table__salle', 'utilisateur', 'serveur', 'facture'
     ).prefetch_related('lignes').annotate(nb_lignes=Count('lignes'))
     if filtre == 'payee':
         commandes = commandes.filter(statut=Commande.Statut.PAYEE)
@@ -264,9 +264,11 @@ def commande_liste(request):
 @require_permission('restauration.create_commande')
 def commande_nouveau(request):
     initial = {
-        'serveur': request.user.get_full_name() or request.user.get_username(),
         'source': Commande.Source.TABLETTE,
     }
+    table_id = request.GET.get('table')
+    if table_id and request.method != 'POST':
+        initial['table'] = table_id
     formulaire = CommandeForm(
         request.POST if request.method == 'POST' else None,
         initial=initial,
@@ -276,6 +278,11 @@ def commande_nouveau(request):
             messages.error(
                 request,
                 'Créez d’abord des plats dans l’administration (tables de paramètre).',
+            )
+        elif not Serveur.objects.filter(actif=True).exists():
+            messages.error(
+                request,
+                'Enregistrez d’abord les serveurs dans l’administration (Paramètres → Serveurs).',
             )
         else:
             with transaction.atomic():
@@ -297,30 +304,14 @@ def table_ouvrir(request, pk):
     ouverte = table.commande_ouverte()
     if ouverte:
         return redirect('restauration:commande_detail', pk=ouverte.pk)
-    if request.method != 'POST':
-        return redirect('restauration:dashboard')
-    if not Plat.objects.filter(actif=True).exists():
-        messages.error(
-            request,
-            'Créez d’abord des plats dans l’administration (tables de paramètre).',
-        )
-        return redirect('restauration:dashboard')
-    with transaction.atomic():
-        commande = Commande.objects.create(
-            numero=Commande.prochain_numero(),
-            table=table,
-            utilisateur=request.user,
-            serveur=request.user.get_full_name() or request.user.get_username(),
-            source=Commande.Source.TABLETTE,
-        )
-    return redirect('restauration:commande_detail', pk=commande.pk)
+    return redirect(f"{reverse('restauration:commande_nouveau')}?table={table.pk}")
 
 
 @require_permission('restauration.view_restauration')
 def commande_detail(request, pk):
     commande = get_object_or_404(
         Commande.objects.select_related(
-            'table', 'table__salle', 'utilisateur', 'validee_par', 'annulee_par', 'facture'
+            'table', 'table__salle', 'utilisateur', 'serveur', 'validee_par', 'annulee_par', 'facture'
         ).prefetch_related('lignes__plat', 'lignes__servi_par'),
         pk=pk,
     )

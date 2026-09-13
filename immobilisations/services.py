@@ -12,6 +12,8 @@ Transitions d'état appliquées :
   Déclassement  → validation : statut DECLASSE
 """
 
+from datetime import datetime, time
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -49,6 +51,27 @@ def _verifier_bien_en_reparation(immobilisation):
         )
 
 
+def _accorder_service_et_emplacement(service, emplacement):
+    """Un emplacement appartient à un seul service."""
+    if emplacement is None:
+        return service
+    if service is None:
+        return emplacement.service
+    if emplacement.service_id != service.pk:
+        raise ValidationError(
+            'L’emplacement doit appartenir au service sélectionné.'
+        )
+    return service
+
+
+def _dater_affectation(valeur):
+    if valeur is None:
+        return timezone.now()
+    if isinstance(valeur, datetime):
+        return valeur if timezone.is_aware(valeur) else timezone.make_aware(valeur)
+    return datetime.combine(valeur, time.min, tzinfo=timezone.get_current_timezone())
+
+
 def _verifier_bien_valide(immobilisation):
     """Règle : un bien non validé ne peut être ni affecté, ni déplacé, ni réparé,
     ni déclaré cassé, ni déclassé. Seule la validation (soumettre/valider) agit."""
@@ -59,10 +82,34 @@ def _verifier_bien_valide(immobilisation):
         )
 
 
+def _affectation_source(immobilisation, *, affectation=None, service=None, emplacement=None):
+    if affectation is not None:
+        return affectation
+    if service is None and emplacement is None:
+        return None
+    filtres = {'actif': True}
+    if service is not None:
+        filtres['service'] = service
+    if emplacement is not None:
+        filtres['emplacement'] = emplacement
+    return (
+        immobilisation.affectations.filter(**filtres)
+        .order_by('date_affectation')
+        .first()
+    )
+
+
+def _verifier_quantite_affectation(source, qte):
+    if qte > source.quantite:
+        raise ValidationError(
+            f'Il n’y a que {source.quantite} unité(s) à cet emplacement.'
+        )
+
+
 class ImmobilisationService:
     @staticmethod
     def creer(*, designation, succursale, domaine, categorie=None, numero_serie='',
-              valeur_acquisition=0, date_acquisition=None,
+              valeur_acquisition=0, date_acquisition=None, quantite_achetee=1,
               service=None, emplacement=None, observation='', par,
               periode_entretien=None, duree_vie=None):
         with transaction.atomic():
@@ -73,6 +120,7 @@ class ImmobilisationService:
                 numero_serie=numero_serie,
                 valeur_acquisition=valeur_acquisition,
                 date_acquisition=date_acquisition,
+                quantite_achetee=quantite_achetee,
                 succursale=succursale,
                 domaine=domaine,
                 service=service,
@@ -170,22 +218,32 @@ class ImmobilisationService:
 
 class AffectationService:
     @staticmethod
-    def affecter(*, immobilisation, succursale, service=None, emplacement=None, par):
+    def affecter(*, immobilisation, succursale, service=None, emplacement=None,
+                 par, quantite=1, date_affectation=None, commentaire=''):
         if not par:
             raise ValidationError('L’utilisateur qui affecte est obligatoire.')
         _verifier_bien_actif(immobilisation)
         _verifier_bien_en_reparation(immobilisation)
         _verifier_bien_valide(immobilisation)
+        service = _accorder_service_et_emplacement(service, emplacement)
+        if quantite is None or quantite < 1:
+            raise ValidationError('Le nombre à affecter doit être au moins 1.')
+        restante = immobilisation.quantite_restante
+        if quantite > restante:
+            raise ValidationError(
+                f'Il ne reste que {restante} unité(s) à affecter '
+                f'(achetée(s) : {immobilisation.quantite_achetee}).'
+            )
+        quand = _dater_affectation(date_affectation)
         with transaction.atomic():
-            # Clôturer l'affectation courante (jamais supprimée).
-            Affectation.objects.filter(
-                immobilisation=immobilisation, actif=True
-            ).update(actif=False, date_fin=timezone.now())
             affectation = Affectation.objects.create(
                 immobilisation=immobilisation,
                 succursale=succursale,
                 service=service,
                 emplacement=emplacement,
+                quantite=quantite,
+                date_affectation=quand,
+                commentaire=commentaire or '',
                 par=par,
             )
             immobilisation.succursale = succursale
@@ -208,6 +266,7 @@ class AffectationService:
                     'succursale': str(succursale),
                     'service': service.nom if service else '',
                     'emplacement': emplacement.nom if emplacement else '',
+                    'quantite': quantite,
                 },
             )
             return affectation
@@ -215,26 +274,83 @@ class AffectationService:
 
 class DeplacementService:
     @staticmethod
-    def deplacer(*, immobilisation, nouvelle_succursale, nouveau_service=None,
-                 nouvel_emplacement=None, motif='', par):
+    def deplacer(*, immobilisation=None, affectation=None, nouvelle_succursale=None,
+                 nouveau_service=None, nouvel_emplacement=None, quantite=None,
+                 motif='', par):
         if not par:
             raise ValidationError('L’utilisateur qui déplace est obligatoire.')
+        source = affectation
+        if source is None and immobilisation is not None:
+            source = (
+                immobilisation.affectations.filter(actif=True)
+                .select_related('service', 'emplacement', 'succursale')
+                .first()
+            )
+        if source is None:
+            raise ValidationError('Ce bien n’a pas d’affectation à déplacer.')
+        immobilisation = source.immobilisation
         _verifier_bien_actif(immobilisation)
         _verifier_bien_en_reparation(immobilisation)
         _verifier_bien_valide(immobilisation)
+        nouveau_service = _accorder_service_et_emplacement(
+            nouveau_service, nouvel_emplacement)
+        if nouvel_emplacement is None:
+            raise ValidationError('Le nouvel emplacement est obligatoire.')
+        qte = source.quantite if quantite is None else quantite
+        if qte < 1:
+            raise ValidationError('La quantité à déplacer doit être au moins 1.')
+        if qte > source.quantite:
+            raise ValidationError(
+                f'Il n’y a que {source.quantite} unité(s) à cet emplacement.'
+            )
+        meme_lieu = (
+            source.service_id == (nouveau_service.pk if nouveau_service else None)
+            and source.emplacement_id == nouvel_emplacement.pk
+        )
+        if meme_lieu:
+            raise ValidationError('Choisissez un emplacement différent.')
+        succursale = nouvelle_succursale or source.succursale
         with transaction.atomic():
+            if qte == source.quantite:
+                source.actif = False
+                source.date_fin = timezone.now()
+                source.save(update_fields=['actif', 'date_fin'])
+            else:
+                source.quantite -= qte
+                source.save(update_fields=['quantite'])
+            dest = (
+                Affectation.objects.filter(
+                    immobilisation=immobilisation,
+                    actif=True,
+                    service=nouveau_service,
+                    emplacement=nouvel_emplacement,
+                ).first()
+            )
+            if dest:
+                dest.quantite += qte
+                dest.save(update_fields=['quantite'])
+            else:
+                Affectation.objects.create(
+                    immobilisation=immobilisation,
+                    succursale=succursale,
+                    service=nouveau_service,
+                    emplacement=nouvel_emplacement,
+                    quantite=qte,
+                    par=par,
+                )
             deplacement = Deplacement.objects.create(
                 immobilisation=immobilisation,
-                ancienne_succursale=immobilisation.succursale,
-                nouvelle_succursale=nouvelle_succursale,
-                ancien_service=immobilisation.service,
+                ancienne_succursale=source.succursale,
+                nouvelle_succursale=succursale,
+                ancien_service=source.service,
                 nouveau_service=nouveau_service,
-                ancien_emplacement=immobilisation.emplacement,
+                ancien_emplacement=source.emplacement,
                 nouvel_emplacement=nouvel_emplacement,
+                quantite=qte,
                 motif=motif,
                 par=par,
             )
-            immobilisation.succursale = nouvelle_succursale
+            immobilisation.succursale = succursale
             immobilisation.service = nouveau_service
             immobilisation.emplacement = nouvel_emplacement
             immobilisation.save(update_fields=[
@@ -242,16 +358,15 @@ class DeplacementService:
             ])
             AuditService.auditer(
                 utilisateur=par,
-                succursale=nouvelle_succursale,
+                succursale=succursale,
                 module='ASSET',
                 action='asset.move',
                 objet_type='Immobilisation',
                 objet_id=immobilisation.pk,
-                ancienne_valeur={'succursale': str(deplacement.ancienne_succursale)},
+                ancienne_valeur={'emplacement': str(source.emplacement or '')},
                 nouvelle_valeur={
-                    'succursale': str(nouvelle_succursale),
-                    'service': nouveau_service.nom if nouveau_service else '',
-                    'emplacement': nouvel_emplacement.nom if nouvel_emplacement else '',
+                    'emplacement': str(nouvel_emplacement),
+                    'quantite': qte,
                 },
                 motif=motif,
             )
@@ -318,14 +433,28 @@ class ReparationService:
 class CasseService:
     @staticmethod
     def declarer(*, immobilisation, motif, date_dommage=None, description='',
-                 responsable_dommage='', par):
+                 responsable_dommage='', par, service=None, emplacement=None,
+                 affectation=None, quantite=1):
         if not par:
             raise ValidationError('Le déclarant est obligatoire.')
         _verifier_bien_actif(immobilisation)
         _verifier_bien_valide(immobilisation)
+        qte = 1 if quantite is None else quantite
+        if qte < 1:
+            raise ValidationError('La quantité cassée doit être au moins 1.')
+        source = _affectation_source(
+            immobilisation, affectation=affectation,
+            service=service, emplacement=emplacement)
+        if source is not None:
+            _verifier_quantite_affectation(source, qte)
+            service = source.service
+            emplacement = source.emplacement
         with transaction.atomic():
             casse = Casse.objects.create(
                 immobilisation=immobilisation,
+                service=service,
+                emplacement=emplacement,
+                quantite=qte,
                 motif=motif,
                 date_dommage=date_dommage,
                 description=description,
@@ -341,7 +470,12 @@ class CasseService:
                 action='asset.report_damage',
                 objet_type='Immobilisation',
                 objet_id=immobilisation.pk,
-                nouvelle_valeur={'etat': 'CASSE', 'motif': motif},
+                nouvelle_valeur={
+                    'etat': 'CASSE',
+                    'cause': motif,
+                    'quantite': qte,
+                    'service': service.nom if service else '',
+                },
             )
             return casse
 
@@ -375,14 +509,28 @@ class CasseService:
 
 class DeclassementService:
     @staticmethod
-    def demander(*, immobilisation, motif, par):
+    def demander(*, immobilisation, motif, par, service=None, emplacement=None,
+                 affectation=None, quantite=1):
         if not par:
             raise ValidationError('Le demandeur est obligatoire.')
         _verifier_bien_actif(immobilisation)
         _verifier_bien_valide(immobilisation)
+        qte = 1 if quantite is None else quantite
+        if qte < 1:
+            raise ValidationError('La quantité à déclasser doit être au moins 1.')
+        source = _affectation_source(
+            immobilisation, affectation=affectation,
+            service=service, emplacement=emplacement)
+        if source is not None:
+            _verifier_quantite_affectation(source, qte)
+            service = source.service
+            emplacement = source.emplacement
         with transaction.atomic():
             declassement = Declassement.objects.create(
                 immobilisation=immobilisation,
+                service=service,
+                emplacement=emplacement,
+                quantite=qte,
                 motif=motif,
                 par=par,
             )
@@ -393,7 +541,12 @@ class DeclassementService:
                 action='asset.decommission',
                 objet_type='Immobilisation',
                 objet_id=immobilisation.pk,
-                nouvelle_valeur={'declassement': 'DEMANDE', 'motif': motif},
+                nouvelle_valeur={
+                    'declassement': 'DEMANDE',
+                    'motif': motif,
+                    'quantite': qte,
+                    'service': service.nom if service else '',
+                },
             )
             return declassement
 
@@ -409,8 +562,14 @@ class DeclassementService:
             declassement.date_validation = timezone.now()
             declassement.save(update_fields=['statut', 'valide_par', 'date_validation'])
             immo = declassement.immobilisation
-            immo.statut_administratif = Immobilisation.StatutAdministratif.DECLASSE
-            immo.save(update_fields=['statut_administratif', 'date_modification'])
+            # Sans lieu choisi (ancien flux) : le bien entier est déclassé.
+            # Avec une affectation : le statut ne change que si tout le lot est déclassé.
+            if (
+                (declassement.service_id is None and declassement.emplacement_id is None)
+                or immo.quantite_declassee >= immo.quantite_achetee
+            ):
+                immo.statut_administratif = Immobilisation.StatutAdministratif.DECLASSE
+                immo.save(update_fields=['statut_administratif', 'date_modification'])
             AuditService.auditer(
                 utilisateur=par,
                 succursale=immo.succursale,

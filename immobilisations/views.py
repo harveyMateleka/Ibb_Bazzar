@@ -260,10 +260,9 @@ def bien_nouveau(request):
     )
     if request.method == 'POST' and formulaire.is_valid():
         donnees = formulaire.cleaned_data
-        succursale = donnees.get('succursale')
+        succursale = (contexte or {}).get('succursale') or peri['succursales'].first()
         domaine_v = donnees.get('domaine')
         if contexte and contexte['verrouille']:
-            succursale = contexte['succursale']
             domaine_v = contexte['domaine']
         immo = ImmobilisationService.creer(
             designation=donnees['designation'],
@@ -273,8 +272,7 @@ def bien_nouveau(request):
             numero_serie=donnees.get('numero_serie', ''),
             valeur_acquisition=donnees.get('valeur_acquisition', 0),
             date_acquisition=donnees.get('date_acquisition'),
-            service=donnees.get('service'),
-            emplacement=donnees.get('emplacement'),
+            quantite_achetee=donnees.get('quantite_achetee') or 1,
             periode_entretien=donnees.get('periode_entretien'),
             duree_vie=donnees.get('duree_vie'),
             observation=donnees.get('observation', ''),
@@ -305,13 +303,19 @@ def bien_soumettre(request, pk):
 @require_permission('immobilisations.validate_asset')
 @require_POST
 def bien_valider(request, pk):
-    """Valide un bien en attente."""
+    """Valide un bien en attente, puis ouvre l'affectation si l'utilisateur peut l'effectuer."""
     bien = _bien_du_perimetre(request, pk)
     try:
         ImmobilisationService.valider(immobilisation=bien, par=request.user)
-        messages.success(request, f'Bien {bien.code} validé.')
+        messages.success(
+            request,
+            f'Bien {bien.code} validé. Passez à l’affectation.',
+        )
     except ValidationError as exc:
         messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
+        return redirect('immobilisations:bien_detail', pk=bien.pk)
+    if request.user.has_perm('immobilisations.assign_asset'):
+        return redirect('immobilisations:affectation_nouvelle', pk=bien.pk)
     return redirect('immobilisations:bien_detail', pk=bien.pk)
 
 
@@ -361,27 +365,27 @@ def biens_valider_lot(request):
 
 @require_permission('immobilisations.view_asset')
 def bien_detail(request, pk):
-    peri = _perimetre(request.user)
-    bien = get_object_or_404(
-        _biens_perimetre(
-            peri, inclure_declasses=_peut_voir_declasses(request.user)
-        ).select_related('categorie'),
-        pk=pk,
-    )
+    bien = _bien_du_perimetre(request, pk)
+    return _rendre_bien_detail(request, bien)
+
+
+def _rendre_bien_detail(request, bien):
     affectations = bien.affectations.select_related(
         'succursale', 'par', 'service', 'emplacement')
     deplacements = bien.deplacements.select_related(
         'par', 'ancienne_succursale', 'nouvelle_succursale',
         'ancien_service', 'nouveau_service', 'ancien_emplacement', 'nouvel_emplacement')
     reparations = bien.reparations.select_related('par')
-    casses = bien.casses.select_related('par')
-    declassements = bien.declassements.select_related('par', 'valide_par')
+    casses = bien.casses.select_related('par', 'service', 'emplacement')
+    declassements = bien.declassements.select_related(
+        'par', 'valide_par', 'service', 'emplacement')
     return render(
         request,
         'immobilisations/bien_detail.html',
         {
             'bien': bien,
             'affectation_courante': bien.affectation_courante,
+            'quantite_restante': bien.quantite_restante,
             'affectations': affectations,
             'deplacements': deplacements,
             'reparations': reparations,
@@ -402,20 +406,37 @@ def _bien_du_perimetre(request, pk):
 @require_permission('immobilisations.assign_asset')
 def affectation_nouvelle(request, pk):
     bien = _bien_du_perimetre(request, pk)
+    if bien.statut_validation != Immobilisation.StatutValidation.VALIDE:
+        messages.error(
+            request,
+            f'Le bien {bien.code} doit d’abord être validé par le responsable '
+            'avant d’être affecté.',
+        )
+        return redirect('immobilisations:bien_detail', pk=bien.pk)
+    if bien.quantite_restante <= 0:
+        messages.error(request, f'Toutes les unités de {bien.code} sont déjà affectées.')
+        return redirect('immobilisations:bien_detail', pk=bien.pk)
     peri = _perimetre(request.user)
+    contexte = _contexte_immobilisations(request.user)
+    succursale = (
+        (contexte or {}).get('succursale')
+        or peri['succursales'].first()
+        or bien.succursale
+    )
     formulaire = AffectationForm(
         request.POST if request.method == 'POST' else None,
-        succursales=peri['succursales'],
-        request_user=request.user,
-        initial={'succursale': bien.succursale},
+        immobilisation=bien,
     )
     if request.method == 'POST' and formulaire.is_valid():
         try:
             AffectationService.affecter(
                 immobilisation=bien,
-                succursale=formulaire.cleaned_data['succursale'],
-                service=formulaire.cleaned_data.get('service'),
-                emplacement=formulaire.cleaned_data.get('emplacement'),
+                succursale=succursale,
+                service=formulaire.cleaned_data['service'],
+                emplacement=formulaire.cleaned_data['emplacement'],
+                quantite=formulaire.cleaned_data['quantite'],
+                date_affectation=formulaire.cleaned_data['date_affectation'],
+                commentaire=formulaire.cleaned_data.get('commentaire', ''),
                 par=request.user,
             )
             messages.success(request, f'Bien {bien.code} affecté avec succès.')
@@ -425,37 +446,62 @@ def affectation_nouvelle(request, pk):
     return render(
         request,
         'immobilisations/affectation_form.html',
-        {'form': formulaire, 'bien': bien},
+        {
+            'form': formulaire,
+            'bien': bien,
+            'quantite_restante': bien.quantite_restante,
+        },
     )
 
 
 @require_permission('immobilisations.move_asset')
 def deplacement_nouveau(request, pk):
+    """Depuis la fiche bien : ouvre le déplacement de l'affectation active."""
     bien = _bien_du_perimetre(request, pk)
+    sources = list(bien.affectations.filter(actif=True).order_by('emplacement__nom'))
+    if not sources:
+        messages.error(request, f'Le bien {bien.code} n’a pas encore d’affectation à déplacer.')
+        return redirect('immobilisations:bien_detail', pk=bien.pk)
+    if len(sources) == 1:
+        return redirect('immobilisations:deplacement_depuis_affectation', aff_pk=sources[0].pk)
+    return redirect(f"{reverse('immobilisations:deplacements')}?bien={bien.pk}")
+
+
+@require_permission('immobilisations.move_asset')
+def deplacement_depuis_affectation(request, aff_pk):
     peri = _perimetre(request.user)
+    source = get_object_or_404(
+        Affectation.objects.select_related(
+            'immobilisation', 'service', 'emplacement', 'succursale',
+        ).filter(
+            actif=True,
+            immobilisation__succursale_id__in=peri['succursales_ids'],
+            immobilisation__domaine_id=peri['domaine_id'],
+        ),
+        pk=aff_pk,
+    )
+    bien = source.immobilisation
     formulaire = DeplacementForm(
         request.POST if request.method == 'POST' else None,
-        succursales=peri['succursales'],
-        request_user=request.user,
+        affectation=source,
     )
     if request.method == 'POST' and formulaire.is_valid():
         try:
             DeplacementService.deplacer(
-                immobilisation=bien,
-                nouvelle_succursale=formulaire.cleaned_data['nouvelle_succursale'],
-                nouveau_service=formulaire.cleaned_data.get('nouveau_service'),
-                nouvel_emplacement=formulaire.cleaned_data.get('nouvel_emplacement'),
-                motif=formulaire.cleaned_data.get('motif', ''),
+                affectation=source,
+                nouveau_service=formulaire.cleaned_data['nouveau_service'],
+                nouvel_emplacement=formulaire.cleaned_data['nouvel_emplacement'],
+                quantite=formulaire.cleaned_data['quantite'],
                 par=request.user,
             )
             messages.success(request, f'Bien {bien.code} déplacé avec succès.')
         except ValidationError as exc:
             messages.error(request, ' '.join(getattr(exc, 'messages', [str(exc)])))
-        return redirect('immobilisations:bien_detail', pk=bien.pk)
+        return redirect('immobilisations:deplacements')
     return render(
         request,
         'immobilisations/deplacement_form.html',
-        {'form': formulaire, 'bien': bien},
+        {'form': formulaire, 'bien': bien, 'affectation': source},
     )
 
 
@@ -503,14 +549,28 @@ def reparation_terminer(request, pk, rep_pk):
 @require_permission('immobilisations.report_damage_asset')
 def casse_declarer(request, pk):
     bien = _bien_du_perimetre(request, pk)
+    affectations = list(
+        bien.affectations.filter(actif=True).select_related('service', 'emplacement')
+    )
+    if not affectations:
+        messages.error(
+            request,
+            f'Le bien {bien.code} doit d’abord être affecté avant de déclarer une casse.',
+        )
+        return redirect('immobilisations:bien_detail', pk=bien.pk)
     formulaire = CasseForm(
         request.POST if request.method == 'POST' else None,
+        immobilisation=bien,
         request_user=request.user,
     )
     if request.method == 'POST' and formulaire.is_valid():
         try:
             CasseService.declarer(
                 immobilisation=bien,
+                service=formulaire.cleaned_data.get('service'),
+                emplacement=formulaire.cleaned_data.get('emplacement'),
+                affectation=getattr(formulaire, 'affectation_choisie', None),
+                quantite=formulaire.cleaned_data['quantite'],
                 motif=formulaire.cleaned_data['motif'],
                 date_dommage=formulaire.cleaned_data.get('date_dommage'),
                 description=formulaire.cleaned_data.get('description', ''),
@@ -524,7 +584,7 @@ def casse_declarer(request, pk):
     return render(
         request,
         'immobilisations/casse_form.html',
-        {'form': formulaire, 'bien': bien},
+        {'form': formulaire, 'bien': bien, 'affectations': affectations},
     )
 
 
@@ -556,14 +616,28 @@ def casse_evaluer(request, pk, casse_pk):
 @require_permission('immobilisations.decommission_asset')
 def declassement_demander(request, pk):
     bien = _bien_du_perimetre(request, pk)
+    affectations = list(
+        bien.affectations.filter(actif=True).select_related('service', 'emplacement')
+    )
+    if not affectations:
+        messages.error(
+            request,
+            f'Le bien {bien.code} doit d’abord être affecté avant de demander un déclassement.',
+        )
+        return redirect('immobilisations:bien_detail', pk=bien.pk)
     formulaire = DeclassementForm(
         request.POST if request.method == 'POST' else None,
+        immobilisation=bien,
         request_user=request.user,
     )
     if request.method == 'POST' and formulaire.is_valid():
         try:
             DeclassementService.demander(
                 immobilisation=bien,
+                service=formulaire.cleaned_data.get('service'),
+                emplacement=formulaire.cleaned_data.get('emplacement'),
+                affectation=getattr(formulaire, 'affectation_choisie', None),
+                quantite=formulaire.cleaned_data['quantite'],
                 motif=formulaire.cleaned_data['motif'],
                 par=request.user,
             )
@@ -574,7 +648,7 @@ def declassement_demander(request, pk):
     return render(
         request,
         'immobilisations/declassement_form.html',
-        {'form': formulaire, 'bien': bien},
+        {'form': formulaire, 'bien': bien, 'affectations': affectations},
     )
 
 
@@ -635,18 +709,27 @@ def affectations(request):
 
 @require_permission('immobilisations.view_asset')
 def deplacements(request):
+    """Grille des biens affectés, groupés par emplacement, pour lancer un déplacement."""
     peri = _perimetre(request.user)
-    qs = Deplacement.objects.select_related(
-        'immobilisation', 'par', 'ancienne_succursale', 'nouvelle_succursale',
-        'ancien_service', 'nouveau_service', 'ancien_emplacement', 'nouvel_emplacement').filter(
+    qs = Affectation.objects.select_related(
+        'immobilisation', 'service', 'emplacement', 'succursale',
+    ).filter(
+        actif=True,
         immobilisation__succursale_id__in=peri['succursales_ids'],
         immobilisation__domaine_id=peri['domaine_id'],
+        immobilisation__statut_validation=Immobilisation.StatutValidation.VALIDE,
     )
-    page_obj = _paginer(request, qs.order_by('-date_deplacement'))
+    bien_id = request.GET.get('bien')
+    if bien_id:
+        qs = qs.filter(immobilisation_id=bien_id)
+    page_obj = _paginer(
+        request,
+        qs.order_by('emplacement__nom', 'service__nom', 'immobilisation__code'),
+    )
     return render(
         request,
         'immobilisations/deplacements.html',
-        {'deplacements': page_obj.object_list, 'page_obj': page_obj},
+        {'affectations': page_obj.object_list, 'page_obj': page_obj},
     )
 
 
@@ -804,7 +887,7 @@ def rapport_deplacements(request):
 def rapport_casses(request):
     """Rapport des biens déclarés cassés (période + décision)."""
     peri = _perimetre(request.user)
-    qs = Casse.objects.select_related('immobilisation', 'par').filter(
+    qs = Casse.objects.select_related('immobilisation', 'par', 'service', 'emplacement').filter(
         immobilisation__succursale_id__in=peri['succursales_ids'],
         immobilisation__domaine_id=peri['domaine_id'],
     )

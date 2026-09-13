@@ -297,6 +297,58 @@ a {
   margin-top: 1.2rem;
 }
 
+.password-wrap {
+  position: relative;
+}
+
+.password-wrap input {
+  padding-right: 2.75rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--brand-white, #fff);
+  color: var(--brand-maroon, #7a1f2b);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.password-toggle svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: block;
+}
+
+.password-toggle .icon-eye-off {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye-off {
+  display: block;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  color: #000;
+  outline: 2px solid var(--brand-maroon, #7a1f2b);
+  outline-offset: 1px;
+}
+
 .auth-grid {
   max-width: 560px;
   grid-template-columns: 1fr 1fr;
@@ -437,6 +489,9 @@ div.dt-container .dt-paging .dt-paging-button.current,
   grid-column: 1 / -1;
 }
 .form-grid .is-locked {
+  background: #f4f1ea;
+}
+table tr.is-chosen {
   background: #f4f1ea;
 }
 .form-grid {
@@ -1751,3 +1806,26 @@ h1 {
 }
 .detail-grid dt { font-weight: 700; color: #555; }
 .detail-grid dd { margin: 0; }
+
+.perm-group { margin-bottom: 1.25rem; }
+.perm-list {
+  display: grid;
+  gap: 0.55rem;
+}
+.perm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0;
+  font-weight: 400;
+}
+.perm-item input {
+  width: auto;
+  min-height: 0;
+  margin-top: 0.3rem;
+}
+.perm-item.is-annulation {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--brand-maroon, #7a1f2b);
+  background: #faf6f4;
+}
